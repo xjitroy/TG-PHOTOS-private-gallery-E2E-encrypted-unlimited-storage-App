@@ -10,7 +10,7 @@ data class TelegramSessionInfo(val id: Long, val current: Boolean, val applicati
 
 data class TelegramOwnerProfile(val accountId: Long, val name: String, val username: String, val avatarPreview: String)
 
-data class RemoteDocument(val chatId: Long, val messageId: Long, val bytes: Long, val confirmedAtMillis: Long = 0)
+data class RemoteDocument(val chatId: Long, val messageId: Long, val bytes: Long, val confirmedAtMillis: Long = 0, val marker: String = "")
 class TelegramFailure(val safe: AuthProtocol.SafeError) : Exception("Telegram request failed")
 
 enum class SetupIssue { CREDENTIALS, NATIVE_LIBRARY, DEVICE_KEY }
@@ -52,11 +52,16 @@ interface TelegramGateway {
     suspend fun uploadLimit(): Long
     suspend fun sendDocument(file: File, marker: String, progress: (Long, Long) -> Unit): RemoteDocument
     suspend fun findDocuments(marker: String): List<RemoteDocument>
+    suspend fun findNewestDocuments(marker: String, limit: Int): List<RemoteDocument> = findDocuments(marker).sortedByDescending { it.messageId }.take(limit.coerceIn(1, 70))
     suspend fun deleteOwnedDocuments(references: List<RemoteDocument>, ownerMarker: String)
+    suspend fun readLifecycleDocument(reference: RemoteDocument, marker: String): ByteArray = throw UnsupportedOperationException("Vault lifecycle unavailable")
+    suspend fun deleteLifecycleClock(reference: RemoteDocument, marker: String): Unit = throw UnsupportedOperationException("Vault lifecycle unavailable")
+    suspend fun deleteVaultNamespace(references: List<RemoteDocument>, photos: String, privateVault: String?): Unit = throw UnsupportedOperationException("Vault lifecycle unavailable")
     suspend fun deletePrivateVaultRoots(references: List<RemoteDocument>, marker: String): Unit = throw UnsupportedOperationException("Private Vault root deletion unavailable")
     suspend fun retireRecoveryRoots(references: List<RemoteDocument>, vaultId: String)
     suspend fun pruneLocalStreamCache() {}
     suspend fun readDocumentPart(reference: RemoteDocument, offset: Long, count: Int): ByteArray
+    suspend fun readSpeculativeDocumentPart(reference: RemoteDocument, offset: Long, count: Int): ByteArray = readDocumentPart(reference, offset, count)
 
     /** Private Vault range: no retained ciphertext; validates the exact app-owned marker. */
     suspend fun readPrivateVaultPart(reference: RemoteDocument, offset: Long, count: Int, marker: String, access: () -> Unit = {}): ByteArray = throw UnsupportedOperationException("Private Vault streaming unavailable")

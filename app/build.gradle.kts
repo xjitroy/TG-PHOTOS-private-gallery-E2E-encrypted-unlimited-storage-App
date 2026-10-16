@@ -31,8 +31,8 @@ android {
         applicationId = providers.gradleProperty("televault.applicationId").getOrElse("app.televault")
         minSdk = 26
         targetSdk = 36
-        versionCode = 30
-        versionName = "0.19.1"
+        versionCode = 31
+        versionName = "0.19.2"
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64") }
         javaCompileOptions {
             annotationProcessorOptions {

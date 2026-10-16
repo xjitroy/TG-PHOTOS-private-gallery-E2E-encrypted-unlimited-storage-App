@@ -12,6 +12,6 @@ public final class OwnedCloudCaption {
         String prefix="TGDRIVE_V1_DATA"+owner;
         if(!caption.startsWith(prefix))return false;
         String suffix=caption.substring(prefix.length());
-        return privateVault?suffix.matches(":"+UUID+":[0-9]+"):(suffix.isEmpty() || suffix.matches(":[0-9]+"));
+        return privateVault?suffix.matches(":"+UUID+":[0-9]+"):(suffix.isEmpty() || suffix.matches(":[0-9]+") || suffix.matches(":"+UUID+":[0-9]+:"));
     }
 }

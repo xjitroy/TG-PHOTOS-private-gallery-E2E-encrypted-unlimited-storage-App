@@ -18,13 +18,14 @@ internal data class PrivateVaultCloudObject(val outerKey: ByteArray, val parts: 
 }
 
 /** No Photos catalog records, plaintext files, thumbnails or retained media ranges. */
-internal class PrivateVaultCloudStore(private val context: Context, private val drive: DriveRepository, private val telegram: TelegramGateway) {
+internal class PrivateVaultCloudStore(private val context: Context, private val drive: DriveRepository, private val telegram: TelegramGateway, private val fixedBinding: Pair<Long, String>? = null, private val openRoot: ((ByteArray, Pair<Long, String>) -> ByteArray)? = null) {
     private val staging = File(context.noBackupFilesDir, "private-vault-upload-v2").apply {
         mkdirs()
-        listFiles()?.forEach { it.delete() }
+        // A deletion-only maintenance instance can coexist with the active Vault's upload.
+        if (fixedBinding == null) listFiles()?.forEach { it.delete() }
     }
     private var rootReady: Triple<Long, String, String>? = null
-    fun binding() = drive.privateVaultBinding()
+    fun binding() = fixedBinding ?: drive.privateVaultBinding()
     private fun rootMarker(binding: Pair<Long, String>) = "TGDRIVE_V1_PRIVATE_ROOT:${binding.second}"
     private fun manifestMarker(binding: Pair<Long, String>, vault: UUID) = "TGDRIVE_V1_FILE:PV2:${binding.second}:$vault"
     private fun partMarker(binding: Pair<Long, String>, vault: UUID, id: String, index: Int) = "TGDRIVE_V1_DATA:PV2:${binding.second}:$vault:$id:$index"
@@ -70,7 +71,7 @@ internal class PrivateVaultCloudStore(private val context: Context, private val 
         val binding = binding()
         val identity = Triple(binding.first, binding.second, descriptor.getString("id"))
         if (rootReady == identity) return
-        val existing = discoverRoot()
+        val existing = discoverRoots().firstOrNull { it.getString("id") == descriptor.getString("id") }
         if (existing == null) {
             publishRoot(descriptor)
         } else {
@@ -78,26 +79,30 @@ internal class PrivateVaultCloudStore(private val context: Context, private val 
             rootReady = identity
         }
     }
-    suspend fun discoverRoot(): JSONObject? {
-        val binding = binding()
-        check(telegram.accountId() == binding.first)
-        val roots = telegram.findDocuments(rootMarker(binding)).sortedByDescending { it.messageId }
-        if (roots.isEmpty()) return null
-        // Never fall back to an older password envelope after a damaged newest root.
-        val sealed = whole(roots.first(), rootMarker(binding))
+    suspend fun discoverRoot(): JSONObject? = discoverRoots().firstOrNull()
+    private suspend fun readRoot(reference: RemoteDocument, binding: Pair<Long, String>): JSONObject {
+        val sealed = whole(reference, rootMarker(binding))
         val plain = try {
-            drive.privateVaultEnvelope(sealed, "root", binding, true)
+            openRoot?.invoke(sealed, binding) ?: drive.privateVaultEnvelope(sealed, "root", binding, true)
         } finally {
             sealed.fill(0)
         }
         return try {
             JSONObject(plain.toString(Charsets.UTF_8)).also {
-                check(it.getLong("cloudAccount") == binding.first && it.getString("cloudVault") == binding.second)
+                check(it.getInt("version") == 1 && it.getLong("cloudAccount") == binding.first && it.getString("cloudVault") == binding.second)
                 UUID.fromString(it.getString("id"))
             }
         } finally {
             plain.fill(0)
         }
+    }
+    suspend fun discoverRoots(): List<JSONObject> {
+        val binding = binding()
+        check(telegram.accountId() == binding.first)
+        val roots = telegram.findDocuments(rootMarker(binding)).sortedByDescending { it.messageId }
+        // Every root must authenticate. A damaged newest envelope never silently falls
+        // back to an older password. Keep the latest revision of each independent Vault.
+        return roots.map { readRoot(it, binding) }.distinctBy { it.getString("id") }
     }
     fun sealMetadata(data: JSONObject, key: ByteArray, vault: UUID, id: String, binding: Pair<Long, String>): ByteArray {
         val bytes = data.toString().toByteArray()
@@ -344,17 +349,19 @@ internal class PrivateVaultCloudStore(private val context: Context, private val 
         telegram.deleteOwnedDocuments(cloud.parts + cloud.manifest, ":PV2:${expected.second}:$vault")
         checkBinding(expected, valid)
     }
-    suspend fun deleteAll(expected: Pair<Long, String>, vault: UUID, valid: () -> Unit) {
+    suspend fun deleteAll(expected: Pair<Long, String>, vault: UUID, beforeBatch: suspend () -> Unit = {}, valid: () -> Unit) {
         checkBinding(expected, valid)
+        val roots = telegram.findDocuments(rootMarker(expected)).filter { readRoot(it, expected).getString("id") == vault.toString() }
         // Include orphaned upload parts as well as manifests, including copies added by another device.
         val parts = telegram.findDocuments("TGDRIVE_V1_DATA:PV2:${expected.second}:$vault:")
         val manifests = telegram.findDocuments(manifestMarker(expected, vault))
         for (batch in (parts + manifests).chunked(100)) {
+            beforeBatch()
             checkBinding(expected, valid)
             telegram.deleteOwnedDocuments(batch, ":PV2:${expected.second}:$vault")
         }
         // A dedicated gateway checks exact marker, bytes and Saved Messages ownership.
-        val roots = telegram.findDocuments(rootMarker(expected))
+        beforeBatch()
         telegram.deletePrivateVaultRoots(roots, rootMarker(expected))
         checkBinding(expected, valid)
     }

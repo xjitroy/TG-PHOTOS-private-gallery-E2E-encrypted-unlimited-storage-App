@@ -71,7 +71,7 @@ internal fun PrivateVaultPreview(item: PrivateVaultItem, uri: Uri, model: DriveV
                     }
                     Box(Modifier.weight(1f).fillMaxWidth().background(Color.Black), contentAlignment = Alignment.Center) {
                         bitmap?.let { Image(it.asImageBitmap(), item.name, Modifier.fillMaxSize(), contentScale = ContentScale.Fit) }
-                        if (bitmap == null && !failed) VaultMediaVerification(loading = true, verified = false, doubleEncrypted = item.cloud != null)
+                        if (bitmap == null && !failed) VaultGalleryArtwork(item, uri, ContentScale.Fit)
                         if (bitmap != null) Box(Modifier.align(Alignment.TopStart).padding(12.dp)) { VaultMediaVerification(loading = false, verified = true, doubleEncrypted = item.cloud != null) }
                         if (failed) Text(label("Cannot verify or decode this image safely", "এই ছবি নিরাপদে যাচাই বা ডিকোড করা যায়নি"), color = Color.White)
                     }
@@ -93,12 +93,25 @@ internal fun PrivateVaultPreview(item: PrivateVaultItem, uri: Uri, model: DriveV
                     var buffering by remember(item.id) { mutableStateOf(true) }
                     var authenticated by remember(item.id) { mutableStateOf(false) }
                     var failed by remember(item.id) { mutableStateOf(false) }
+                    var duration by remember(item.id) { mutableLongStateOf(player.duration.coerceAtLeast(0)) }
+                    var showBuffering by remember(item.id) { mutableStateOf(false) }
+                    LaunchedEffect(buffering, duration) {
+                        showBuffering = false
+                        if (buffering && app.televault.domain.MediaLoadingPolicy.mayShowIndicator(item.mime, duration)) {
+                            delay(app.televault.domain.MediaLoadingPolicy.VIDEO_INDICATOR_DELAY)
+                            showBuffering = true
+                        }
+                    }
                     val owner = androidx.lifecycle.compose.LocalLifecycleOwner.current
                     DisposableEffect(player, owner) {
                         val listener = object : androidx.media3.common.Player.Listener {
                             override fun onPlaybackStateChanged(state: Int) {
                                 buffering = state == androidx.media3.common.Player.STATE_BUFFERING || state == androidx.media3.common.Player.STATE_IDLE
+                                duration = player.duration.coerceAtLeast(0)
                                 if (state == androidx.media3.common.Player.STATE_READY) authenticated = true
+                            }
+                            override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
+                                duration = player.duration.coerceAtLeast(0)
                             }
                             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                                 failed = true
@@ -129,7 +142,7 @@ internal fun PrivateVaultPreview(item: PrivateVaultItem, uri: Uri, model: DriveV
                                 setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
                             }
                         }, modifier = Modifier.fillMaxSize(), onRelease = { it.player = null })
-                        if (buffering && !failed) VaultMediaVerification(loading = true, verified = authenticated, doubleEncrypted = item.cloud != null)
+                        if (showBuffering && !failed) VaultMediaVerification(loading = true, verified = authenticated, doubleEncrypted = item.cloud != null)
                         if (authenticated && !buffering && !failed) Box(Modifier.align(Alignment.TopStart).padding(12.dp)) { VaultMediaVerification(loading = false, verified = true, doubleEncrypted = item.cloud != null) }
                         if (failed) {
                             Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.errorContainer) {

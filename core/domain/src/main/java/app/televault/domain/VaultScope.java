@@ -8,6 +8,10 @@ public final class VaultScope {
             && (account == 0 || account == requestedAccount)
             && (vault.isEmpty() || vault.equals(requestedVault));
     }
+    public static boolean workerMayUse(long account, String vault, long requestedAccount, String requestedVault, String persistedSelection) {
+        return workerMayUse(account, vault, requestedAccount, requestedVault)
+            && (persistedSelection == null || persistedSelection.isEmpty() || persistedSelection.equals(requestedVault));
+    }
     public static boolean maySelect(long account, String vault, long requestedAccount, String requestedVault, int activeKeys) {
         return activeKeys == 0 || activeKeys > 0 && account == requestedAccount && vault.equals(requestedVault);
     }

@@ -30,4 +30,5 @@ public interface CacheDao {
     @Query("DELETE FROM vault_cache WHERE account=:account AND vault=:vault AND kind='export-entry' AND id LIKE :exportId || ':entry:%'")
     void removeExportEntries(long account, String vault, String exportId);
     @Query("DELETE FROM vault_cache WHERE id=:id") void remove(String id);
+    @Query("DELETE FROM vault_cache WHERE account=:account AND vault=:vault") void removeVault(long account, String vault);
 }

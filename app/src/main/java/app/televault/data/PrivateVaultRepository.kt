@@ -11,6 +11,8 @@ import app.televault.crypto.RecoveryEnvelope
 import app.televault.crypto.VaultCrypto
 import app.televault.domain.AuthProtocol
 import app.televault.domain.CaptureTime
+import app.televault.domain.VaultDirectoryPolicy
+import app.televault.domain.VaultNames
 import java.io.File
 import java.io.FileOutputStream
 import java.io.OutputStream
@@ -40,6 +42,112 @@ internal class PrivateVaultRepository(private val context: Context) {
         listFiles().orEmpty().filter { it.extension == "upload" }.forEach { it.delete() }
     }
     private val app = context.applicationContext as app.televault.TeleVaultApplication
+    private var baseDirectory = directory
+    private val selection = context.getSharedPreferences("private-vault-selection-v1", Context.MODE_PRIVATE)
+    private val choicesMutable = MutableStateFlow<List<VaultChoice>>(emptyList())
+    val choices = choicesMutable.asStateFlow()
+    val selectedName = MutableStateFlow("")
+    private var selectedIdentity = ""
+    val selectedId: String get() = selectedIdentity
+
+    @Synchronized internal fun revokeForgotten(owner: Long, photos: String, id: String) {
+        if (selectedIdentity == id && (expectedBinding == null || expectedBinding == owner to photos)) lock()
+    }
+    internal suspend fun retireForgottenPhotosLocal(owner: Long, photos: String) = withContext(Dispatchers.IO) {
+        val legacy = File(context.noBackupFilesDir, "private-vault-v1")
+        val bound = File(context.noBackupFilesDir, "private-vault-cloud-v2/$owner-${UUID.fromString(photos)}")
+        val candidates = listOf(legacy, bound) + listOf(legacy, bound).flatMap { File(it, "slots").listFiles().orEmpty().filter { child -> child.isDirectory } }
+        val ids = candidates.mapNotNull { target ->
+            val file = File(target, "descriptor.json")
+            if (!file.exists() && !File(file.path + ".bak").exists()) {
+                null
+            } else {
+                AtomicFile(file).openRead().use { input ->
+                    check(file.length() in 1..8192)
+                    JSONObject(input.readBytes().toString(Charsets.UTF_8)).takeIf { it.optLong("cloudAccount") == owner && it.optString("cloudVault") == photos }?.getString("id")
+                }
+            }
+        }.distinct()
+        for (id in ids) retireForgottenLocal(owner, photos, id)
+    }
+    internal suspend fun retireForgottenLocal(owner: Long, photos: String, id: String) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            check(app.telegram.accountId() == owner)
+            UUID.fromString(photos)
+            UUID.fromString(id)
+            val legacy = File(context.noBackupFilesDir, "private-vault-v1")
+            val bound = File(context.noBackupFilesDir, "private-vault-cloud-v2/$owner-$photos")
+            val candidates = listOf(legacy, bound) + listOf(legacy, bound).flatMap { File(it, "slots").listFiles().orEmpty().filter { child -> child.isDirectory } }
+            for (target in candidates.distinct()) {
+                val stored = AtomicFile(File(target, "descriptor.json"))
+                if (!stored.baseFile.exists() && !File(stored.baseFile.path + ".bak").exists()) continue
+                val data = stored.openRead().use {
+                    check(stored.baseFile.length() in 1..8192)
+                    JSONObject(it.readBytes().toString(Charsets.UTF_8))
+                }
+                if (data.optString("id") != id || data.has("cloudAccount") && (data.getLong("cloudAccount") != owner || data.getString("cloudVault") != photos)) continue
+                if (directory == target) lock()
+                // The legacy base can contain sibling slots: never recursively erase it.
+                target.listFiles().orEmpty().filter { it.isFile && it.name.matches(Regex("[0-9a-f-]{36}\\.(meta|cloud|cipher|upload)(\\.(bak|new))?")) }.forEach { check(it.delete()) }
+                VaultBiometricKey(target, "$owner/$photos/$id").erase()
+                DeviceVaultKey(context).erase(-17L, id)
+                stored.delete()
+                if (directory == target) {
+                    expectedBinding = null
+                    selectedIdentity = ""
+                }
+            }
+            localChoices()
+        }
+    }
+    private fun generatedName(data: JSONObject): String = VaultNames.display("", data.optLong("createdAt"), java.time.ZoneId.systemDefault(), data.getString("id"))
+    private fun decodedName(key: ByteArray, data: JSONObject, id: UUID): String = runCatching {
+        val plain = VaultCrypto.open(key, decode(data.getString("sealedName")), "TGPhotos/private-vault/name/v1/$id".toByteArray())
+        try {
+            VaultNames.clean(plain.toString(Charsets.UTF_8)).ifBlank { generatedName(data) }
+        } finally {
+            plain.fill(0)
+        }
+    }.getOrElse { generatedName(data) }
+    private fun scopeName(binding: Pair<Long, String>) = "${binding.first}/${UUID.fromString(binding.second)}"
+    private fun localChoices() {
+        val candidates = listOf(baseDirectory) + File(baseDirectory, "slots").listFiles().orEmpty().filter { it.isDirectory }
+        choicesMutable.value = candidates.mapNotNull { target ->
+            runCatching {
+                val stored = AtomicFile(File(target, "descriptor.json"))
+                check(stored.baseFile.length() in 1..8192)
+                val data = JSONObject(stored.openRead().use { it.readBytes().toString(Charsets.UTF_8) })
+                val id = UUID.fromString(data.getString("id")).toString()
+                VaultChoice(id, if (unlocked.value && vault.toString() == id) selectedName.value else generatedName(data), data.optLong("createdAt"))
+            }.getOrNull()
+        }.distinctBy { it.id }.sortedByDescending { it.createdAt }
+    }
+    private fun selectDirectory(target: File, binding: Pair<Long, String>) {
+        lock()
+        directory = target.apply { mkdirs() }
+        descriptor = AtomicFile(File(directory, "descriptor.json"))
+        expectedBinding = null
+        selectedIdentity = ""
+        if (exists) {
+            val data = descriptorData()
+            selectedIdentity = data.getString("id")
+            selectedName.value = generatedName(data)
+            selection.edit().putString(scopeName(binding), data.getString("id")).apply()
+        }
+        localChoices()
+    }
+    suspend fun selectVault(id: String) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            allowed()
+            val binding = cloudStore.binding()
+            val candidate = (listOf(baseDirectory) + File(baseDirectory, "slots").listFiles().orEmpty().toList()).first { target ->
+                val stored = File(target, "descriptor.json")
+                stored.length() in 1..8192 && JSONObject(stored.readText()).optString("id") == UUID.fromString(id).toString()
+            }
+            selectDirectory(candidate, binding)
+            allowed()
+        }
+    }
     private val cloudStore by lazy { PrivateVaultCloudStore(context, app.drive, app.telegram) }
     val progress = MutableStateFlow<Pair<Long, Long>?>(null)
     val operation = MutableStateFlow("upload")
@@ -56,7 +164,7 @@ internal class PrivateVaultRepository(private val context: Context) {
     private val list = MutableStateFlow<List<PrivateVaultItem>>(emptyList())
     val items = list.asStateFlow()
     val unlocked = MutableStateFlow(false)
-    val exists: Boolean get() = descriptor.baseFile.exists()
+    val exists: Boolean get() = descriptor.baseFile.exists() || File(descriptor.baseFile.path + ".bak").exists()
 
     /** Switch storage only while locked; preserve the original unbound v1 Vault for its first owner. */
     suspend fun selectAccount() = withContext(Dispatchers.IO) {
@@ -66,44 +174,70 @@ internal class PrivateVaultRepository(private val context: Context) {
             check(app.telegram.accountId() == binding.first)
             val legacy = File(context.noBackupFilesDir, "private-vault-v1")
             val legacyDescriptor = AtomicFile(File(legacy, "descriptor.json"))
-            val useLegacy = if (legacyDescriptor.baseFile.exists()) {
-                check(legacyDescriptor.baseFile.length() in 1..8192)
-                val data = JSONObject(legacyDescriptor.openRead().use { it.readBytes().toString(Charsets.UTF_8) })
-                !data.has("cloudAccount") || data.getLong("cloudAccount") == binding.first && data.getString("cloudVault") == binding.second
+            fun boundSlots(base: File): List<Pair<File, JSONObject>> = File(base, "slots").listFiles().orEmpty().mapNotNull { target ->
+                runCatching {
+                    val file = File(target, "descriptor.json")
+                    check(file.length() in 1..8192)
+                    val data = JSONObject(file.readText())
+                    check(data.getLong("cloudAccount") == binding.first && data.getString("cloudVault") == binding.second)
+                    check(target.name == UUID.fromString(data.getString("id")).toString())
+                    target to data
+                }.getOrNull()
+            }.sortedByDescending { it.second.optLong("createdAt") }
+            val useLegacy = if (legacyDescriptor.baseFile.exists() || File(legacyDescriptor.baseFile.path + ".bak").exists()) {
+                val data = legacyDescriptor.openRead().use {
+                    check(legacyDescriptor.baseFile.length() in 1..8192)
+                    JSONObject(it.readBytes().toString(Charsets.UTF_8))
+                }
+                if (!data.has("cloudAccount")) {
+                    val assignment = "legacy-owner:${UUID.fromString(data.getString("id"))}"
+                    val existingOwner = selection.getString(assignment, null)
+                    if (existingOwner == null) selection.edit().putString(assignment, scopeName(binding)).commit()
+                    existingOwner == null || existingOwner == scopeName(binding)
+                } else {
+                    data.getLong("cloudAccount") == binding.first && data.getString("cloudVault") == binding.second
+                }
             } else {
-                false
+                boundSlots(legacy).isNotEmpty()
             }
             val target = if (useLegacy) legacy else File(context.noBackupFilesDir, "private-vault-cloud-v2/${binding.first}-${UUID.fromString(binding.second)}")
-            lock()
-            directory = target.apply {
+            baseDirectory = target.apply {
                 mkdirs()
                 listFiles().orEmpty().filter { it.extension == "upload" }.forEach { it.delete() }
             }
-            descriptor = AtomicFile(File(directory, "descriptor.json"))
-            expectedBinding = null
-            if (exists) descriptorData()
+            val slots = boundSlots(baseDirectory)
+            val baseFile = File(baseDirectory, "descriptor.json")
+            val baseId = if (baseFile.isFile) JSONObject(baseFile.readText()).getString("id") else null
+            val selected = VaultDirectoryPolicy.choose(selection.getString(scopeName(binding), ""), baseId, slots.map { it.second.getString("id") })
+            val preferred = slots.firstOrNull { it.second.getString("id") == selected }?.first
+            selectDirectory(preferred ?: target, binding)
             allowed()
         }
     }
     private fun b64(bytes: ByteArray) = Base64.encodeToString(bytes, Base64.NO_WRAP)
     private fun decode(text: String) = Base64.decode(text, Base64.NO_WRAP)
-    private fun descriptorData(): JSONObject {
+    private fun descriptorData(): JSONObject = descriptor.openRead().use {
         check(descriptor.baseFile.length() in 1..8192)
-        return JSONObject(descriptor.openRead().use { it.readBytes().toString(Charsets.UTF_8) }).also {
-            check(it.getInt("version") == 1)
-            expectedBinding = if (it.has("cloudAccount")) it.getLong("cloudAccount") to it.getString("cloudVault") else null
-        }
+        JSONObject(it.readBytes().toString(Charsets.UTF_8))
+    }.also {
+        check(it.getInt("version") == 1)
+        expectedBinding = if (it.has("cloudAccount")) it.getLong("cloudAccount") to it.getString("cloudVault") else null
     }
     private fun allowed() {
         app.protection.requireAllowed()
         check(app.telegram.authorization.value.stage == AuthProtocol.State.READY) { "Sign in to Telegram first" }
         expectedBinding?.let { check(cloudStore.binding() == it) { "Open the matching Telegram account and Photos vault" } }
+        expectedBinding?.let { binding ->
+            check(app.forgottenVaults.tickets.value.none { it.account == binding.first && it.photos == binding.second && it.privateVault == selectedIdentity && it.phase in setOf("STARTED", "DONE") }) { "This Private Vault is being permanently deleted" }
+        }
         check(!(context.getSystemService(Context.KEYGUARD_SERVICE) as android.app.KeyguardManager).isDeviceLocked)
     }
 
     fun lock() {
         synchronized(this) {
             generation++
+            selectedName.value = ""
+            choicesMutable.value = choicesMutable.value.map { choice -> choice.copy(name = VaultNames.display("", choice.createdAt, java.time.ZoneId.systemDefault(), choice.id)) }
             master?.fill(0)
             master = null
             vault = null
@@ -151,12 +285,16 @@ internal class PrivateVaultRepository(private val context: Context) {
     suspend fun discover() = withContext(Dispatchers.IO) {
         mutex.withLock {
             allowed()
-            if (!exists) {
-                cloudStore.discoverRoot()?.let { data ->
-                    check(data.getInt("version") == 1)
-                    write(descriptor, data.toString().toByteArray())
-                }
+            val binding = cloudStore.binding()
+            val roots = cloudStore.discoverRoots()
+            for (data in roots) {
+                val id = UUID.fromString(data.getString("id")).toString()
+                val current = if (exists) descriptorData().getString("id") else ""
+                val target = if (current == id) descriptor else AtomicFile(File(baseDirectory, "slots/$id/descriptor.json").apply { parentFile!!.mkdirs() })
+                write(target, data.toString().toByteArray())
             }
+            if (!exists && roots.isNotEmpty()) selectDirectory(File(baseDirectory, "slots/${roots.first().getString("id")}"), binding)
+            localChoices()
         }
     }
     private fun verifiedPassword(key: ByteArray, id: UUID, password: CharArray) {
@@ -508,12 +646,16 @@ internal class PrivateVaultRepository(private val context: Context) {
             privateKey.fill('\u0000')
         }
     }
-    suspend fun create(password: CharArray): String = withContext(Dispatchers.IO) {
+    var replacementDeletionPending: Boolean = false
+        private set
+    suspend fun create(password: CharArray, requestedName: String = "", replacement: Boolean = false): String = withContext(Dispatchers.IO) {
+        replacementDeletionPending = false
         try {
             mutex.withLock {
-                check(!exists)
+                check(!exists || replacement)
                 allowed()
                 val epoch = synchronized(this@PrivateVaultRepository) { generation }
+                val replacedId = if (replacement && exists) descriptorData().getString("id") else null
                 check(NewPasswordPolicy.accepts(password))
                 val key = VaultCrypto.randomKey()
                 val id = UUID.randomUUID()
@@ -522,15 +664,28 @@ internal class PrivateVaultRepository(private val context: Context) {
                     val phrase = RecoveryEnvelope.rewrap(key, password, context(id))
                     val offline = RecoveryEnvelope.rewrap(key, recovery.toCharArray(), context(id))
                     val binding = cloudStore.binding()
+                    val createdAt = System.currentTimeMillis()
+                    val name = VaultNames.forCreation(requestedName, createdAt, java.time.ZoneId.systemDefault(), id.toString()).toByteArray()
                     val data = JSONObject().put("version", 1).put("id", id.toString()).put("salt", b64(phrase.salt())).put("wrapped", b64(phrase.wrapped()))
                         .put("cloudAccount", binding.first).put("cloudVault", binding.second)
                         .put("recoveryDisplay", b64(VaultCrypto.seal(key, recovery.toByteArray(), "TGPhotos/private-vault/recovery-display/v1/$id".toByteArray())))
                         .put("recoverySalt", b64(offline.salt())).put("recoveryWrapped", b64(offline.wrapped()))
-                    write(descriptor, data.toString().toByteArray())
+                    try {
+                        data.put("createdAt", createdAt).put("sealedName", b64(VaultCrypto.seal(key, name, "TGPhotos/private-vault/name/v1/$id".toByteArray())))
+                    } finally {
+                        name.fill(0)
+                    }
+                    val target = if (replacement) File(baseDirectory, "slots/$id") else directory
+                    val targetDescriptor = AtomicFile(File(target, "descriptor.json").apply { parentFile!!.mkdirs() })
                     cloudStore.publishRoot(data)
+                    write(targetDescriptor, data.toString().toByteArray())
                     // Never expose a key whose creation finished after the screen left the foreground.
                     check(generation == epoch)
                     allowed()
+                    selectDirectory(target, binding)
+                    if (replacedId != null) {
+                        replacementDeletionPending = runCatching { app.forgottenVaults.queueReplacement(binding.first, binding.second, replacedId) }.isFailure
+                    }
                     // Creation stays locked until the user has copied and confirmed their recovery key.
                     recovery
                 } finally {
@@ -605,7 +760,8 @@ internal class PrivateVaultRepository(private val context: Context) {
                 var content = emptyList<PrivateVaultItem>()
                 var installed = false
                 try {
-                    val id = UUID.fromString(descriptorData().getString("id"))
+                    val data = descriptorData()
+                    val id = UUID.fromString(data.getString("id"))
                     content = readItems(key)
                     synchronized(this@PrivateVaultRepository) {
                         allowed()
@@ -615,8 +771,10 @@ internal class PrivateVaultRepository(private val context: Context) {
                         vault = id
                         list.value = content
                         unlocked.value = true
+                        selectedName.value = decodedName(key, data, id)
                         installed = true
                     }
+                    localChoices()
                 } finally {
                     if (!installed) content.forEach { it.wipe() }
                     key.fill(0)
@@ -652,9 +810,13 @@ internal class PrivateVaultRepository(private val context: Context) {
                         key = VaultCrypto.open(derived, decode(data.getString(if (recovery) "recoveryWrapped" else "wrapped")), context(id))
                     }
                     check(key.size == 32)
+                    // Only authenticated envelope failures count as incorrect credentials.
+                    failures = 0
+                    retryAfter = 0
+                    localChoices()
                     content = readItems(key)
                     // Remove the former phone-only bypass only after successful password/key authentication.
-                    DeviceVaultKey(context).erase(-17L, id.toString())
+                    runCatching { DeviceVaultKey(context).erase(-17L, id.toString()) }
                     synchronized(this@PrivateVaultRepository) {
                         allowed()
                         check(generation == epoch) { "Unlock cancelled because the app left the foreground." }
@@ -663,13 +825,17 @@ internal class PrivateVaultRepository(private val context: Context) {
                         vault = id
                         list.value = content
                         unlocked.value = true
+                        selectedName.value = decodedName(key, data, id)
                         installed = true
                     }
                     failures = 0
                     retryAfter = 0
+                    localChoices()
                 } catch (e: Exception) {
-                    failures++
-                    if (failures >= 3) retryAfter = android.os.SystemClock.elapsedRealtime() + 30_000
+                    if (key == null && e is java.security.GeneralSecurityException) {
+                        failures++
+                        if (failures >= 3) retryAfter = android.os.SystemClock.elapsedRealtime() + 30_000
+                    }
                     throw e
                 } finally {
                     if (!installed) content.forEach { it.wipe() }

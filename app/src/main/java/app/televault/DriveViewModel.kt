@@ -23,9 +23,21 @@ import kotlinx.coroutines.launch
 
 class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
     val state = repository.state
+    val cloudRestore = repository.cloudRestore
+    val vaultChoices = repository.vaultChoices
+    val selectedVaultId: String get() = repository.selectedVaultId
+    fun newVaultName() = repository.newVaultName()
+    fun beginNewVault() = action { repository.beginNewVault() }
+    fun selectVault(id: String) = action { repository.selectVault(id) }
+    fun findOtherVaults() = action { repository.findOtherVaults() }
+    fun beginPhotoLoad(id: String): Long = repository.photoPriority.begin(id)
+    fun finishPhotoLoad(token: Long) = repository.photoPriority.ready(token)
+    suspend fun awaitPhotoLoad(id: String) = repository.photoPriority.await(id)
+
+    private val hiddenTransferPhases = setOf("WAITING", "COMPLETE", "CANCELLED")
 
     // Progress collectors live in small transfer components, not the album grid/player tree.
-    val contentState = state.map { value -> value.copy(indexLoading = value.indexLoading && !value.indexLoaded, transfers = value.transfers.filter { it.phase !in setOf("WAITING", "COMPLETE", "CANCELLED") && !app.televault.domain.ActivityProgress.active(it.phase) }.map { it.copy(progress = 0, total = 0) }, syncProgress = null, deviceCopyProgress = value.deviceCopyProgress?.copy(completed = 0, total = 0)) }.distinctUntilChanged().flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, state.value)
+    val contentState = state.map { value -> value.copy(indexLoading = value.indexLoading && !value.indexLoaded, transfers = value.transfers.filter { it.phase !in hiddenTransferPhases && !app.televault.domain.ActivityProgress.active(it.phase) }.map { it.copy(progress = 0, total = 0) }, syncProgress = null, deviceCopyProgress = value.deviceCopyProgress?.copy(completed = 0, total = 0)) }.distinctUntilChanged().flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, state.value)
     internal val backupBadgeTimes = state.map { it.files to it.backedDeviceFiles }.distinctUntilChanged().map { (files, links) ->
         val times = files.associate { it.id to it.backedUpAt }
         times + links.mapValues { times[it.value] ?: 0L }
@@ -234,9 +246,9 @@ class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
     }
     fun passwordManagerAccountFor(secret: CharArray): String = passwordManagerAccount + if (app.televault.crypto.RecoveryCredentials.kind(secret) == app.televault.crypto.RecoveryCredentials.Kind.PATTERN) " · App pattern" else ""
     val passwordManagerAccount: String get() = repository.passwordManagerAccount()
-    fun create(phrase: CharArray, finished: (Boolean) -> Unit = {}) = action {
+    fun create(phrase: CharArray, name: String = "", finished: (Boolean) -> Unit = {}) = action {
         try {
-            finished(repository.create(phrase))
+            finished(repository.create(phrase, name))
         } finally {
             phrase.fill('\u0000')
         }

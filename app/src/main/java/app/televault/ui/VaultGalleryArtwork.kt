@@ -26,11 +26,10 @@ private val vaultArtworkReads = Semaphore(2)
 
 /** Visible-cell RAM only, wiped on disposal. Never writes a Vault thumbnail to disk. */
 @Composable
-internal fun VaultGalleryArtwork(item: PrivateVaultItem, uri: Uri) {
+internal fun VaultGalleryArtwork(item: PrivateVaultItem, uri: Uri, contentScale: ContentScale = ContentScale.Crop) {
     val context = LocalContext.current
     val pixels = remember(item.id) { AtomicReference<Bitmap?>() }
     var image by remember(item.id) { mutableStateOf<Bitmap?>(null) }
-    var loading by remember(item.id) { mutableStateOf(item.mime.startsWith("image/")) }
     LaunchedEffect(item.id) {
         if (item.mime.startsWith("image/")) {
             var delivered = false
@@ -55,7 +54,6 @@ internal fun VaultGalleryArtwork(item: PrivateVaultItem, uri: Uri) {
                         it.recycle()
                     }
                 }
-                loading = false
             }
         }
     }
@@ -70,8 +68,7 @@ internal fun VaultGalleryArtwork(item: PrivateVaultItem, uri: Uri) {
     }
     val colors = MaterialTheme.colorScheme
     Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(mediaAccentContainer(item.mime), colors.surfaceContainerHigh))), contentAlignment = Alignment.Center) {
-        image?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
+        image?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = contentScale) }
             ?: Icon(if (item.mime.startsWith("video/")) Icons.Outlined.PlayCircle else mediaTypeIcon(item.mime), null, Modifier.size(46.dp), tint = mediaAccent(item.mime))
-        if (loading) CircularProgressIndicator(Modifier.align(Alignment.BottomStart).padding(12.dp).size(18.dp), strokeWidth = 2.dp)
     }
 }

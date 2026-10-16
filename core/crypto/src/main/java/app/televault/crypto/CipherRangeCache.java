@@ -214,6 +214,28 @@ public final class CipherRangeCache {
     public void markPlaybackWindow(String group,long position) {
         if(position>=0)playbackWindows.put(name(group,-1),position);
     }
+    /** Remove one retired object's disposable blocks without invalidating another viewer. */
+    public synchronized void removeGroup(String group)throws IOException {
+        String hash=name(group,-1);
+        File[] files=directory.listFiles();
+        if(files!=null)for(File receipt:files) {
+            if(!AGE_NAME.matcher(receipt.getName()).matches() || receipt.length()!=82)continue;
+            boolean belongs;
+            try(DataInputStream input=new DataInputStream(new FileInputStream(receipt))) {
+                input.readLong();belongs=hash.equals(input.readUTF());input.readLong();
+            }
+            if(!belongs)continue;
+            String stem=receipt.getName().substring(0,receipt.getName().length()-4);
+            if(gates.containsKey(stem))throw new IOException("Retired media still has an active reader");
+            File block=new File(directory,stem+".bin");long bytes=block.length();
+            if(block.exists() && !block.delete())throw new IOException("Cannot remove retired ciphertext");
+            cachedBytes=Math.max(0,cachedBytes-bytes);
+            if(receipt.exists() && !receipt.delete())throw new IOException("Cannot remove retired receipt");
+        }
+        File policy=policyFile(hash);
+        if(policy.exists() && !policy.delete())throw new IOException("Cannot remove retired expiry");
+        policies.remove(hash);playbackWindows.remove(hash);windowPruned.remove(hash);
+    }
     public synchronized void playbackWindow(String group,long position) {
         if(position<0)return;
         String hash=name(group,-1);playbackWindows.put(hash,position);

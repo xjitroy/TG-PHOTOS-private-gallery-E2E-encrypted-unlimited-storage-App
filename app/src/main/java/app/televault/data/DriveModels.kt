@@ -35,6 +35,7 @@ data class WorkProgress(val name: String, val completed: Long, val total: Long)
 data class DeviceCleanupRequest(val id: String, val uri: String, val fingerprint: String, val origin: String)
 data class BackedDeviceCopy(val local: LocalMedia, val cloudId: String)
 data class DriveSnapshot(
+    val vaultId: String = "",
     val indexLoaded: Boolean = false,
     val indexLoading: Boolean = false,
     val indexFailed: Boolean = false,

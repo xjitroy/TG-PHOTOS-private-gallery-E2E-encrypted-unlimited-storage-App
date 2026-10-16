@@ -13,6 +13,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.*
@@ -400,14 +401,17 @@ fun DriveScreen(model: DriveViewModel, dynamicColor: Boolean, changeDynamicColor
 internal fun VaultForm(state: DriveSnapshot, model: DriveViewModel, unlocked: ((Boolean) -> Unit)? = null) {
     val passwordContext = LocalContext.current
     val passwordScope = rememberCoroutineScope()
-    var phrase by remember(state.stage) { mutableStateOf("") }
-    var confirm by remember(state.stage) { mutableStateOf("") }
+    var phrase by remember(state.stage, state.vaultId) { mutableStateOf("") }
+    var confirm by remember(state.stage, state.vaultId) { mutableStateOf("") }
     var acknowledged by remember { mutableStateOf(false) }
     val create = state.stage == VaultStage.CREATE
+    val choices by model.vaultChoices.collectAsStateWithLifecycle()
+    var vaultName by remember(create) { mutableStateOf(if (create) model.newVaultName() else "") }
     PasswordScreenProtection()
     Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Image(androidx.compose.ui.res.painterResource(app.televault.R.drawable.tg_photos_logo), null, Modifier.size(48.dp))
+            ForgottenVaultManager()
             Text("TG Photos", style = MaterialTheme.typography.titleLarge)
             Text("Private Gallery & Encrypted | Unlimited Storage", style = MaterialTheme.typography.labelSmall)
             Text(words("Your files. Your keys.", "আপনার ফাইল। আপনার কী।"), style = MaterialTheme.typography.titleMedium)
@@ -426,6 +430,15 @@ internal fun VaultForm(state: DriveSnapshot, model: DriveViewModel, unlocked: ((
                 Text(words("Finding your encrypted Drive…", "আপনার এনক্রিপ্টেড Drive খোঁজা হচ্ছে…"))
             }
             if (state.stage in setOf(VaultStage.CREATE, VaultStage.LOCKED, VaultStage.RECOVER)) {
+                if (choices.isNotEmpty()) {
+                    Text(words("Your vaults", "আপনার ভল্টগুলি"), style = MaterialTheme.typography.titleSmall)
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        choices.forEach { choice ->
+                            FilterChip(selected = !create && choice.id == model.selectedVaultId, onClick = { model.selectVault(choice.id) }, enabled = !state.busy, label = { Text(choice.name, maxLines = 1) })
+                        }
+                    }
+                }
+                if (create) OutlinedTextField(vaultName, { vaultName = app.televault.domain.VaultNames.clean(it) }, Modifier.fillMaxWidth(), label = { Text(words("Vault name (optional)", "ভল্টের নাম (ঐচ্ছিক)")) }, singleLine = true)
                 OutlinedTextField(model.passwordManagerAccount, {}, Modifier.fillMaxWidth().semantics { contentType = ContentType.Username }, label = { Text(words("Password Manager account", "Password Manager অ্যাকাউন্ট")) }, readOnly = true, singleLine = true)
                 Text(words("Your password manager may offer to save or fill this phrase. Saving requires its permission; keep an offline recovery copy too.", "Password Manager পাসফ্রেজ সেভ বা পূরণ করার প্রস্তাব দিতে পারে। তার অনুমতি দরকার; অফলাইন রিকভারি কপিও রাখুন।"), style = MaterialTheme.typography.bodySmall)
                 VaultSecretField(phrase, { phrase = it }, words("Recovery password", "রিকভারি পাসওয়ার্ড"), enabled = !state.busy, newPassword = create, fixedPattern = if (create || !state.patternRecoveryAvailable) false else null)
@@ -451,7 +464,12 @@ internal fun VaultForm(state: DriveSnapshot, model: DriveViewModel, unlocked: ((
                     }
                 }
             }
-            if (state.notice.isNotBlank()) Text(words(state.notice, "ভল্ট খোলা যায়নি। পাসফ্রেজ ও সংযোগ যাচাই করে আবার চেষ্টা করুন।"), color = MaterialTheme.colorScheme.error)
+            if (!create && state.stage in setOf(VaultStage.LOCKED, VaultStage.RECOVER)) {
+                TextButton({ model.beginNewVault() }, enabled = !state.busy) { Text(words("Forgot password? Create a new vault", "পাসওয়ার্ড ভুলে গেছেন? নতুন ভল্ট তৈরি করুন")) }
+                TextButton({ model.findOtherVaults() }, enabled = !state.busy) { Text(words("Find my other vaults in Telegram", "Telegram-এ অন্য ভল্টগুলি খুঁজুন")) }
+                ForgottenVaultStatus(state.vaultId, targetName = choices.firstOrNull { it.id == state.vaultId }?.name.orEmpty(), showPending = false)
+            }
+            if (state.notice.isNotBlank()) Text(state.notice, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (state.stage == VaultStage.ERROR) Button({ model.discover() }) { Text(words("Retry discovery", "আবার খুঁজুন")) }
         }
         if (state.stage in setOf(VaultStage.CREATE, VaultStage.LOCKED, VaultStage.RECOVER)) {
@@ -459,7 +477,7 @@ internal fun VaultForm(state: DriveSnapshot, model: DriveViewModel, unlocked: ((
                 val value = phrase.toCharArray()
                 if (create) {
                     val toSave = value.copyOf()
-                    val task = model.create(value) { success ->
+                    val task = model.create(value, vaultName) { success ->
                         if (success) {
                             app.televault.security.VaultPasswordManager.offerSave(passwordContext, model.passwordManagerAccount, toSave, model::report)
                         } else {

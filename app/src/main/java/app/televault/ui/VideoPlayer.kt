@@ -148,10 +148,6 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
     var playerError by remember { mutableStateOf("") }
     var buffering by remember { mutableStateOf(true) }
     var showBuffering by remember(uri) { mutableStateOf(false) }
-    LaunchedEffect(buffering, uri) {
-        if (buffering) delay(500)
-        showBuffering = buffering
-    }
     LaunchedEffect(fullscreenExit) { if (fullscreenExit > 0 && !short) fullscreen = false }
     BackHandler(fullscreen && !short) { fullscreen = false }
     var settings by remember { mutableStateOf(false) }
@@ -162,6 +158,14 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
     val actionsBottom by animateDpAsState(if (controls) 170.dp else 54.dp, tween(180), label = "Short action position")
     var playbackPosition by remember { mutableLongStateOf(0) }
     var duration by remember { mutableLongStateOf(0) }
+    val indicatorAllowed = app.televault.domain.MediaLoadingPolicy.mayShowIndicator(current.mime, maxOf(duration, current.cloud?.facts?.durationMs ?: current.local?.durationMs ?: 0L))
+    LaunchedEffect(buffering, uri, indicatorAllowed) {
+        showBuffering = false
+        if (buffering && indicatorAllowed) {
+            delay(app.televault.domain.MediaLoadingPolicy.VIDEO_INDICATOR_DELAY)
+            showBuffering = true
+        }
+    }
     var playing by remember { mutableStateOf(true) }
     var seekDraft by remember(uri) { mutableStateOf<Float?>(null) }
     var seekNotice by remember(uri) { mutableStateOf("") }
@@ -316,6 +320,7 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
                         (android.view.LayoutInflater.from(it).inflate(app.televault.R.layout.tgphotos_video_surface, null, false) as PlayerView).apply {
                             this.player = player
                             useController = false
+                            setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
                             controllerShowTimeoutMs = 6000
                             setShowNextButton(false)
                             setShowPreviousButton(false)
@@ -363,7 +368,7 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
                     }
                 )
                 UsageGuidance(model, "reels-swipe", wrongSwipes, "Swipe up or down for the next photo or video. Tap to show controls.", "পরের ছবি বা ভিডিওর জন্য উপরে বা নিচে সোয়াইপ করুন। কন্ট্রোল দেখতে ট্যাপ করুন।", Modifier.align(Alignment.BottomCenter).padding(horizontal = 20.dp, vertical = 110.dp))
-                if (showBuffering && current.local == null && playerError.isBlank()) Box(Modifier.align(Alignment.Center).clip(RoundedCornerShape(24.dp)).background(Color.Black.copy(alpha = .65f)).padding(10.dp)) { SecureLoader(Modifier.size(36.dp), bufferedPercent) }
+                if (showBuffering && current.local == null && playerError.isBlank()) Box(Modifier.align(Alignment.Center).clip(RoundedCornerShape(24.dp)).background(Color.Black.copy(alpha = .65f)).padding(10.dp)) { CircularProgressIndicator(Modifier.size(30.dp), strokeWidth = 2.dp) }
                 if (seekNotice.isNotBlank()) Text(seekNotice, Modifier.align(Alignment.Center).clip(RoundedCornerShape(16.dp)).background(Color.Black.copy(alpha = .65f)).padding(12.dp), color = Color.White, style = MaterialTheme.typography.labelLarge)
                 if (playerError.isNotBlank()) {
                     Surface(Modifier.align(Alignment.Center).padding(16.dp), shape = RoundedCornerShape(20.dp)) {

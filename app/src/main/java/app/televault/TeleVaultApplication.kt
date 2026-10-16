@@ -11,6 +11,7 @@ import app.televault.telegram.TelegramGateway
 class TeleVaultApplication : Application() {
     val motion by lazy { AppMotion(this) }
     internal val privateVault by lazy { app.televault.data.PrivateVaultRepository(this) }
+    internal val forgottenVaults by lazy { app.televault.data.ForgottenVaultDeletion(this) }
     val protection by lazy { app.televault.security.DeviceProtection(this) }
     private val driveLazy = lazy { DriveRepository(this, telegram, protection) }
     override fun onCreate() {
@@ -26,6 +27,7 @@ class TeleVaultApplication : Application() {
         }
         runCatching { app.televault.data.SharedMedia.schedule(this) }
         runCatching { app.televault.data.BackupScheduling.request(this) }
+        runCatching { forgottenVaults.scheduleRecovery() }
     }
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)

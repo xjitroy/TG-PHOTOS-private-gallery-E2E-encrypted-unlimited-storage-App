@@ -5,6 +5,7 @@ import android.os.Build
 import android.os.SystemClock
 import android.util.Base64
 import app.televault.domain.AuthProtocol
+import app.televault.domain.ForgottenVaultPolicy
 import app.televault.domain.OwnedCloudCaption
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -468,10 +469,12 @@ class TdlibTelegramGateway(context: Context, private val credentials: TelegramCr
         val size = verified.getJSONObject("content").getJSONObject("document").getJSONObject("document").getLong("size")
         check(size == file.length()) { "Remote byte count differs" }
         progress(size, size)
-        return RemoteDocument(chat, verified.getLong("id"), size, verified.optLong("date").coerceIn(0, Int.MAX_VALUE.toLong()) * 1000)
+        return RemoteDocument(chat, verified.getLong("id"), size, verified.optLong("date").coerceIn(0, Int.MAX_VALUE.toLong()) * 1000, marker)
     }
 
-    override suspend fun findDocuments(marker: String): List<RemoteDocument> {
+    override suspend fun findDocuments(marker: String): List<RemoteDocument> = searchDocuments(marker, Int.MAX_VALUE)
+    override suspend fun findNewestDocuments(marker: String, limit: Int): List<RemoteDocument> = searchDocuments(marker, limit.coerceIn(1, 70))
+    private suspend fun searchDocuments(marker: String, limit: Int): List<RemoteDocument> {
         require(marker.startsWith("TGDRIVE_V1_"))
         val chat = selfChat()
         val found = linkedMapOf<Long, RemoteDocument>()
@@ -492,15 +495,57 @@ class TdlibTelegramGateway(context: Context, private val credentials: TelegramCr
                 if ((marker.startsWith("TGDRIVE_V1_PRIVATE_ROOT:") || marker.startsWith("TGDRIVE_V1_FILE:PV2:")) && caption != marker) continue
                 val bytes = content.getJSONObject("document").getJSONObject("document").getLong("size")
                 val id = message.getLong("id")
-                found[id] = RemoteDocument(chat, id, bytes, message.optLong("date").coerceIn(0, Int.MAX_VALUE.toLong()) * 1000)
+                found[id] = RemoteDocument(chat, id, bytes, message.optLong("date").coerceIn(0, Int.MAX_VALUE.toLong()) * 1000, caption)
             }
             val next = page.optLong("next_from_message_id")
-            if (next == 0L) return found.values.toList()
+            if (next == 0L || found.size >= limit) return found.values.sortedByDescending { it.messageId }.take(limit)
             check(next != cursor && (cursor == 0L || next < cursor)) { "Archive cursor did not advance" }
             cursor = next
         }
     }
 
+    override suspend fun readLifecycleDocument(reference: RemoteDocument, marker: String): ByteArray {
+        require(ForgottenVaultPolicy.lifecycleMarker(marker) && reference.chatId == selfChat() && reference.bytes in 1..8192)
+        val message = checked(json("getMessage").put("chat_id", reference.chatId).put("message_id", reference.messageId))
+        check(message.isNull("sending_state") && message.optBoolean("is_outgoing") && message.optLong("edit_date") == 0L && message.isNull("forward_info"))
+        check(message.getLong("date") * 1000 == reference.confirmedAtMillis && reference.confirmedAtMillis > 0)
+        val content = message.getJSONObject("content")
+        check(content.getString("@type") == "messageDocument" && content.getJSONObject("caption").getString("text") == marker)
+        val document = content.getJSONObject("document").getJSONObject("document")
+        check(document.getLong("size") == reference.bytes)
+        documentIds[reference.chatId to reference.messageId] = document.getInt("id")
+        return readEncryptedDocumentPart(reference, 0, reference.bytes.toInt(), false, privateMarker = marker)
+    }
+    override suspend fun deleteLifecycleClock(reference: RemoteDocument, marker: String) {
+        require(marker.contains(":CLOCK:") && ForgottenVaultPolicy.lifecycleMarker(marker))
+        readLifecycleDocument(reference, marker).fill(0)
+        checked(json("deleteMessages").put("chat_id", selfChat()).put("message_ids", org.json.JSONArray(listOf(reference.messageId))).put("revoke", true))
+    }
+    override suspend fun deleteVaultNamespace(references: List<RemoteDocument>, photos: String, privateVault: String?) {
+        require(ForgottenVaultPolicy.validId(photos) && (privateVault == null || ForgottenVaultPolicy.validId(privateVault)))
+        val chat = selfChat()
+        val present = mutableListOf<Long>()
+        val localFiles = mutableSetOf<Int>()
+        for (reference in references) {
+            require(reference.chatId == chat)
+            val message = request(json("getMessage").put("chat_id", chat).put("message_id", reference.messageId))
+            if (message.optString("@type") == "error" && message.optInt("code") == 404) continue
+            check(message.optString("@type") == "message" && message.isNull("sending_state"))
+            val content = message.getJSONObject("content")
+            check(content.getString("@type") == "messageDocument")
+            check(ForgottenVaultPolicy.owns(content.getJSONObject("caption").getString("text"), photos, privateVault))
+            check(content.getJSONObject("document").getJSONObject("document").getLong("size") == reference.bytes)
+            localFiles += content.getJSONObject("document").getJSONObject("document").getInt("id")
+            present += reference.messageId
+        }
+        for (batch in present.chunked(100)) checked(json("deleteMessages").put("chat_id", chat).put("message_ids", org.json.JSONArray(batch)).put("revoke", true))
+        for (id in localFiles) {
+            checked(json("deleteFile").put("file_id", id))
+            nativeStreamRetirements.edit().remove("$selfChatId/$id").commit()
+            nativeRetainedBytes.remove(id)
+            documentIds.entries.removeAll { it.value == id }
+        }
+    }
     override suspend fun deleteOwnedDocuments(references: List<RemoteDocument>, ownerMarker: String) {
         require(ownerMarker.startsWith(":"))
         val chat = selfChat()
@@ -614,8 +659,9 @@ class TdlibTelegramGateway(context: Context, private val credentials: TelegramCr
         return readEncryptedDocumentPart(reference, offset, count, false, access, marker)
     }
     override suspend fun readDocumentPart(reference: RemoteDocument, offset: Long, count: Int): ByteArray = readEncryptedDocumentPart(reference, offset, count, true)
-    private suspend fun readEncryptedDocumentPart(reference: RemoteDocument, offset: Long, count: Int, allowRetention: Boolean, access: () -> Unit = {}, privateMarker: String = ""): ByteArray = usingNativeStorage { readEncryptedDocumentPartRetained(reference, offset, count, allowRetention, access, privateMarker) }
-    private suspend fun readEncryptedDocumentPartRetained(reference: RemoteDocument, offset: Long, count: Int, allowRetention: Boolean, access: () -> Unit, privateMarker: String): ByteArray {
+    override suspend fun readSpeculativeDocumentPart(reference: RemoteDocument, offset: Long, count: Int): ByteArray = readEncryptedDocumentPart(reference, offset, count, true, priority = 4)
+    private suspend fun readEncryptedDocumentPart(reference: RemoteDocument, offset: Long, count: Int, allowRetention: Boolean, access: () -> Unit = {}, privateMarker: String = "", priority: Int = 32): ByteArray = usingNativeStorage { readEncryptedDocumentPartRetained(reference, offset, count, allowRetention, access, privateMarker, priority) }
+    private suspend fun readEncryptedDocumentPartRetained(reference: RemoteDocument, offset: Long, count: Int, allowRetention: Boolean, access: () -> Unit, privateMarker: String, priority: Int): ByteArray {
         require(reference.chatId == selfChat() && offset >= 0 && count in 1..(2 * 1024 * 1024) && offset <= reference.bytes - count)
         val identity = reference.chatId to reference.messageId
         val id = documentIds[identity] ?: run {
@@ -639,7 +685,7 @@ class TdlibTelegramGateway(context: Context, private val credentials: TelegramCr
                     prefix = { checked(json("getFileDownloadedPrefixSize").put("file_id", id).put("offset", offset)).getLong("size") },
                     localFile = { checked(json("getFile").put("file_id", id)).getJSONObject("local").optString("path").takeIf { it.isNotBlank() }?.let(::File) },
                     download = {
-                        checked(json("downloadFile").put("file_id", id).put("priority", 32).put("offset", offset).put("limit", count).put("synchronous", false))
+                        checked(json("downloadFile").put("file_id", id).put("priority", priority.coerceIn(1, 32)).put("offset", offset).put("limit", count).put("synchronous", false))
                         Unit
                     },
                     access = access

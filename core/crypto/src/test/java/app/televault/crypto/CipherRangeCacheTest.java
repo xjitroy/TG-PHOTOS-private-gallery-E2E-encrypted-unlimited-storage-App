@@ -199,4 +199,19 @@ public class CipherRangeCacheTest {
   cache=new CipherRangeCache(dir.toFile(),1048576,now::get);cache.read("part",4,0,4,true,false,"file",0,fetch);assertEquals(2,calls.get());
   cache.clear();assertEquals(0,dir.toFile().list().length);Files.delete(dir);
  }
+ @Test public void retiringOneObjectKeepsAnotherVaultsCachedPhoto()throws Exception {
+  var directory=Files.createTempDirectory("cipher-retired-scope");
+  long now=System.currentTimeMillis();var cache=new CipherRangeCache(directory.toFile(),4*1024*1024,()->now);
+  byte[] a={1,2,3,4},b={5,6,7,8};var readsA=new AtomicInteger();var readsB=new AtomicInteger();
+  try {
+   cache.retain("owner/old/object",now+CipherRangeCache.TTL);cache.retain("owner/current/object",now+CipherRangeCache.TTL);
+   cache.read("owner/old/object/part",4,0,4,true,true,"owner/old/object",-1,(o,n)->{readsA.incrementAndGet();return a.clone();});
+   cache.read("owner/current/object/part",4,0,4,true,true,"owner/current/object",-1,(o,n)->{readsB.incrementAndGet();return b.clone();});
+   cache.removeGroup("owner/old/object");
+   assertArrayEquals(b,cache.read("owner/current/object/part",4,0,4,true,true,"owner/current/object",-1,(o,n)->{readsB.incrementAndGet();return b.clone();}));
+   assertEquals(1,readsB.get());
+   assertArrayEquals(a,cache.read("owner/old/object/part",4,0,4,true,true,"owner/old/object",-1,(o,n)->{readsA.incrementAndGet();return a.clone();}));
+   assertEquals(2,readsA.get());
+  }finally{cache.clear();Files.delete(directory);}
+ }
 }

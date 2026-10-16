@@ -29,6 +29,7 @@ import app.televault.domain.BackupIdentity
 import app.televault.domain.CaptureTime
 import app.televault.domain.DeviceBackupFolder
 import app.televault.domain.DeviceFileVisibility
+import app.televault.domain.ForgottenVaultPolicy
 import app.televault.domain.LibraryPath
 import app.televault.domain.LocalBackupReceipts
 import app.televault.domain.MediaBackupPolicy
@@ -37,6 +38,7 @@ import app.televault.domain.PasswordAttempts
 import app.televault.domain.ProfileIdentity
 import app.televault.domain.TrashCooldown
 import app.televault.domain.UploadQueuePolicy
+import app.televault.domain.VaultNames
 import app.televault.domain.VaultScope
 import app.televault.domain.VideoPresentation
 import app.televault.telegram.RemoteDocument
@@ -68,6 +70,14 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
     private val deviceKey = DeviceVaultKey(app)
     private val mutable = MutableStateFlow(DriveSnapshot())
     val state = mutable.asStateFlow()
+    private val restoreMutable = MutableStateFlow<CloudRestoreStatus?>(null)
+    val cloudRestore = restoreMutable.asStateFlow()
+    internal val photoPriority = PhotoLoadPriority()
+    private val vaultChoicesMutable = MutableStateFlow<List<VaultChoice>>(emptyList())
+    val vaultChoices = vaultChoicesMutable.asStateFlow()
+    val selectedVaultId: String get() = vault
+    private var pendingVaultId = UUID.randomUUID().toString()
+    fun newVaultName(): String = VaultNames.generated(System.currentTimeMillis(), java.time.ZoneId.systemDefault(), pendingVaultId)
     val preferences = PreferencesRepository(app)
     val guidanceScope: String get() = "$account:$vault"
     private val initialization = Mutex()
@@ -150,7 +160,46 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
     private fun decode(text: String) = Base64.decode(text, Base64.NO_WRAP)
     private fun context(kind: String, accountId: Long = account, vaultId: String = vault) = "TGDrive/v1/$accountId/$vaultId/$kind".toByteArray()
     private fun rootFile(id: Long) = AtomicFile(File(app.noBackupFilesDir, "drive-root-$id.json"))
+    private fun archivedRoot(owner: Long, id: String) = AtomicFile(File(app.noBackupFilesDir, "drive-roots/$owner/${UUID.fromString(id)}.json").apply { parentFile!!.mkdirs() })
+    private fun archiveRoot(data: JSONObject, owner: Long) {
+        val file = archivedRoot(owner, validateRoot(data, owner))
+        val output = file.startWrite()
+        try {
+            output.write(data.toString().toByteArray())
+            file.finishWrite(output)
+        } catch (failure: Exception) {
+            file.failWrite(output)
+            throw failure
+        }
+    }
+    private fun localVaultChoices() {
+        val roots = File(app.noBackupFilesDir, "drive-roots/$account").listFiles().orEmpty().filter { it.extension == "json" }
+        vaultChoicesMutable.value = roots.mapNotNull { stored ->
+            runCatching {
+                check(stored.length() in 1..65536)
+                val data = JSONObject(AtomicFile(stored).openRead().use { it.bufferedReader().readText() })
+                val id = validateRoot(data, account)
+                val created = data.optLong("createdAt")
+                var name = if (created > 0) VaultNames.generated(created, java.time.ZoneId.systemDefault(), id) else "TG Photos vault · ${id.take(8)}"
+                if (id == vault && master != null && data.has("sealedName")) {
+                    val key = unlockedKey()
+                    try {
+                        val plain = VaultCrypto.open(key, decode(data.getString("sealedName")), context("vault-name", account, id))
+                        try {
+                            name = VaultNames.clean(plain.toString(Charsets.UTF_8)).ifBlank { name }
+                        } finally {
+                            plain.fill(0)
+                        }
+                    } finally {
+                        key.fill(0)
+                    }
+                }
+                VaultChoice(id, name, created)
+            }.getOrNull()
+        }.sortedByDescending { it.createdAt }
+    }
     private fun saveRoot(descriptor: JSONObject, id: Long) {
+        archiveRoot(descriptor, id)
         val file = rootFile(id)
         val output = file.startWrite()
         try {
@@ -190,7 +239,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
             try {
                 val discoveredAccount = telegram.accountId()
                 val local = rootFile(discoveredAccount)
-                val descriptor = if (local.baseFile.exists()) {
+                val descriptor = if (local.baseFile.exists() || File(local.baseFile.path + ".bak").exists()) {
                     local.openRead().use { JSONObject(it.bufferedReader().readText().also { text -> check(text.length < 65536) }) }
                 } else {
                     val roots = telegram.findDocuments("TGDRIVE_V1_ROOT:")
@@ -208,8 +257,9 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
                     mutable.update { it.copy(stage = VaultStage.CREATE) }
                 } else {
                     saveRoot(descriptor, account)
-                    mutable.update { it.copy(stage = VaultStage.LOCKED, quickUnlockAvailable = deviceKey.available(account, vault), patternRecoveryAvailable = root?.let { it.optString("credentialKind", "UNKNOWN") != "PASSWORD" || it.has("alternateCredential") } == true) }
+                    mutable.update { it.copy(vaultId = vault, stage = VaultStage.LOCKED, quickUnlockAvailable = deviceKey.available(account, vault), patternRecoveryAvailable = root?.let { it.optString("credentialKind", "UNKNOWN") != "PASSWORD" || it.has("alternateCredential") } == true) }
                 }
+                localVaultChoices()
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
@@ -227,9 +277,57 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
         mutable.update { it.copy(notice = "Other Telegram sessions logged out. This app remains signed in.") }
     }
 
-    fun passwordManagerAccount(): String = "TG Photos vault $account"
+    fun passwordManagerAccount(): String = "TG Photos vault $account" + if (root?.optBoolean("separateCredential") == true) " · $vault" else ""
 
-    suspend fun create(phrase: CharArray): Boolean = withContext(Dispatchers.IO) {
+    suspend fun beginNewVault() = withContext(Dispatchers.IO) {
+        initialization.withLock {
+            protection.requireAllowed()
+            check(telegram.accountId() == account && activeWorkKeys.get() == 0 && !cloudSync.isLocked) { "Wait for active backup or restore to finish before changing vaults" }
+            root?.let { archiveRoot(it, account) }
+            lock()
+            root = null
+            pendingVaultId = UUID.randomUUID().toString()
+            mutable.update { it.copy(stage = VaultStage.CREATE, quickUnlockAvailable = false, notice = "Your existing vault remains available separately. The new vault uses an independent key.") }
+        }
+    }
+    suspend fun selectVault(id: String) = withContext(Dispatchers.IO) {
+        initialization.withLock {
+            protection.requireAllowed()
+            requireVaultUsable(account, id)
+            check(activeWorkKeys.get() == 0 && !cloudSync.isLocked && telegram.accountId() == account)
+            val file = archivedRoot(account, id)
+            check(file.baseFile.length() in 1..65536)
+            val data = JSONObject(file.openRead().use { it.bufferedReader().readText() })
+            check(validateRoot(data, account) == id)
+            lock()
+            root = data
+            vault = id
+            saveRoot(data, account)
+            localVaultChoices()
+            mutable.update { it.copy(vaultId = vault, stage = VaultStage.LOCKED, quickUnlockAvailable = deviceKey.available(account, vault)) }
+        }
+    }
+    suspend fun findOtherVaults() = withContext(Dispatchers.IO) {
+        initialization.withLock {
+            check(state.value.stage != VaultStage.READY && telegram.accountId() == account)
+            protection.requireAllowed()
+            val found = telegram.findDocuments("TGDRIVE_V1_ROOT:").sortedByDescending { it.messageId }.distinctBy { it.marker }
+            for (reference in found) {
+                check(reference.bytes in 1..65536)
+                val data = JSONObject(telegram.downloadDocument(reference) { _, _ -> }.readText())
+                val id = validateRoot(data, account)
+                check(reference.marker == "TGDRIVE_V1_ROOT:$id")
+                archiveRoot(data, account)
+                if (id == vault) {
+                    root = data
+                    saveRoot(data, account)
+                }
+            }
+            localVaultChoices()
+        }
+    }
+
+    suspend fun create(phrase: CharArray, requestedName: String = ""): Boolean = withContext(Dispatchers.IO) {
         protection.requireAllowed()
         var created = false
         val epoch = accessEpoch.get()
@@ -240,7 +338,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
             mutable.update { it.copy(busy = true, notice = "") }
             val key = VaultCrypto.randomKey()
             val salt = VaultCrypto.randomBytes(16)
-            vault = UUID.randomUUID().toString()
+            vault = pendingVaultId
             var derived: ByteArray? = null
             try {
                 derived = VaultCrypto.recoveryKey(phrase, salt)
@@ -248,6 +346,13 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
                     .put("kdf", "argon2id-m65536-t3-p1").put("salt", encode(salt))
                     .put("wrapped", encode(VaultCrypto.seal(derived, key, context("root"))))
                     .put("credentialKind", RecoveryCredentials.kind(phrase).name)
+                val createdAt = System.currentTimeMillis()
+                val name = VaultNames.forCreation(requestedName, createdAt, java.time.ZoneId.systemDefault(), vault).toByteArray()
+                try {
+                    descriptor.put("createdAt", createdAt).put("separateCredential", vaultChoicesMutable.value.isNotEmpty()).put("sealedName", encode(VaultCrypto.seal(key, name, context("vault-name"))))
+                } finally {
+                    name.fill(0)
+                }
                 val file = File(cache, "${UUID.randomUUID()}.bin")
                 try {
                     file.writeText(descriptor.toString())
@@ -258,21 +363,24 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
                 saveRoot(descriptor, account)
                 root = descriptor
                 protection.requireAllowed()
-                deviceKey.save(account, vault, key)
+                // A convenience wrapper failure is not a password failure. The verified
+                // master remains usable for this session; the next session may ask again.
+                val quickAccess = runCatching { deviceKey.save(account, vault, key) }.isSuccess
                 synchronized(this@DriveRepository) {
                     coroutineContext.ensureActive()
                     check(accessEpoch.get() == epoch) { "Setup request expired; recover the confirmed Drive" }
                     master = key.copyOf()
-                    mutable.update { it.copy(stage = VaultStage.READY, quickUnlockAvailable = true) }
+                    mutable.update { it.copy(vaultId = vault, stage = VaultStage.READY, quickUnlockAvailable = quickAccess) }
+                    created = true
                 }
                 migrateCameraBackups()
                 refreshLocal()
                 scheduleRetention()
-                created = true
+                localVaultChoices()
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
-                mutable.update { it.copy(notice = "Vault setup was interrupted. Retry discovery before creating another vault.", stage = VaultStage.ERROR) }
+                mutable.update { it.copy(notice = if (created) "Vault created and password accepted. Retry cloud sync to finish loading the library." else "Vault setup was interrupted. Retry discovery before creating another vault.", stage = if (created) VaultStage.READY else VaultStage.ERROR) }
             } finally {
                 key.fill(0)
                 derived?.fill(0)
@@ -286,6 +394,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
     suspend fun unlock(phrase: CharArray, syncAfter: Boolean = true): Boolean = withContext(Dispatchers.IO) {
         protection.requireAllowed()
         var verified = false
+        var credentialRejected = false
         val epoch = accessEpoch.get()
         initialization.withLock {
             mutable.update { it.copy(busy = true, notice = "") }
@@ -297,10 +406,12 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
                     return@withLock
                 }
                 val descriptor = checkNotNull(root)
+                requireVaultUsable(account, vault)
                 check(validateRoot(descriptor, account) == vault)
                 key = try {
                     RecoveryCredentials.open(phrase, primaryCredential(descriptor), alternateCredential(descriptor), context("root"))
                 } catch (e: java.security.GeneralSecurityException) {
+                    credentialRejected = true
                     passwordAttempts.failed()
                     throw e
                 }
@@ -308,21 +419,30 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
                 check(key.size == 32)
                 coroutineContext.ensureActive()
                 protection.requireAllowed()
-                deviceKey.save(account, vault, key)
+                val quickAccess = runCatching { deviceKey.save(account, vault, key) }.isSuccess
                 synchronized(this@DriveRepository) {
                     coroutineContext.ensureActive()
                     check(accessEpoch.get() == epoch) { "Unlock request expired" }
                     master?.fill(0)
                     master = key.copyOf()
-                    mutable.update { it.copy(stage = VaultStage.READY, quickUnlockAvailable = true) }
+                    mutable.update { it.copy(stage = VaultStage.READY, quickUnlockAvailable = quickAccess) }
                     verified = true
                 }
                 migrateCameraBackups()
                 refreshLocal()
+                localVaultChoices()
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
-                mutable.update { it.copy(notice = "Could not unlock. Check your recovery passphrase; no private data was opened.") }
+                mutable.update {
+                    it.copy(
+                        notice = when {
+                            credentialRejected -> "This password could not unlock the selected vault. Check the password and selected vault."
+                            verified -> "Password accepted. The local library could not finish loading; retry cloud sync."
+                            else -> "Vault initialization could not finish. Retry without closing the app; your password has not been marked incorrect."
+                        }
+                    )
+                }
             } finally {
                 derived?.fill(0)
                 key?.fill(0)
@@ -330,6 +450,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
                 mutable.update { it.copy(busy = false) }
             }
         }
+        if (verified) scheduleCloudRestore()
         if (verified && syncAfter) sync()
         verified
     }
@@ -432,6 +553,9 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
         val closing: List<AuthenticatedRecords>
         synchronized(this) {
             accessEpoch.incrementAndGet()
+            photoPriority.clear()
+            restoreMutable.value = null
+            vaultChoicesMutable.update { choices -> choices.map { it.copy(name = if (it.createdAt > 0) VaultNames.generated(it.createdAt, java.time.ZoneId.systemDefault(), it.id) else "TG Photos vault · ${it.id.take(8)}") } }
             PrivateMediaGrants.clear()
             closing = activeReaders.toList()
             activeReaders.clear()
@@ -455,7 +579,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
                 VaultStage.ERROR
             }
             // Never perform disk/Keystore IPC on the UI's immediate lock path. Unlock verifies it again.
-            mutable.value = DriveSnapshot(stage = nextStage, quickUnlockAvailable = state.value.quickUnlockAvailable, patternRecoveryAvailable = root?.let { it.optString("credentialKind", "UNKNOWN") != "PASSWORD" || it.has("alternateCredential") } == true, notice = if (nextStage == VaultStage.ERROR) "Drive discovery was interrupted. Retry discovery; no new Drive was created." else "")
+            mutable.value = DriveSnapshot(vaultId = vault, stage = nextStage, quickUnlockAvailable = state.value.quickUnlockAvailable, patternRecoveryAvailable = root?.let { it.optString("credentialKind", "UNKNOWN") != "PASSWORD" || it.has("alternateCredential") } == true, notice = if (nextStage == VaultStage.ERROR) "Drive discovery was interrupted. Retry discovery; no new Drive was created." else "")
         }
         kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch { closing.forEach { it.close() } }
         localMedia.clearCache()
@@ -489,8 +613,12 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
         }
     }
 
+    private fun requireVaultUsable(owner: Long, scope: String) {
+        check((app as app.televault.TeleVaultApplication).forgottenVaults.tickets.value.none { it.account == owner && it.photos == scope && it.privateVault == null && it.phase in setOf("STARTED", "DONE") }) { "This vault is being permanently deleted; choose another vault" }
+    }
     private fun unlockedKey() = synchronized(this) {
         protection.requireAllowed()
+        requireVaultUsable(account, vault)
         checkNotNull(master) { "Unlock the vault first" }.copyOf()
     }
     private fun openJson(key: ByteArray, sealed: ByteArray, aad: ByteArray): JSONObject {
@@ -775,6 +903,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
             }
             val syncKey = if (backgroundTask == null) unlockedKey() else backgroundKey(backgroundTask)
             key = syncKey
+            val firstRestore = state.value.files.isEmpty()
             publishUnlocked(epoch) { it.copy(busy = true, notice = "", syncProgress = WorkProgress("Syncing cloud", 0, 0)) }
             if (backgroundTask == null) {
                 recoveryRoots.withLock { cleanupRecoveryRoots() }
@@ -789,6 +918,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
                     }
                 }
             }
+            if (backgroundTask == null && firstRestore) restoreFirstScreen(syncKey, epoch)
             val remote = telegram.findDocuments("TGDRIVE_V1_FILE:$vault:").sortedBy { it.messageId }
             val allEvents = telegram.findDocuments("TGDRIVE_V1_EVENT:$vault:").sortedBy { it.messageId }
             val cursorId = "event-sync:$account:$vault"
@@ -811,20 +941,12 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
             val pending = remote.filter { it.messageId !in known }
             val total = pending.size.toLong() + events.size
             var done = 0L
-            fun progress() = publishUnlocked(epoch) { it.copy(syncProgress = WorkProgress("Syncing cloud", done, total)) }
-            progress()
-            for (reference in pending) {
-                coroutineContext.ensureActive()
-                check(reference.bytes <= 1024 * 1024)
-                val source = telegram.downloadDocument(reference) { _, _ -> }
-                val metadata = openJson(syncKey, source.readBytes(), context("manifest"))
-                metadata.put("catalogMessage", reference.messageId).put("backedUpAt", BackupBadge.completedAt(metadata.optLong("backedUpAt"), reference.confirmedAtMillis))
-                val value = file(metadata)
-                dao.put(row("file:${value.id}", "file", metadata, syncKey))
-                metadataCachePut("$account:$vault:${value.id}", value, epoch)
-                done++
-                progress()
+            fun progress() {
+                if (state.value.stage == VaultStage.READY && accessEpoch.get() == epoch) restoreMutable.value = CloudRestoreStatus("$account:$vault", done, total, firstRestore)
+                // Per-file progress has its own small collector. Do not re-project every
+                // queued backup and gallery item for each restored manifest.
             }
+            progress()
             val appliedEvents = dao.list(account, vault, "state").mapNotNull { row ->
                 runCatching { payload(row, syncKey).optLong("eventMessage").takeIf { it > 0 } }.getOrNull()
             }.toSet()
@@ -842,6 +964,21 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
                 done++
                 progress()
             }
+            // Apply deletion/state events before publishing any newly recovered media.
+            // Newest manifests paint the first screen while older thumbnails keep restoring.
+            for (reference in pending.asReversed()) {
+                coroutineContext.ensureActive()
+                check(reference.bytes <= 1024 * 1024)
+                val source = telegram.downloadDocument(reference) { _, _ -> }
+                val metadata = openJson(syncKey, source.readBytes(), context("manifest"))
+                metadata.put("catalogMessage", reference.messageId).put("backedUpAt", BackupBadge.completedAt(metadata.optLong("backedUpAt"), reference.confirmedAtMillis))
+                val value = file(metadata)
+                dao.put(row("file:${value.id}", "file", metadata, syncKey))
+                metadataCachePut("$account:$vault:${value.id}", value, epoch)
+                done++
+                progress()
+                if (state.value.stage == VaultStage.READY && accessEpoch.get() == epoch && (done == events.size.toLong() + 12 || (done - events.size) % 32 == 0L)) refreshLocal()
+            }
             events.maxOfOrNull { it.messageId }?.let { dao.put(row(cursorId, "event-sync", JSONObject().put("message", it), syncKey)) }
             // Written only after every authenticated manifest and state event has applied.
             // After reinstall the first upload must cross this barrier, even in a worker.
@@ -855,7 +992,146 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
         } finally {
             key?.let { if (backgroundTask == null) it.fill(0) else releaseWorkKey(it) }
             publishUnlocked(epoch) { it.copy(busy = false, syncProgress = null) }
+            if (accessEpoch.get() == epoch) restoreMutable.value = null
             cloudSync.unlock()
+        }
+    }
+
+    /** A bounded first page paints before enumerating every cloud file. Tombstones apply
+     * first, and the complete baseline barrier is still written only by the full sync. */
+    private suspend fun restoreFirstScreen(key: ByteArray, epoch: Long) = coroutineScope {
+        val latest = async { telegram.findNewestDocuments("TGDRIVE_V1_FILE:$vault:", 12) }
+        val changes = async { telegram.findDocuments("TGDRIVE_V1_EVENT:$vault:").sortedBy { it.messageId } }
+        val references = latest.await()
+        if (references.isEmpty()) {
+            changes.cancel()
+            return@coroutineScope
+        }
+        if (accessEpoch.get() == epoch) restoreMutable.value = CloudRestoreStatus("$account:$vault", 0, 0, true)
+        for (reference in changes.await()) {
+            ensureActive()
+            ensureKeyActive(key)
+            check(reference.bytes in 1..65536)
+            val source = telegram.downloadDocument(reference) { _, _ -> }
+            applyEvent(openJson(key, source.readBytes(), context("event")), reference.messageId, key)
+        }
+        for ((index, reference) in references.withIndex()) {
+            ensureActive()
+            ensureKeyActive(key)
+            check(accessEpoch.get() == epoch && reference.bytes in 1..1048576)
+            val source = telegram.downloadDocument(reference) { _, _ -> }
+            val data = openJson(key, source.readBytes(), context("manifest"))
+            data.put("catalogMessage", reference.messageId).put("backedUpAt", BackupBadge.completedAt(data.optLong("backedUpAt"), reference.confirmedAtMillis))
+            val item = file(data)
+            dao.put(row("file:${item.id}", "file", data, key))
+            metadataCachePut("$account:$vault:${item.id}", item, epoch)
+            if (index == 3 || index == references.lastIndex) refreshLocal()
+        }
+    }
+
+    private fun scheduleCloudRestore() {
+        val request = OneTimeWorkRequestBuilder<CloudRestoreWorker>().setInputData(workDataOf("account" to account, "vault" to vault))
+            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+            .setInitialDelay(20, TimeUnit.SECONDS).setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).build()
+        work.enqueueUniqueWork("tgphotos-cloud-restore:$account:$vault", ExistingWorkPolicy.KEEP, request)
+    }
+    internal suspend fun restoreCloudInBackground(owner: Long, scope: String) {
+        UUID.fromString(scope)
+        sync(
+            requireComplete = true,
+            backgroundTask = CacheRow().apply {
+                account = owner
+                vault = scope
+            }
+        )
+    }
+    internal suspend fun deleteForgottenPhotos(owner: Long, scope: String, access: suspend () -> Unit) = withContext(Dispatchers.IO) {
+        initialization.withLock {
+            protection.requireAllowed()
+            check(telegram.accountId() == owner && activeWorkKeys.get() == 0 && !cloudSync.isLocked) { "Wait for active vault work before deletion" }
+            if (account == owner && vault == scope) {
+                (app as app.televault.TeleVaultApplication).privateVault.lock()
+                lock()
+            }
+            val references = telegram.findDocuments("TGDRIVE_V1_").filter { ForgottenVaultPolicy.owns(it.marker, scope, null) }
+            for (batch in references.chunked(50)) {
+                access()
+                telegram.deleteVaultNamespace(batch, scope, null)
+            }
+            access()
+            retireForgottenPhotosFiles(owner, scope)
+        }
+    }
+    private suspend fun retireForgottenPhotosFiles(owner: Long, scope: String) {
+        (app as app.televault.TeleVaultApplication).privateVault.retireForgottenPhotosLocal(owner, scope)
+        dao.list(owner, scope, "job").forEach { work.cancelUniqueWork("transfer:${it.id}") }
+        dao.ids(owner, scope, "file").map { it.removePrefix("file:") }.forEach { id ->
+            UUID.fromString(id)
+            offlineStore.remove("$owner:$scope:$id")
+            streamCache.removeGroup("$owner/$scope/$id")
+            val cipher = File(encryptedCache, "$id.bin")
+            check(!cipher.exists() || cipher.delete())
+        }
+        dao.removeVault(owner, scope)
+        archivedRoot(owner, scope).delete()
+        deviceKey.erase(owner, scope)
+        val selected = rootFile(owner)
+        if (selected.baseFile.exists() || File(selected.baseFile.path + ".bak").exists()) {
+            val data = selected.openRead().use {
+                check(selected.baseFile.length() in 1..65536)
+                JSONObject(it.bufferedReader().readText())
+            }
+            if (validateRoot(data, owner) == scope) selected.delete()
+        }
+        if (account == owner && vault == scope) {
+            root = null
+            vault = ""
+            mutable.value = DriveSnapshot(stage = VaultStage.CREATE)
+        }
+        if (account == owner) localVaultChoices()
+    }
+    internal suspend fun retireCompletedDeletion(ticket: ForgottenVaultTicket) = withContext(Dispatchers.IO) {
+        check(telegram.accountId() == ticket.account && ticket.phase == "DONE")
+        if (ticket.privateVault != null) {
+            (app as app.televault.TeleVaultApplication).privateVault.retireForgottenLocal(ticket.account, ticket.photos, ticket.privateVault)
+        } else {
+            initialization.withLock {
+                if (account == ticket.account && vault == ticket.photos) {
+                    (app as app.televault.TeleVaultApplication).privateVault.lock()
+                    lock()
+                }
+                dao.list(ticket.account, ticket.photos, "job").forEach { work.cancelUniqueWork("transfer:${it.id}") }
+                check(activeWorkKeys.get() == 0 && !cloudSync.isLocked)
+                retireForgottenPhotosFiles(ticket.account, ticket.photos)
+            }
+        }
+    }
+    internal suspend fun deleteForgottenPrivate(owner: Long, photos: String, privateId: String, access: suspend () -> Unit) = withContext(Dispatchers.IO) {
+        check(!(app.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager).isDeviceLocked)
+        check(telegram.accountId() == owner)
+        protection.requireAllowed()
+        val key = initialization.withLock {
+            // This maintenance lease uses an explicit old scope without swapping the
+            // active Photos vault or borrowing its master for another vault.
+            val key = if (account == owner && vault == photos) synchronized(this@DriveRepository) { master?.copyOf() } ?: deviceKey.load(owner, photos) else deviceKey.load(owner, photos)
+            activeWorkKeys.incrementAndGet()
+            key
+        }
+        try {
+            (app as app.televault.TeleVaultApplication).privateVault.revokeForgotten(owner, photos, privateId)
+            val binding = owner to photos
+            val store = PrivateVaultCloudStore(app, this@DriveRepository, telegram, binding) { bytes, scope ->
+                protection.requireAllowed()
+                VaultCrypto.open(key, bytes, context("private-vault-v2/root", scope.first, scope.second))
+            }
+            // Gate each remote batch via a suspend-aware outer validation; the store's
+            // synchronous guard enforces account/device protection between native calls.
+            access()
+            store.deleteAll(binding, UUID.fromString(privateId), access) { protection.requireAllowed() }
+            access()
+            (app as app.televault.TeleVaultApplication).privateVault.retireForgottenLocal(owner, photos, privateId)
+        } finally {
+            releaseWorkKey(key)
         }
     }
 
@@ -1138,6 +1414,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
         activeWorkKeys.decrementAndGet()
     }
     private suspend fun backgroundKey(task: CacheRow): ByteArray {
+        check((app as app.televault.TeleVaultApplication).forgottenVaults.tickets.value.none { it.account == task.account && it.photos == task.vault && it.privateVault == null && it.phase in setOf("STARTED", "DONE") }) { "This vault is being permanently deleted" }
         if ((app.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager).isDeviceLocked) throw DataPolicyBlocked("WAITING_UNLOCK")
         telegram.reconnect()
         withTimeout(45_000) { telegram.authorization.first { it.stage == AuthProtocol.State.READY || it.stage == AuthProtocol.State.CLOSED || it.stage == AuthProtocol.State.PHONE } }
@@ -1146,7 +1423,20 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
         protection.requireAllowed()
         return initialization.withLock {
             // A worker cannot swap the active vault or borrow another vault's master key.
-            if (!VaultScope.workerMayUse(account, vault, task.account, task.vault)) throw DataPolicyBlocked("WAITING_VAULT")
+            val selection = rootFile(task.account)
+            val persisted = if (account == 0L || vault.isEmpty()) {
+                if (selection.baseFile.exists() || File(selection.baseFile.path + ".bak").exists()) {
+                    selection.openRead().use {
+                        check(selection.baseFile.length() in 1..65536)
+                        validateRoot(JSONObject(it.bufferedReader().readText()), task.account)
+                    }
+                } else {
+                    ""
+                }
+            } else {
+                vault
+            }
+            if (!VaultScope.workerMayUse(account, vault, task.account, task.vault, persisted)) throw DataPolicyBlocked("WAITING_VAULT")
             account = task.account
             vault = task.vault
             protection.requireAllowed()
@@ -2040,7 +2330,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
         streamingFile(id)
         return Uri.parse("content://${app.packageName}.private-media/media/$id")
     }
-    internal suspend fun authenticatedReader(id: String, readJob: Job? = null): AuthenticatedRecords = withContext(Dispatchers.IO) {
+    internal suspend fun authenticatedReader(id: String, readJob: Job? = null, speculative: Boolean = false): AuthenticatedRecords = withContext(Dispatchers.IO) {
         val (item, vaultId) = streamingFile(id)
         val epoch = accessEpoch.get()
         val parts = item.parts.ifEmpty { listOf(item.data) }
@@ -2078,7 +2368,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
                         }
                         val amount = minOf(count.toLong(), part.bytes - position).toInt()
                         val bytes = readStreamCipher("${item.id}/${part.chatId}/${part.messageId}", part.bytes, position, amount, item.mime.startsWith("image/")) { at, length ->
-                            kotlinx.coroutines.runBlocking((readJob ?: kotlin.coroutines.EmptyCoroutineContext) + Dispatchers.IO) { telegram.readDocumentPart(part, at, length) }
+                            kotlinx.coroutines.runBlocking((readJob ?: kotlin.coroutines.EmptyCoroutineContext) + Dispatchers.IO) { if (speculative) telegram.readSpeculativeDocumentPart(part, at, length) else telegram.readDocumentPart(part, at, length) }
                         }
                         protection.requireAllowed()
                         check(state.value.stage == VaultStage.READY && vault == vaultId && accessEpoch.get() == epoch) { "Vault locked or changed" }
@@ -2360,6 +2650,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
 
     /** Bounded encrypted original prefixes. No device-original disk copy or mobile prefetch. */
     suspend fun prefetch(id: String, percent: Int = 100, budget: Long = AdaptiveMediaPolicy.WARM_BUDGET): Long = withContext(Dispatchers.IO) {
+        photoPriority.await(id)
         prefetches.withPermit {
             val item = state.value.files.find { it.id == id && it.trashedAt == 0L } ?: return@withPermit 0L
             val video = item.mime.startsWith("video/")
@@ -2369,11 +2660,12 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
             if (item.size > 16L * 1024 * 1024 && !video || preferredDeviceSource(id) != null) return@withPermit 0L
             val limit = AdaptiveMediaPolicy.prefix(item.size, if (video) 100 else percent, budget)
             if (limit <= 0) return@withPermit 0L
-            authenticatedReader(id, coroutineContext[Job]).let { reader ->
+            authenticatedReader(id, coroutineContext[Job], speculative = true).let { reader ->
                 val buffer = ByteArray(65536)
                 var position = 0L
                 try {
                     while (position < limit) {
+                        photoPriority.await(id)
                         coroutineContext.ensureActive()
                         if (policy.settings().dataSaver || policy.cellular()) break
                         val count = reader.read(position, buffer, 0, minOf(buffer.size.toLong(), limit - position).toInt())
@@ -2432,6 +2724,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
     }
     suspend fun quickUnlock() = withContext(Dispatchers.IO) {
         protection.requireAllowed()
+        requireVaultUsable(account, vault)
         val epoch = accessEpoch.get()
         check(telegram.accountId() == account) { "Telegram account changed. Discover and recover the matching Drive." }
         protection.requireAllowed()
@@ -2450,6 +2743,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
             key.fill(0)
         }
         scheduleRetention()
+        scheduleCloudRestore()
         sync()
     }
     private fun applyEvent(event: JSONObject, message: Long, key: ByteArray) {

@@ -798,6 +798,7 @@ fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDynamicColo
                     }
                 })
                 Box(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)).padding(horizontal = 16.dp)) { HeaderActivity(model) }
+                CloudRestoreNotice(model)
                 UsageGuidance(model, "tab-navigation", rootBackPresses, "Use Photos, Albums, Files or Vault below to change sections. Back stays in this section.", "সেকশন বদলাতে নিচের Photos, Albums, Files বা Vault বোতামে ট্যাপ করুন। Back এই সেকশনেই রাখে।", Modifier.padding(horizontal = 16.dp))
                 UsageGuidance(model, "device-permissions", permissionFailures, "Open App permissions or Device file access and allow the category you want to browse. Cloud files need no device-file permission.", "App permissions বা Device file access খুলে প্রয়োজনীয় অনুমতি দিন। ক্লাউড ফাইলের জন্য ফোনের ফাইলের অনুমতি লাগে না।", Modifier.padding(horizontal = 16.dp))
             }
@@ -977,6 +978,7 @@ fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDynamicColo
                 if (settingsCategory == "Export Cloud library") {
                     CloudExportSettings(model, Modifier.weight(1f))
                 } else if (settingsCategory.isBlank()) {
+                    ForgottenVaultManager()
                     SettingsOverview({ settingsCategory = it }, { prompt = "logout" }, Modifier.weight(1f))
                 } else {
                     LazyColumn(contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 100.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {

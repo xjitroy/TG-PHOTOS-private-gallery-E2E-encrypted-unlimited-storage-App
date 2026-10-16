@@ -24,6 +24,7 @@ import kotlinx.coroutines.isActive
     val offlineWork = offline.activeId?.let { app.televault.data.WorkProgress(label("Encrypted offline download", "এনক্রিপ্টেড অফলাইন ডাউনলোড"), offline.progress, offline.total) }
     val groups by model.transferOverview.collectAsStateWithLifecycle()
     val state by model.state.collectAsStateWithLifecycle()
+    val restore by model.cloudRestore.collectAsStateWithLifecycle()
     val exports by model.cloudExports.history.collectAsStateWithLifecycle()
     val exportWork = exports.firstOrNull { it.phase in setOf("PREPARING", "EXPORTING", "VERIFYING") }?.let {
         app.televault.data.WorkProgress(if (it.phase == "VERIFYING") label("Verifying Cloud ZIP", "Cloud ZIP যাচাই হচ্ছে") else label("Cloud ZIP export", "Cloud ZIP এক্সপোর্ট"), it.bytes, it.total)
@@ -36,7 +37,7 @@ import kotlinx.coroutines.isActive
     val privateUnlocked by privateVault.unlocked.collectAsStateWithLifecycle()
     val privateWork = vaultProgress.takeIf { privateUnlocked }
     val group = groups.firstOrNull { it.active }
-    val work = offlineWork ?: fileWork ?: state.deviceCopyProgress ?: state.syncProgress ?: exportWork
+    val work = restore?.let { app.televault.data.WorkProgress(label("Restoring library & thumbnails", "লাইব্রেরি ও থাম্বনেইল ফিরছে"), it.completed, it.total) } ?: offlineWork ?: fileWork ?: state.deviceCopyProgress ?: state.syncProgress ?: exportWork
     var retained by remember { mutableStateOf<TransferOverview?>(null) }
     LaunchedEffect(group) {
         if (group != null) {
@@ -59,7 +60,7 @@ import kotlinx.coroutines.isActive
         if (privateWork != null || displayed != null || work != null) {
             val percent = privateWork?.let { ActivityProgress.percent(it.first, it.second) } ?: displayed?.percent ?: work?.let { ActivityProgress.percent(it.completed, it.total) } ?: -1
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                SecureLoader(Modifier.size(20.dp))
+                if (privateWork != null) SecureLoader(Modifier.size(20.dp)) else Icon(Icons.Outlined.CloudQueue, null, Modifier.size(16.dp))
                 if (percent >= 0) Text("$percent%", style = MaterialTheme.typography.labelSmall)
                 Text(
                     if (privateWork != null) {
@@ -71,6 +72,8 @@ import kotlinx.coroutines.isActive
                             "verify-zip" -> label("Vault · verifying ZIP", "Vault · ZIP যাচাই")
                             else -> label("Vault · encrypted upload", "Vault · এনক্রিপ্টেড আপলোড")
                         }
+                    } else if (restore != null) {
+                        label("Restoring library & thumbnails", "লাইব্রেরি ও থাম্বনেইল ফিরছে") + if (restore!!.total > 0) " · ${restore!!.completed}/${restore!!.total}" else "…"
                     } else if (displayed != null) {
                         "${displayed.completed}/${displayed.count}$eta · ${displayed.name}"
                     } else {

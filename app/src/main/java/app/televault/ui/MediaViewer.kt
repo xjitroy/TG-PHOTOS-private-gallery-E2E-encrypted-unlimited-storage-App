@@ -26,6 +26,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
@@ -97,9 +98,14 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
     var prepared by remember { mutableStateOf<Uri?>(null) }
     var preparedId by remember { mutableStateOf<String?>(null) }
     val current = media.getOrElse(pager.settledPage) { entry }
+    val photoLoadToken = remember(current.id) { if (current.mime.startsWith("image/")) model.beginPhotoLoad(current.id) else 0L }
+    DisposableEffect(photoLoadToken) {
+        onDispose { if (photoLoadToken != 0L) model.finishPhotoLoad(photoLoadToken) }
+    }
     val preparedSource = prepared.takeIf { preparedId == current.id }
     val trashed = current.cloud?.trashedAt?.let { it > 0 } ?: (current.local?.trashed == true)
-    LaunchedEffect(entry.id, media.size) {
+    // Catalog restore appends pages. It must not navigate back to the entry while browsing.
+    LaunchedEffect(entry.id) {
         val index = media.indexOfFirst { it.id == entry.id }
         if (index >= 0 && index != pager.currentPage) {
             pager.animateScrollToPage(index, animationSpec = androidx.compose.animation.core.tween(320))
@@ -135,7 +141,7 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
                 throw cancel
             } catch (_: Exception) { }
         }
-        listOf(pager.currentPage, pager.currentPage + 1, pager.currentPage - 1, pager.currentPage + 2).mapNotNull { media.getOrNull(it) }.filter { it.cloud != null && (it.id == current.id || it.mime.startsWith("image/")) }.forEach { item ->
+        listOf(pager.currentPage, pager.currentPage + 1, pager.currentPage - 1, pager.currentPage + 2, pager.currentPage - 2).mapNotNull { media.getOrNull(it) }.filter { it.cloud != null && (it.id == current.id || it.mime.startsWith("image/")) }.forEach { item ->
             launch {
                 try {
                     model.prefetch(item.id)
@@ -263,7 +269,7 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
             else -> requestClose()
         }
     }, properties = DialogProperties(usePlatformDefaultWidth = false, securePolicy = SecureFlagPolicy.SecureOff, decorFitsSystemWindows = false)) {
-        Box {
+        Box(Modifier.fillMaxSize().background(Color.Black)) {
             val dialogView = androidx.compose.ui.platform.LocalView.current
             val window = (dialogView.parent as? DialogWindowProvider)?.window
             val photoLayout = current.mime.startsWith("image/")
@@ -304,7 +310,7 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
             val renderMedia: @Composable (Modifier) -> Unit = { area ->
                 Box(area.background(Color.Black)) {
                     val page: @Composable (Int) -> Unit = { index ->
-                        MediaPage(media[index], index == pager.settledPage, !snapshot.uploadSettings.dataSaver && !pager.isScrollInProgress && model.canPrefetchPhotos(), model, {
+                        MediaPage(media[index], index == pager.settledPage, !snapshot.uploadSettings.dataSaver && !pager.isScrollInProgress && model.canPrefetchPhotos(), model, { if (index == pager.settledPage && photoLoadToken != 0L) model.finishPhotoLoad(photoLoadToken) }, {
                             resolvedSources[media[index].id] = it
                             if (media[index].id == current.id) {
                                 prepared = it
@@ -340,7 +346,7 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
                                 }
                             }
                         }
-                        if (busy && !current.mime.startsWith("image/")) SecureLoader(Modifier.align(Alignment.CenterHorizontally))
+                        if (busy && !current.mime.startsWith("image/") && !current.mime.startsWith("video/")) LinearProgressIndicator(Modifier.fillMaxWidth())
                         if (!videoLayout && message.isNotBlank()) Text(message, Modifier.padding(horizontal = 20.dp, vertical = 6.dp), style = MaterialTheme.typography.bodySmall)
                         Spacer(Modifier.weight(1f))
                         AnimatedVisibility(controls && !videoLayout && !pager.isScrollInProgress, enter = fadeIn(), exit = fadeOut()) {
@@ -412,7 +418,7 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
     }
 }
 
-@Composable private fun MediaPage(item: MediaEntry, active: Boolean, preload: Boolean, model: DriveViewModel, ready: (Uri) -> Unit, videos: List<MediaEntry>, choose: (MediaEntry) -> Unit, adjacent: (Int) -> Unit, verticalPaging: Boolean, portraitChanged: (Boolean) -> Unit, videoSession: ViewerPlaybackSession, fullscreenExit: Int, fullScreenChanged: (Boolean) -> Unit, tap: () -> Unit, info: (() -> Unit)?, favorite: () -> Unit, share: () -> Unit, openWith: () -> Unit, backup: (Boolean) -> Unit, removeDevice: () -> Unit, backedDeviceFiles: Map<String, String>, editedCopy: (MediaEntry) -> Unit, profile: () -> Unit, cachedSource: Uri?, closeViewer: () -> Unit, movieDetails: @Composable () -> Unit) {
+@Composable private fun MediaPage(item: MediaEntry, active: Boolean, preload: Boolean, model: DriveViewModel, pixelsReady: () -> Unit, ready: (Uri) -> Unit, videos: List<MediaEntry>, choose: (MediaEntry) -> Unit, adjacent: (Int) -> Unit, verticalPaging: Boolean, portraitChanged: (Boolean) -> Unit, videoSession: ViewerPlaybackSession, fullscreenExit: Int, fullScreenChanged: (Boolean) -> Unit, tap: () -> Unit, info: (() -> Unit)?, favorite: () -> Unit, share: () -> Unit, openWith: () -> Unit, backup: (Boolean) -> Unit, removeDevice: () -> Unit, backedDeviceFiles: Map<String, String>, editedCopy: (MediaEntry) -> Unit, profile: () -> Unit, cachedSource: Uri?, closeViewer: () -> Unit, movieDetails: @Composable () -> Unit) {
     val context = LocalContext.current
     var uri by remember(item.id) { mutableStateOf(cachedSource) }
     var deviceSource by remember(item.id) { mutableStateOf(false) }
@@ -437,6 +443,7 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
         if (active || warmImage) {
             error = false
             try {
+                if (!active) model.awaitPhotoLoad(item.id)
                 val localCopy = item.local?.let { local ->
                     if (retry == 0 && (item.mime.startsWith("video/") || item.mime.startsWith("audio/"))) app.televault.data.LocalFileActions.playbackSource(context, local) else local.uri
                 } ?: model.preferredDeviceSource(item.id)
@@ -448,12 +455,13 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
                 throw e
             } catch (_: Exception) {
                 error = true
+                pixelsReady()
             }
         } else if (!item.mime.startsWith("image/")) {
             uri = null
         }
     }
-    Box(Modifier.fillMaxSize().then(if (!item.mime.startsWith("image/") && !item.mime.startsWith("video/")) Modifier.safeDrawingPadding().padding(top = 76.dp, bottom = 176.dp) else Modifier), contentAlignment = Alignment.Center) {
+    Box(Modifier.fillMaxSize().clipToBounds().background(Color.Black).then(if (!item.mime.startsWith("image/") && !item.mime.startsWith("video/")) Modifier.safeDrawingPadding().padding(top = 76.dp, bottom = 176.dp) else Modifier), contentAlignment = Alignment.Center) {
         val source = uri
         when {
             error -> Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -462,16 +470,15 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
             }
             source == null || (!active && !item.mime.startsWith("image/")) -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 MediaThumbnail(item, model, Modifier.fillMaxSize(), 384, ContentScale.Fit)
-                if (active && item.local == null && !item.mime.startsWith("image/")) {
+                if (active && item.local == null && !item.mime.startsWith("image/") && !item.mime.startsWith("video/")) {
                     Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = .92f)) {
                         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            SecureLoader(Modifier.size(28.dp))
                             Text(label("Opening original…", "মূল ফাইল খুলছে…"), Modifier.padding(horizontal = 10.dp), style = MaterialTheme.typography.labelMedium)
                         }
                     }
                 }
             }
-            item.mime.startsWith("image/") -> key(item.id, source, item.local?.fingerprint) { RegionImage(source, Modifier.fillMaxSize(), tap = tap, swipeUp = info, placeholder = { MediaThumbnail(item, model, Modifier.fillMaxSize(), 384, ContentScale.Fit) }, cache = model.photoPreviews, cacheKey = item.id + ":" + (item.local?.fingerprint ?: item.cloud?.hash.orEmpty())) }
+            item.mime.startsWith("image/") -> key(item.id, source, item.local?.fingerprint) { RegionImage(source, Modifier.fillMaxSize(), tap = tap, swipeUp = info, placeholder = { MediaThumbnail(item, model, Modifier.fillMaxSize(), 384, ContentScale.Fit) }, pixelsReady = pixelsReady, cache = model.photoPreviews, cacheKey = item.id + ":" + (item.local?.fingerprint ?: item.cloud?.hash.orEmpty())) }
             item.mime.startsWith("audio/") -> AudioPlayer(source, item, model, editedCopy, share)
             item.mime.startsWith("video/") -> VideoPlayer(source, true, videos, choose, model = model, current = item, session = videoSession, adjacent = adjacent, verticalPaging = verticalPaging, portraitChanged = portraitChanged, openWith = openWith, fullScreenChanged = fullScreenChanged, fullscreenExit = fullscreenExit, favorite = favorite, share = share, backup = backup, removeDevice = removeDevice, profile = profile, closeViewer = closeViewer, movieDetails = movieDetails)
             else -> DocumentViewer(source, item, model, openWith)

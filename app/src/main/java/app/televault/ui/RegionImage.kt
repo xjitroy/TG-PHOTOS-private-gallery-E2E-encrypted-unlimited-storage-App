@@ -270,6 +270,8 @@ internal class RegionImageView(context: Context) : View(context) {
     }
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
+        // A region replaces the previous frame; pixels outside it must not retain an old tile.
+        canvas.drawColor(android.graphics.Color.BLACK)
         val bitmap = image ?: overview ?: return
         val factor = displayScale()
         drawBounds.set((region.left - cx) * factor, (region.top - cy) * factor, (region.right - cx) * factor, (region.bottom - cy) * factor)
@@ -321,11 +323,13 @@ internal class RegionImageView(context: Context) : View(context) {
     }
 }
 
-@Composable internal fun RegionImage(uri: Uri, modifier: Modifier, tap: () -> Unit = {}, swipeUp: (() -> Unit)? = null, placeholder: @Composable () -> Unit = {}, cache: DecodedPhotoCache? = null, cacheKey: String = uri.toString()) {
+@Composable internal fun RegionImage(uri: Uri, modifier: Modifier, tap: () -> Unit = {}, swipeUp: (() -> Unit)? = null, placeholder: @Composable () -> Unit = {}, pixelsReady: () -> Unit = {}, cache: DecodedPhotoCache? = null, cacheKey: String = uri.toString()) {
     var retry by remember(uri) { mutableIntStateOf(0) }
     var loading by remember(uri, retry) { mutableStateOf(true) }
     var error by remember(uri, retry) { mutableStateOf(false) }
     var hasPixels by remember(uri, retry) { mutableStateOf(false) }
+    val onPixelsReady by rememberUpdatedState(pixelsReady)
+    LaunchedEffect(hasPixels, error) { if (hasPixels || error) onPixelsReady() }
     val loadingDescription = label("Loading original photo", "মূল ছবি লোড হচ্ছে")
     Box(modifier.semantics { if (loading && !hasPixels) stateDescription = loadingDescription }, contentAlignment = Alignment.Center) {
         key(uri, retry) {

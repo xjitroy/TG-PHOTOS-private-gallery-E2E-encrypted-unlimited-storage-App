@@ -283,7 +283,7 @@ internal class CloudExports(
                         continue
                     }
                     val amount = minOf(remaining.toLong(), part.bytes - at).toInt()
-                    val bytes = runBlocking((job ?: kotlin.coroutines.EmptyCoroutineContext) + Dispatchers.IO) { telegram.readDocumentPart(part, at, amount) }
+                    val bytes = runBlocking((job ?: kotlin.coroutines.EmptyCoroutineContext) + Dispatchers.IO) { telegram.readSpeculativeDocumentPart(part, at, amount) }
                     try {
                         checkWork(task)
                         check(bytes.size == amount)

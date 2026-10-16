@@ -51,6 +51,13 @@ internal fun PrivateVaultScreen(model: DriveViewModel, modifier: Modifier = Modi
     val scope = rememberCoroutineScope()
     val owner = LocalLifecycleOwner.current
     var exists by remember { mutableStateOf(vault.exists) }
+    var createNew by remember { mutableStateOf(false) }
+    val creating = !exists || createNew
+    var replacementAcknowledged by remember(createNew) { mutableStateOf(false) }
+    val vaultChoices by vault.choices.collectAsStateWithLifecycle()
+    val vaultName by vault.selectedName.collectAsStateWithLifecycle()
+    LaunchedEffect(vaultChoices) { exists = vault.exists }
+    var creationName by remember(createNew, exists) { mutableStateOf(app.televault.domain.VaultNames.generated(System.currentTimeMillis(), java.time.ZoneId.systemDefault(), java.util.UUID.randomUUID().toString())) }
     var biometricEnabled by remember { mutableStateOf(false) }
     var biometricRequest by remember { mutableStateOf<app.televault.data.VaultBiometricKey.Request?>(null) }
     var password by remember { mutableStateOf("") }
@@ -281,6 +288,7 @@ internal fun PrivateVaultScreen(model: DriveViewModel, modifier: Modifier = Modi
         }
         if (!unlocked) {
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(vertical = 16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                ForgottenVaultManager()
                 Box(Modifier.size(112.dp).background(Brush.radialGradient(listOf(colors.tertiaryContainer, colors.background)), CircleShape), contentAlignment = Alignment.Center) { Icon(Icons.Outlined.Lock, null, Modifier.size(52.dp), tint = colors.tertiary) }
                 Text(label("Your private space", "আপনার ব্যক্তিগত জায়গা"), style = MaterialTheme.typography.headlineSmall)
                 Text(label("Telegram first. A separate Vault password or private key protects your files.", "প্রথমে Telegram। আলাদা Vault password অথবা private key দিয়ে ফাইল সুরক্ষিত।"), style = MaterialTheme.typography.bodyMedium)
@@ -303,19 +311,46 @@ internal fun PrivateVaultScreen(model: DriveViewModel, modifier: Modifier = Modi
                     }
                     Button({
                         recoveryKey = null
+                        exists = vault.exists
+                        createNew = false
                         password = ""
                         confirm = ""
                     }, enabled = recoverySaved && !busy) { Text(label("Continue to unlock", "আনলক করতে যান")) }
                 } else {
-                    if (exists && biometricEnabled) {
+                    if (vaultChoices.isNotEmpty()) {
+                        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            vaultChoices.forEach { choice ->
+                                FilterChip(selected = !creating && vault.selectedId == choice.id, onClick = {
+                                    work {
+                                        vault.selectVault(choice.id)
+                                        exists = vault.exists
+                                        createNew = false
+                                        password = ""
+                                        confirm = ""
+                                        recoveryMode = false
+                                        biometricEnabled = vault.biometricAvailable()
+                                    }
+                                }, enabled = !busy, label = { Text(choice.name, maxLines = 1) })
+                            }
+                        }
+                    }
+                    if (creating) OutlinedTextField(creationName, { creationName = app.televault.domain.VaultNames.clean(it) }, Modifier.fillMaxWidth(), singleLine = true, label = { Text(label("Vault name (optional)", "ভল্টের নাম (ঐচ্ছিক)")) })
+                    if (createNew) {
+                        Text(label("Creating this replacement schedules the old Vault and its app-owned Telegram files for permanent deletion after a 24-hour waiting period. You can cancel before deletion starts. Your new Vault uses independent keys.", "এই নতুন ভল্ট তৈরি করলে আগের ভল্ট ও অ্যাপের রাখা তার Telegram ফাইলগুলি ২৪ ঘণ্টার অপেক্ষার পরে স্থায়ীভাবে মুছে যাবে। শুরু হওয়ার আগে বাতিল করতে পারবেন। নতুন ভল্টের key আলাদা হবে।"), color = colors.error, style = MaterialTheme.typography.bodySmall)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(replacementAcknowledged, { replacementAcknowledged = it })
+                            Text(label("I understand the old Vault will be deleted", "বুঝেছি, পুরোনো ভল্ট মুছে যাবে"), style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                    if (exists && !createNew && biometricEnabled) {
                         OutlinedButton({ work { biometricRequest = vault.prepareBiometricUnlock() } }, Modifier.fillMaxWidth().heightIn(min = 52.dp), enabled = !busy && discoveryComplete) {
                             Icon(Icons.Outlined.Fingerprint, null)
                             Spacer(Modifier.width(8.dp))
                             Text(label("Unlock with fingerprint", "ফিঙ্গারপ্রিন্ট দিয়ে খুলুন"))
                         }
                     }
-                    VaultSecretField(password, { password = it }, if (recoveryMode) label("Private recovery key", "প্রাইভেট রিকভারি কী") else label("Vault password", "Vault password"), enabled = !busy && discoveryComplete, newPassword = !exists, fixedPattern = false)
-                    if (!exists) {
+                    VaultSecretField(password, { password = it }, if (recoveryMode) label("Private recovery key", "প্রাইভেট রিকভারি কী") else label("Vault password", "Vault password"), enabled = !busy && discoveryComplete, newPassword = creating, fixedPattern = false)
+                    if (creating) {
                         VaultSecretField(confirm, { confirm = it }, label("Confirm password", "পাসওয়ার্ড নিশ্চিত করুন"), enabled = !busy, newPassword = true, fixedPattern = false)
                         Text(label("Remember this Vault password and save your recovery key. Fingerprint access is optional and cannot recover a Vault after reinstall or phone changes.", "Vault password মনে রাখুন ও recovery key নিরাপদে রাখুন। ফিঙ্গারপ্রিন্ট ঐচ্ছিক; reinstall বা ফোন বদলালে এটি দিয়ে Vault উদ্ধার হবে না।"), style = MaterialTheme.typography.bodySmall)
                         PasswordCreationGuidance(password) {
@@ -326,21 +361,23 @@ internal fun PrivateVaultScreen(model: DriveViewModel, modifier: Modifier = Modi
                     Button({
                         val value = password.toCharArray()
                         work {
-                            if (exists) {
+                            if (!creating) {
                                 val verified = if (!recoveryMode) password else ""
                                 vault.unlock(value, recoveryMode)
                                 if (action != null && destination != null && verified.isNotBlank()) actionPassword = verified
                                 password = ""
                             } else {
-                                recoveryKey = vault.create(value)
+                                recoveryKey = vault.create(value, creationName, createNew)
+                                if (vault.replacementDeletionPending) message = "New Vault created. The old Vault deletion could not be registered and its data is retained. Select the old Vault and schedule deletion again when storage/connection is available."
+                                biometricEnabled = false
                                 password = ""
                                 confirm = ""
                             }
                         }
-                    }, Modifier.fillMaxWidth().heightIn(min = 52.dp), enabled = !busy && discoveryComplete && password.isNotBlank() && (exists || NewPasswordPolicy.accepts(password) && confirm == password)) {
+                    }, Modifier.fillMaxWidth().heightIn(min = 52.dp), enabled = !busy && discoveryComplete && password.isNotBlank() && (!createNew || replacementAcknowledged) && (!creating || NewPasswordPolicy.accepts(password) && confirm == password)) {
                         Icon(Icons.Outlined.LockOpen, null)
                         Spacer(Modifier.width(8.dp))
-                        Text(if (exists) label("Unlock Vault", "Vault আনলক") else label("Create Private Vault", "Private Vault তৈরি"))
+                        Text(if (!creating) label("Unlock Vault", "Vault আনলক") else label("Create Private Vault", "Private Vault তৈরি"))
                     }
                     if (!discoveryComplete) {
                         TextButton({
@@ -351,13 +388,30 @@ internal fun PrivateVaultScreen(model: DriveViewModel, modifier: Modifier = Modi
                             }
                         }, enabled = !busy) { Text(label("Retry Vault discovery", "Vault আবার খুঁজুন")) }
                     }
-                    if (exists) {
+                    if (exists && !createNew) {
                         TextButton({
                             recoveryMode = !recoveryMode
                             password = ""
                         }, enabled = !busy) { Text(if (recoveryMode) label("Use Vault password", "Vault password দিন") else label("Use private key", "প্রাইভেট কী দিন")) }
                     }
+                    if (exists && !createNew) {
+                        TextButton({
+                            createNew = true
+                            recoveryMode = false
+                            password = ""
+                            confirm = ""
+                        }, enabled = !busy) { Text(label("Forgot password? Create a new Vault", "পাসওয়ার্ড ভুলে গেছেন? নতুন ভল্ট তৈরি করুন")) }
+                        TextButton({ work { vault.discover() } }, enabled = !busy) { Text(label("Find other Vaults", "অন্য ভল্টগুলি খুঁজুন")) }
+                    }
+                    if (createNew) {
+                        TextButton({
+                            createNew = false
+                            password = ""
+                            confirm = ""
+                        }, enabled = !busy) { Text(label("Back to existing Vault", "আগের ভল্টে ফিরুন")) }
+                    }
                     if (!exists) TextButton({ restore.launch(arrayOf("application/zip", "application/octet-stream")) }, enabled = !busy) { Text(label("Restore an older device Vault", "পুরোনো device Vault রিস্টোর")) }
+                    if (exists && !creating) ForgottenVaultStatus(model.selectedVaultId, vault.selectedId, vaultChoices.firstOrNull { it.id == vault.selectedId }?.name.orEmpty(), showPending = false)
                 }
                 Spacer(Modifier.height(16.dp))
             }
@@ -366,7 +420,7 @@ internal fun PrivateVaultScreen(model: DriveViewModel, modifier: Modifier = Modi
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Outlined.EnhancedEncryption, null, tint = colors.onTertiaryContainer)
                     Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                        Text(label("Private Vault", "Private Vault"), style = MaterialTheme.typography.titleMedium, color = colors.onTertiaryContainer)
+                        Text(vaultName.ifBlank { label("Private Vault", "প্রাইভেট ভল্ট") }, style = MaterialTheme.typography.titleMedium, color = colors.onTertiaryContainer, maxLines = 2)
                         Text("${entries.size} " + label("protected files", "সুরক্ষিত ফাইল"), style = MaterialTheme.typography.bodySmall, color = colors.onTertiaryContainer)
                     }
                     Box {
