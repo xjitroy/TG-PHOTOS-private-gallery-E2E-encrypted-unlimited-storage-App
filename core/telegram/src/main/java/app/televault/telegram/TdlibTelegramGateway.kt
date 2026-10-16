@@ -555,7 +555,9 @@ class TdlibTelegramGateway(context: Context, private val credentials: TelegramCr
     private var nativeStorageUsers = 0
     private suspend fun <T> usingNativeStorage(block: suspend () -> T): T {
         nativeStorageGate.withLock { nativeStorageUsers++ }
-        try { return block() } finally {
+        try {
+            return block()
+        } finally {
             kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { nativeStorageGate.withLock { nativeStorageUsers-- } }
         }
     }
@@ -567,12 +569,16 @@ class TdlibTelegramGateway(context: Context, private val credentials: TelegramCr
         // TDLib owns this directory. Its optimizer removes only re-downloadable local documents;
         // never filesystem-delete its database, session, queued sources or Telegram messages.
         nativeStorageGate.withLock {
-            if (nativeStorageUsers == 0) withTimeout(5000) { checked(
-                json("optimizeStorage").put("size", 64L * 1024 * 1024).put("ttl", 300).put("count", 2048).put("immunity_delay", 60)
-                    .put("file_types", org.json.JSONArray().put(json("fileTypeDocument")))
-                    .put("chat_ids", org.json.JSONArray()).put("exclude_chat_ids", org.json.JSONArray())
-                    .put("return_deleted_file_statistics", false).put("chat_limit", 0)
-            ) }
+            if (nativeStorageUsers == 0) {
+                withTimeout(5000) {
+                    checked(
+                        json("optimizeStorage").put("size", 64L * 1024 * 1024).put("ttl", 300).put("count", 2048).put("immunity_delay", 60)
+                            .put("file_types", org.json.JSONArray().put(json("fileTypeDocument")))
+                            .put("chat_ids", org.json.JSONArray()).put("exclude_chat_ids", org.json.JSONArray())
+                            .put("return_deleted_file_statistics", false).put("chat_limit", 0)
+                    )
+                }
+            }
         }
         val expired = nativeStreamRetirements.all.entries.filter { it.key.startsWith("$chat/") }.mapNotNull { entry ->
             runCatching { entry.key to JSONObject(entry.value as String) }.getOrNull()

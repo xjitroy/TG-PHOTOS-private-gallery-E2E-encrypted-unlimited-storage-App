@@ -1,7 +1,7 @@
 {
-  "version": "0.19.0",
-  "code": 29,
-  "distinctHostTests": 230,
+  "version": "0.19.1",
+  "code": 30,
+  "distinctHostTests": 234,
   "releaseVariantTests": {
     "tests": 37,
     "failures": 0,
@@ -12,15 +12,15 @@
     "scope": "release variant of same37 app tests; not additional distinct tests"
   },
   "artifact": {
-    "apk": "TG-Photos-0.19.0-universal.apk",
-    "bytes": 101695091,
-    "sha256": "7cf60df8f9baf1f24188593068b43da8fe5a5628eb8179cd6adcf5ea24dc784a",
-    "versionCode": 29,
-    "versionName": "0.19.0",
+    "apk": "TG-Photos-0.19.1-universal.apk",
+    "bytes": 101695087,
+    "sha256": "193fa5f359a92ddf57dcf80dfd0327a21b718556469e340724858b8e3e2daa75",
+    "versionCode": 30,
+    "versionName": "0.19.1",
     "package": "app.televault.photos",
     "distribution": "public",
-    "sourceCommit": "9cb712c4dfdfcf8e2f4273b6c155e6a697536879",
-    "sourceTree": "a1c09675d1d43da75e8227cfa9eabea31d0cf801",
+    "sourceCommit": "066031f5feb4d36e3253661941b7ff20ad1ba267",
+    "sourceTree": "8c7b461c08d6b5824aa39a57577454ff75885d78",
     "certificateSHA256": "3e7c1029cb5e2da80026758abd483b5bd7f0551b6a56bee6b21640b8ae774559",
     "debuggable": false,
     "productionVerified": false,

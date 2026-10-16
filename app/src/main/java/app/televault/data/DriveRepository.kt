@@ -30,6 +30,7 @@ import app.televault.domain.CaptureTime
 import app.televault.domain.DeviceBackupFolder
 import app.televault.domain.DeviceFileVisibility
 import app.televault.domain.LibraryPath
+import app.televault.domain.LocalBackupReceipts
 import app.televault.domain.MediaBackupPolicy
 import app.televault.domain.MediaCategories
 import app.televault.domain.PasswordAttempts
@@ -662,17 +663,19 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
                 }.filter { it.second }.map { it.first }.sortedByDescending { it.date }
                 var cloudDamage = damaged
                 val activeIds = files.map { it.id }.toSet()
-                val backedSources = files.map { it.sourceToken }.filter { it.isNotBlank() }.toMutableSet()
+                // A restored cloud URI/size/mtime can belong to different bytes on this device.
+                // Only local receipts issued after content verification may suppress a scan.
+                val localReceipts = mutableMapOf<String, String>()
                 val liveFiles = files.filter { it.trashedAt == 0L }
                 val liveIds = liveFiles.map { it.id }.toSet()
-                val deviceLinks = liveFiles.filter { it.sourceToken.isNotBlank() }.associate { it.sourceToken to it.id }.toMutableMap()
                 dao.list(account, vault, "source-link").forEach { item ->
                     verified {
                         val link = payload(item, key)
-                        if (link.getString("file") in activeIds) backedSources += link.getString("source")
-                        if (link.getString("file") in liveIds) deviceLinks[link.getString("source")] = link.getString("file")
+                        localReceipts[link.getString("source")] = link.getString("file")
                     }
                 }
+                val backedSources = LocalBackupReceipts.retained(activeIds, localReceipts).keys
+                val deviceLinks = LocalBackupReceipts.retained(liveIds, localReceipts)
                 val damageBeforeAlbums = damaged
                 val albums = (dao.list(account, vault, "album") + dao.list(account, vault, "folder")).mapNotNull { item ->
                     verified {
@@ -912,20 +915,9 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
     }
     private suspend fun queueAutomaticBatch(candidates: List<CacheRow>, wifi: Boolean, key: ByteArray) = uploadQueue.withLock {
         if (candidates.isEmpty()) return@withLock
-        val known = state.value.backedSources.toMutableSet()
-        // A worker-only process has no unlocked UI snapshot. Recover source receipts
-        // from sealed rows too, instead of hashing/requeueing a whole folder each run.
-        val retained = dao.ids(account, vault, "file").mapNotNull { rowId ->
-            val item = file(payload(checkNotNull(dao.get(rowId)), key))
-            val props = dao.get("state:${item.id}")?.let { payload(it, key) }
-            if (props?.optBoolean("purged") == true) null else item
-        }
-        known += retained.map { it.sourceToken }.filter { it.isNotBlank() }
-        val retainedIds = retained.map { it.id }.toSet()
-        dao.list(account, vault, "source-link").forEach {
-            val link = payload(it, key)
-            if (link.getString("file") in retainedIds) known += link.getString("source")
-        }
+        // Cold workers and the UI use the same device-local content receipts.
+        // Never import source tokens from restored cloud manifests as backup proof.
+        val known = verifiedBackupSources(account, vault, key)
         known += dao.activeJobs(account, vault).filter { it.phase != "FAILED" }.map { payload(it, key).optString("source") }
         val selected = candidates.filter { known.add(payload(it, key).optString("source")) }
         if (selected.isEmpty()) return@withLock
@@ -1529,6 +1521,8 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
                 val committed = telegram.sendDocument(manifest, "TGDRIVE_V1_FILE:${task.vault}:${task.id}") { _, _ -> }
                 metadata.put("catalogMessage", committed.messageId).put("backedUpAt", BackupBadge.completedAt(System.currentTimeMillis(), committed.confirmedAtMillis))
                 dao.put(row("file:${task.id}", "file", metadata, masterKey))
+                val source = data.optString("source")
+                if (source.isNotBlank()) saveSourceLink(source, task.id, masterKey)
                 // The next guarded refresh publishes non-secret display metadata only.
             } finally {
                 manifest.delete()
@@ -1780,7 +1774,8 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
                 if (data.optString("uri") == "camera" || data.has("deviceFolder")) {
                     val legacyCamera = data.optString("uri") == "camera"
                     val media = backupMedia().filter { !it.trashed && DeviceBackupFolder.matches(it.folder, data.optString("deviceFolder"), legacyCamera) && (it.mime.startsWith("image/") || it.mime.startsWith("video/")) }
-                    val known = (dao.ids(record.account, record.vault, "file").asSequence().mapNotNull { dao.get(it) } + dao.activeJobs(record.account, record.vault).asSequence().filter { it.phase !in setOf("FAILED", "CANCELLED") }).map { payload(it, key).optString("source") }.toSet() + dao.list(record.account, record.vault, "source-link").map { payload(it, key).getString("source") }
+                    val known = verifiedBackupSources(record.account, record.vault, key)
+                    known += dao.activeJobs(record.account, record.vault).filter { it.phase !in setOf("FAILED", "CANCELLED") }.map { payload(it, key).optString("source") }
                     val candidates = mutableListOf<CacheRow>()
                     media.filter { it.fingerprint !in known && MediaBackupPolicy.automaticAllowed(saver.dataSaver, id == "camera:$account:$vault", it.mime, it.date, saver.saverSince) }.forEach { item ->
                         coroutineContext.ensureActive()
@@ -1796,7 +1791,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
                 }
                 val directory = checkNotNull(DocumentFile.fromTreeUri(app, Uri.parse(data.getString("uri"))))
                 check(directory.canRead()) { "Folder permission lost" }
-                val known = (dao.ids(record.account, record.vault, "file").mapNotNull { dao.get(it)?.let { row -> payload(row, key).optString("source") } } + dao.list(record.account, record.vault, "source-link").map { payload(it, key).getString("source") }).toMutableSet()
+                val known = verifiedBackupSources(record.account, record.vault, key)
                 known += dao.activeJobs(record.account, record.vault).filter { it.phase !in setOf("FAILED", "CANCELLED") }.map { payload(it, key).optString("source") }
                 val candidates = mutableListOf<CacheRow>()
                 var scanned = 0
@@ -1976,6 +1971,18 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
         } finally {
             key.fill(0)
         }
+    }
+    private fun verifiedBackupSources(ownerAccount: Long, ownerVault: String, key: ByteArray): MutableSet<String> {
+        val retainedIds = dao.ids(ownerAccount, ownerVault, "file").mapNotNull { id ->
+            val item = file(payload(checkNotNull(dao.get(id)), key))
+            val props = dao.get("state:${item.id}")?.let { payload(it, key) }
+            if (props?.optBoolean("purged") == true) null else item.id
+        }.toSet()
+        val receipts = dao.list(ownerAccount, ownerVault, "source-link").associate { row ->
+            val link = payload(row, key)
+            link.getString("source") to link.getString("file")
+        }
+        return LocalBackupReceipts.retained(retainedIds, receipts).keys.toMutableSet()
     }
     private fun saveSourceLink(source: String, fileId: String, key: ByteArray) {
         val mac = javax.crypto.Mac.getInstance("HmacSHA256").apply { init(javax.crypto.spec.SecretKeySpec(key, "HmacSHA256")) }

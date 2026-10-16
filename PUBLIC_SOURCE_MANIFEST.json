@@ -1,11 +1,11 @@
 {
-  "version": "0.19.0",
-  "code": 29,
-  "compiledSourceCommit": "9cb712c4dfdfcf8e2f4273b6c155e6a697536879",
+  "version": "0.19.1",
+  "code": 30,
+  "compiledSourceCommit": "066031f5feb4d36e3253661941b7ff20ad1ba267",
   "files": [
     {
       "path": "app/build.gradle.kts",
-      "sha256": "6ed23dd0a7572408069bab46e82e21e3004a624625a78919fc2faf9c1a24793a"
+      "sha256": "afac75cb6359a027efdf10a0d1b8ae8291acae252c94505826fea3c53db380df"
     },
     {
       "path": "app/libs/zip4j-2.11.5.jar",
@@ -161,7 +161,7 @@
     },
     {
       "path": "app/src/main/java/app/televault/data/DriveRepository.kt",
-      "sha256": "a1df002982be1a386fc3ebf2cd1f88d7fe14f13648848e6028eff43c6badc371"
+      "sha256": "83f85408bd99a41ac10de71458335c8d583017ce454f4c137cc0a54b74ab4545"
     },
     {
       "path": "app/src/main/java/app/televault/data/EncryptedMediaSource.kt",
@@ -820,6 +820,10 @@
       "sha256": "41f27dcff308b78306051076f6f9086d1481bdecadb56b4c35b9f0f6219e7206"
     },
     {
+      "path": "core/domain/src/main/java/app/televault/domain/LocalBackupReceipts.java",
+      "sha256": "e71b5e36717d55bceb4ffccee91cecb03879a05e8dcbe53a4ec6f4af9d4a74e0"
+    },
+    {
       "path": "core/domain/src/main/java/app/televault/domain/LocalFolderOrder.java",
       "sha256": "cdb1e590fd970bc6590622cff19812d03d6c683bee3606e0f704623ed74dee80"
     },
@@ -1008,6 +1012,10 @@
       "sha256": "674932aa04b8bfd1e45fef5b32aee8c0fb4199b5e4bfc116981678b304b0829b"
     },
     {
+      "path": "core/domain/src/test/java/app/televault/domain/LocalBackupReceiptsTest.java",
+      "sha256": "84efd1b109a2bdd69e6b3224c7f05e08573586b057759063749ad9fd4a75eb46"
+    },
+    {
       "path": "core/domain/src/test/java/app/televault/domain/LocalFolderOrderTest.java",
       "sha256": "094887220bb70b2a3c8666171f128ab4c9fe41806ff09dae0a27415488043564"
     },
@@ -1129,7 +1137,7 @@
     },
     {
       "path": "core/telegram/src/main/java/app/televault/telegram/TdlibTelegramGateway.kt",
-      "sha256": "0c6b7122de7f3455e4c31047ab46533efd898f731b1c321454641830e7d3d5ad"
+      "sha256": "1e05a09ff2c893bd8d7538d955d2c5d76553d669884ca2ee5c2c7f261f7c883e"
     },
     {
       "path": "core/telegram/src/main/java/app/televault/telegram/TelegramGateway.kt",
