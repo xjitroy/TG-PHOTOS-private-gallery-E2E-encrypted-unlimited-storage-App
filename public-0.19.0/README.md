@@ -1,0 +1,7 @@
+# TG Photos 0.19.0 public APK
+
+Android8+, four native ABIs; non-debuggable production-obfuscated build. Public app.televault.photos and pinned production signing identity; this cannot overwrite the separately signed personal app. Native gallery/backup/files/Vault/media features share one app source.230 distinct host tests plus release37app-test rerun and lint0errors pass. Actual phone/OEM/codec/biometric/account/provider/background/security acceptance remains pending; no production-certified claim.
+
+[Editable public source](https://github.com/xjitroy/TG-PHOTOS-private-gallery-E2E-encrypted-unlimited-storage-App/tree/a6558e09ad888ee6faab84010e156bb6ff06945c) · [Privacy](https://github.com/xjitroy/TG-PHOTOS-private-gallery-E2E-encrypted-unlimited-storage-App/blob/main/PRIVACY.md) · [Security](https://github.com/xjitroy/TG-PHOTOS-private-gallery-E2E-encrypted-unlimited-storage-App/blob/main/SECURITY.md)
+
+Choose Download raw file for the APK. Bytes 101695091, SHA256 7cf60df8f9baf1f24188593068b43da8fe5a5628eb8179cd6adcf5ea24dc784a, signer SHA256 3e7c1029cb5e2da80026758abd483b5bd7f0551b6a56bee6b21640b8ae774559. Verify before installation. Source visibility/obfuscation cannot make all modifications impossible; Android signatures protect official compatible updates. No private signing/account/session/recovery/encryption key is embedded. Keep TG Photos backups/recovery/catalog attachments in Telegram Saved Messages; deleting them there can permanently lose data.
