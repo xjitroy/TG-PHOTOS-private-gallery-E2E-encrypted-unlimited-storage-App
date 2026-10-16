@@ -1,0 +1,10 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="108" android:viewportHeight="108">
+    <!-- Android themed/status icons use an alpha mask; the full-colour original is the large icon. -->
+    <path android:fillColor="#FFFFFFFF" android:pathData="M46,41C36,30 37,11 50,9C68,7 78,26 65,42C59,36 52,36 46,41Z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M68,44C74,30 91,24 98,36C107,52 91,69 73,62C77,56 75,48 68,44Z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M69,66C84,68 91,85 79,94C64,105 46,92 49,75C57,78 64,75 69,66Z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M45,71C36,82 18,84 12,70C5,54 24,42 40,47C37,57 37,64 45,71Z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M40,44C24,46 10,34 19,22C29,9 46,19 48,35C43,36 41,39 40,44Z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M39,53L70,42L60,68L53,59L63,49L49,57Z" />
+</vector>

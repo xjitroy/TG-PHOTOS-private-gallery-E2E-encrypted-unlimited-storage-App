@@ -1,0 +1,1204 @@
+{
+  "version": "0.19.0",
+  "code": 29,
+  "compiledSourceCommit": "9cb712c4dfdfcf8e2f4273b6c155e6a697536879",
+  "files": [
+    {
+      "path": "app/build.gradle.kts",
+      "sha256": "6ed23dd0a7572408069bab46e82e21e3004a624625a78919fc2faf9c1a24793a"
+    },
+    {
+      "path": "app/libs/zip4j-2.11.5.jar",
+      "sha256": "fee9a941f286166d4a19719d818f20e9f3addb3cbd7291c08b67f0e0ce75a9fd"
+    },
+    {
+      "path": "app/preview-rules.pro",
+      "sha256": "245a6ea65631cf641c7a00963dd33201117f030a7a7528bf029e0ca1e9c90454"
+    },
+    {
+      "path": "app/proguard-rules.pro",
+      "sha256": "5bdb145b9029d604ec3c1ad965cbc1429c10bed7ba4a1d9637bd528bf4386ea5"
+    },
+    {
+      "path": "app/schemas/app.televault.data.DriveDatabase/1.json",
+      "sha256": "8348e37f69072f81ffe49d139f3c4a11bdfad7d6807344bb24182f9c2a11e1ca"
+    },
+    {
+      "path": "app/src/main/AndroidManifest.xml",
+      "sha256": "19853e5647c1ddc36fd89e960dc27807bfd138d1366182a49230d89f033f4c72"
+    },
+    {
+      "path": "app/src/main/assets/third-party/AndroidX-Apache-2.0.txt",
+      "sha256": "809fa1ed21450f59827d1e9aec720bbc4b687434fa22283c6cb5dd82a47ab9c0"
+    },
+    {
+      "path": "app/src/main/assets/third-party/BouncyCastle-0.txt",
+      "sha256": "f9e6b01128a66b9887432db0397034793bcb1667770990c27fd4fd04ffc0c12a"
+    },
+    {
+      "path": "app/src/main/assets/third-party/OpenSSL-Apache-2.0.txt",
+      "sha256": "7d5450cb2d142651b8afa315b5f238efc805dad827d91ba367d8516bc9d49e7a"
+    },
+    {
+      "path": "app/src/main/assets/third-party/README.txt",
+      "sha256": "947f47aff56db7974182d490b461ba40983fab80971fcb710febb0bb5bdb09c7"
+    },
+    {
+      "path": "app/src/main/assets/third-party/TDLib-Boost-1.0.txt",
+      "sha256": "c9bff75738922193e67fa726fa225535870d2aa1059f91452c411736284ad566"
+    },
+    {
+      "path": "app/src/main/assets/third-party/Zip4j-Apache-2.0.txt",
+      "sha256": "809fa1ed21450f59827d1e9aec720bbc4b687434fa22283c6cb5dd82a47ab9c0"
+    },
+    {
+      "path": "app/src/main/java/app/televault/AppMotion.kt",
+      "sha256": "2ab6faf4802af85179c5052b8bcee6b2509afd8896744c2d1a5f085aa1650752"
+    },
+    {
+      "path": "app/src/main/java/app/televault/AuthViewModel.kt",
+      "sha256": "ceada00d63dfd6400b8eb6753456e91c25ea38ca8270ee6610f19764afb2f2a8"
+    },
+    {
+      "path": "app/src/main/java/app/televault/DriveViewModel.kt",
+      "sha256": "cbcabf512e3a2215bf5dbf86fde84eaf06202fa824b5b5757f484d64b096b0c1"
+    },
+    {
+      "path": "app/src/main/java/app/televault/LauncherIdentity.kt",
+      "sha256": "ccdbf0a99dcd0a67fafe0beffceaaf933ecadaf349d158086ca4e6f555f243f3"
+    },
+    {
+      "path": "app/src/main/java/app/televault/MainActivity.kt",
+      "sha256": "3ebc6fd750ea1c3e746895df2c6dab49b029b327dd409805345361d33d948167"
+    },
+    {
+      "path": "app/src/main/java/app/televault/PreferencesRepository.kt",
+      "sha256": "578800aa83e9f302e3378cd15e91aa6cb9b1f1dc154295cbfde4e87492aa2c7e"
+    },
+    {
+      "path": "app/src/main/java/app/televault/RuntimeDiagnostics.kt",
+      "sha256": "a5ef58ad87e8e453db6b3bd05ff7c3191fe8de1a5baf9f95a0b5357970271887"
+    },
+    {
+      "path": "app/src/main/java/app/televault/TeleVaultApplication.kt",
+      "sha256": "5c5101c88d1b61d0e61f5bfda4eb0286855a18be1af051e7fcfaeebc1c3d3789"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/AppNotifications.kt",
+      "sha256": "3da8644ee2bfe610948afe953ab8772070195ed86f44aed9d425ad6fcdea7db9"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/ArchiveCopies.kt",
+      "sha256": "c01c9eb469504fdd008b026607d07494e8bb1fe89c8e4f893d9c2843572a95f7"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/AudioTrim.kt",
+      "sha256": "c8125143dd2c7fbbc5995ef8fa6b48da4bab5f8ae4e959f4483a39f52747d2dd"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/AutomaticVideoNotice.kt",
+      "sha256": "442dd5ef5c8dfa1c5c7c9fc8bdaa5478923b35f1064c4f48800368830336932b"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/BackupOverview.kt",
+      "sha256": "319e3966d70939744f97f335ece1fed917382af8543c9e443e1c51f4b2ff8f39"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/BackupScheduling.kt",
+      "sha256": "fb78afb4c52de2888fb0ab7a6f688be0cd50a5c1d016c5917217df50f51776be"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/CacheDao.java",
+      "sha256": "c89defbfe4f6f284d5bbd6787b8e2516514c5d7b1fa01d4b61e925e3b98f03aa"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/CacheRow.java",
+      "sha256": "aa085d876dab70bd391852e047f23b2aac682f12925d8ef553956510cc12fba5"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/CloudExportStorage.kt",
+      "sha256": "9c72e503a54ce4ab0c0fe907ac2f5af2498c2e5985a2ab70420df7e1d2a85515"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/CloudExports.kt",
+      "sha256": "f471ce691965b2d4498354acdb255063829174beb9f37bc28f62f99604d6f38e"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/DecodedPhotoCache.kt",
+      "sha256": "8adb56ffd225209ce682d03663e34f45dd6900875cc4ab5b7379666131cbd1a8"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/DeviceCopyResolver.kt",
+      "sha256": "459bd8dec0ebe674493fc2807aac86de5d99c85cb14302639b38f3ceac17bc75"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/DeviceFileAccess.kt",
+      "sha256": "e9f55eb027fcb85f7813708c048d88633ebe9fa7336573518c2f19429700aa08"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/DeviceIndexUpdates.kt",
+      "sha256": "517069a506a490853a33eadb7f1085237c7ac21681a6b8f522c82615be390a9b"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/DeviceTrashUris.kt",
+      "sha256": "fd990f6a22bb141872940d4aa642a3c05b3d3ced7abf5e0188868c670a1ced5c"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/DeviceVaultKey.kt",
+      "sha256": "c50b50077ee7e678cb59524e7ed6a729ff8b4145343053a37077d588d73e02b3"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/DocumentPreviews.kt",
+      "sha256": "61f7f578911c12a41951a05e78181d042c0df0f7facbe6e0030b6f3153c59d67"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/DriveDatabase.java",
+      "sha256": "459247f8041ed920592f455ba813a21bd31c03a855989033d3551c9993757f04"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/DriveModels.kt",
+      "sha256": "31a7317fd243538382ac56cf340e293f2937fea78f2adc728e069807d3a94054"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/DriveRepository.kt",
+      "sha256": "a1df002982be1a386fc3ebf2cd1f88d7fe14f13648848e6028eff43c6badc371"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/EncryptedMediaSource.kt",
+      "sha256": "062db76374cb50ee50ef4c2d407eafd1b48d5b604cbb4a51a25b3fe364961937"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/EncryptedPreviewProvider.kt",
+      "sha256": "9663767d81927fa2dddabaa58dba96f5c52e98651ab9263f449ed7391d3d751b"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/LocalFileActions.kt",
+      "sha256": "4424ee569f211f1b55c3172890aca13f714abb0dcad74e02ed39e0715eab6ade"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/LocalFileTrash.kt",
+      "sha256": "bd513e36e4042df32f6379aedb44f14cb508b7142a38635437653054d8700d81"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/LocalIndexCache.kt",
+      "sha256": "0138e659189b53c17a62f142a03c5e44a4e0fc1a135aeb5e3d4275d59fad6f46"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/LocalIndexEnvelope.kt",
+      "sha256": "16138ab3a8b8a7da67a5a9581aa608d6108a30464cae85f198d07849ec02ff50"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/LocalMediaRepository.kt",
+      "sha256": "a32438d71372f1b741755cb125125b43f3094fe17056e55cb7450b65be228c01"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/MediaEditCopies.kt",
+      "sha256": "42009388c3243084cada4e9c6ef47f9f2927cf3aebdf0f282ce613c7fededebb"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/MediaFacts.kt",
+      "sha256": "cffa1895f8c457ef2e47db113c0623469454c586c419ab8228af351af60c80a0"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/MediaMemory.kt",
+      "sha256": "90cca97556875742ebd8690742db8b39866545fbea55993e76487f8b218daa27"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/MediaStorage.kt",
+      "sha256": "ec8dce480c93e70e59e354cfe70e0a0a0afb94fd3187647040c1e6df48d5ca08"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/MediaStorageScanner.kt",
+      "sha256": "2ef637fa8a5c4f11dd79157c52cba011baad3d092a2e3819e9b3acd1ed7cefe2"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/MediaTools.kt",
+      "sha256": "b77a4e726c7bc0ac2f2d10da177f7e0f7a1ea85dcb64a7c1042528be9e40e93f"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/PrivateMediaGrants.kt",
+      "sha256": "9480639b2238092ce88aae31d1112177d02f5f6c5f569059607cdc4af7afaf0a"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/PrivateProfile.kt",
+      "sha256": "e98c57ba6161398cc8c2987de40d702c1c24a8aedca9ab7ffc09496b9602bd2b"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/PrivateVaultCloudStore.kt",
+      "sha256": "cbf676802d6c655360e5ea09515957632f98bb6f8767cf10f6e770e07267ecda"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/PrivateVaultImportFailure.kt",
+      "sha256": "6b6a28283889047bb5aa49620398d5b307651fc438c2a260c4ba09510019d86d"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/PrivateVaultRepository.kt",
+      "sha256": "f0cc295310933470cc4e1043711d23433cd9ee764ca8f2e7bd05290d8412bd1f"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/SharedMedia.kt",
+      "sha256": "942e583116a3277c467e7c9c7496996189b859732099be9ffa967fb48757d2a0"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/TransferOverview.kt",
+      "sha256": "560859da5728c761c362181e39c0031d1aed207b3652415bce6d00b7b5789a58"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/TransferWorker.kt",
+      "sha256": "47b705f37df05f1896ecd9d284429a3aa5d9d4be406628f429da025f2515aad7"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/UploadDrainHandoff.kt",
+      "sha256": "daf894cf4104a9dfbb7bb136567f9790732153736c83c8ea5707c78b8fe1f43a"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/UploadPolicy.kt",
+      "sha256": "c63734372f4c8ea766f06f1479b96b317bf5c2406e0ab8714541fb6d54679ad0"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/VaultBiometricKey.kt",
+      "sha256": "c28634f2245740e17576466acfce76ed617f59754b8de3dfac30ac82903581d2"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/VaultFolderSelection.kt",
+      "sha256": "1681d08f16281b33e817290f58ba517ea494669322ba84895576588a243bc64c"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/VaultOriginalRemoval.kt",
+      "sha256": "b9a84c9de1556bb58f1f139056dc003e1a0ebc5b8d1412b18f6bfda4fb1b89e5"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/VaultSourceCleanup.kt",
+      "sha256": "236fc333c448b2bf4d5f91ba18b5d62d7c5df4952da3a1299c18e5814ab49e4c"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/VaultZipSupport.java",
+      "sha256": "c4b8f1002adaed75c51200196bfcb98d1aefc40f0ea8b59fc2e30e46814ee992"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/VideoEditExport.kt",
+      "sha256": "09e0dd7d27e91794c13ce6e31cec7bfb2c3131aa005a647349e03110759523bb"
+    },
+    {
+      "path": "app/src/main/java/app/televault/security/DeviceAuthentication.kt",
+      "sha256": "e49d02f5886ace220acf76f3b2ca36e6f96ed5e7964600e6e528dbf4a99ff739"
+    },
+    {
+      "path": "app/src/main/java/app/televault/security/DeviceProtection.kt",
+      "sha256": "3f094089dc43b9a9a3dfd95fcd3b8cb91175fd69b2137e418d1067b50280f256"
+    },
+    {
+      "path": "app/src/main/java/app/televault/security/SensitiveClipboard.kt",
+      "sha256": "4f6435869134b26c9b22b73ec646f31b515372f8659766aaa7d2b5f58ecb6152"
+    },
+    {
+      "path": "app/src/main/java/app/televault/security/VaultPasswordManager.kt",
+      "sha256": "8c80849a8f1d3ac40d77fcee8aa84a1160109729b41a6bd06c31f642c1ee1ac9"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/AudioPlayer.kt",
+      "sha256": "8b788fb8d57ccac892c7f1b79b7d62ba3884a190a8baf336c84b76531bb5b7d4"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/BackgroundProjection.kt",
+      "sha256": "90efc1f1b20044c36f3efee050e506bd41c42fb91b4087704e0ae2062366a092"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/BackupStatusCard.kt",
+      "sha256": "e265cb8154f212fc1c9bb4fe88a8b06208ee5f57f2f5899e9ebf64f882af18d1"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/CloudExportSettings.kt",
+      "sha256": "ef3e5b1e9ea7bfc8abe66795e115f7277437debe96cbb16d6f17200c5e3dd8d3"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/CloudStorageCard.kt",
+      "sha256": "e0fb56c233ce5052176c7880424dacf2331da7c02b1fd34cec93fd667861fa03"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/DeviceCopyActions.kt",
+      "sha256": "6fb43ba69efb2ff3c94e2c10b3d2395a4c1dafbdb2534c419dc851e75646ebdb"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/DocumentViewer.kt",
+      "sha256": "4556218b5d2b327c88892823a9188d1af93453ec2f99d03fbcb78a74699fabde"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/DriveScreen.kt",
+      "sha256": "a80ed00002d65ecd7154cf9c3c69761b5ec201dd0db4fed7f00d6d4e80d16f44"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/ExportDateDialog.kt",
+      "sha256": "5268e52c3c1b6dafc048f09558f0eb5d70a9bb91b852a2be0a00115c0be68571"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/FileCategoryCards.kt",
+      "sha256": "db52095030ee7fd9da798435972fe483958c5b63173a87beed1ff6fc36e978e0"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/FileLibrary.kt",
+      "sha256": "d6ae315c1cb138e15b6b05aefb3caba06198cef0804994443159675f3dc20a23"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/FolderColors.kt",
+      "sha256": "0081d3b611c93d81e233020ffc8287c0461c4c3aa34ae1e22c7505bcaa712f03"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/GalleryBackdrop.kt",
+      "sha256": "5b90dba0f944a9b81d27cc32a940c57e4e039447a1d436123a095bc5a366c227"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/GlassNavigation.kt",
+      "sha256": "31a1e280c83a57eec529a67a6a6a5e28763596bc5bc91fe2f4c1d01b55028406"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/GridDragSelection.kt",
+      "sha256": "65cd1d46f560a6161623d6d757cd16974c0c6c522d09d9058d69ff783ff0e390"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/HeaderActivity.kt",
+      "sha256": "8c7ae3b984d59bea0d7cdb6eefafd83ed494727d109363f7c22eb5a686aa77ac"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/MediaColors.kt",
+      "sha256": "25a9af65794670dda9848de48579b4e42cb74ac0d30c4ada18951e1519ebbe9c"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/MediaEditorSheet.kt",
+      "sha256": "1aef3cfaaabf79a6b52dbce2a375b7b8270d092464a862f6b0693d2874b14e89"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/MediaFilters.kt",
+      "sha256": "d1d61fe14ddbad7ee38a38bc188642caf9de1972341bf8aaee76b45cdafeea86"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/MediaSharing.kt",
+      "sha256": "1f6a01470ea457eed464a34018e703ca10c2face2350befd37763f7e7edfcf2a"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/MediaStorageCard.kt",
+      "sha256": "0592e6276cd5f9dc89d2ed95ef7689bc464531b91d14b07f29f1f8ceaec568be"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/MediaViewer.kt",
+      "sha256": "c01e621c05247b855f6004f857faa57e77a85c69878393728cbabe975a430d69"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/OfflineDownloadsSheet.kt",
+      "sha256": "e9b42039bf56052b8618cf59672a6ca9d1ab11c1cc7442eeb2bb8b1a998bb5a4"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/PageMotion.kt",
+      "sha256": "40a6a6bb8eaaf55ae935431eb0017a74bd1f8dc360ecef08040ba2fd57789751"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/PasswordChangeDialog.kt",
+      "sha256": "991977c7ba5b3b2b78dc90340d0b9cbb163a78f7f99a713ea85790d989a83b20"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/PasswordCreationGuidance.kt",
+      "sha256": "85d10136b4389238c47baeea96c6c130742c4c6e361dc6f57bcfb1db2b4a4688"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/PasswordTrashConfirmation.kt",
+      "sha256": "b20ff69cd0feefa8b8313859df23217b7e3629a22873f0bcc75f16c75671fb99"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/PhoneCountryField.kt",
+      "sha256": "cf72002792a3dd46dde53893d5cede897972f6df1a847905ec7cba4d2517d1e1"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/PhotoComponents.kt",
+      "sha256": "d36cfc77be5b0101aadb34044c98515857c83dc38dffbf395e473545d87fab69"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/PhotosScreen.kt",
+      "sha256": "2eca476a60cdd3af99330a4238041db870ef3c6d0763f64adee0481a6bbb3955"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/PrivateProfileScreen.kt",
+      "sha256": "aee6a951fd5b17f3ea863fbd1674da18b0f324bdf057733e7e1f94535e402d5d"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/PrivateVaultPreview.kt",
+      "sha256": "1cbf4a85fa43ff69bd40ea61d4c0a126b98c1d50e22255b6129d748afb197eac"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/PrivateVaultScreen.kt",
+      "sha256": "50c9f8a4d43329aa472a5167aab782c9f235ccdfeb2c9339af831d81ec6eac70"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/ProtectionScreen.kt",
+      "sha256": "7b469557904acf48c982e3ad651cd743ab6decf94872df4edecd3cfcfd6aef99"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/RegionImage.kt",
+      "sha256": "507a5aebd47fd7ad6bc9ca7c1bc186338eeeb37e6e6674e6defe01dd0c064264"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/SecureLoader.kt",
+      "sha256": "62be7b89c100e66ad98518b67521f7ab5fb049bc51c7350bd4ba6b841569d240"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/SelectionAction.kt",
+      "sha256": "8fd2f5fceb359332bee29d7f9a43ecff3bbb8eb27068e3dcfec963ac1a48c109"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/SettingsOverview.kt",
+      "sha256": "bcc8e29771c1ce23544bcf88fdc03dbbfdf1fa2430f5c92c731786e55349e694"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/TeleVaultRoot.kt",
+      "sha256": "3bd478c9a0d5a64896dae24254c7eba69f2b5a0be732f6a6022d0fdfd77526b2"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/TelegramCodeLink.kt",
+      "sha256": "1c8bffec123ed995c53afbf6a8e250ec1bb73da8ba6ea00e3907a0d44efa232c"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/TelegramSessionsDialog.kt",
+      "sha256": "1f38b06f3740c125f880917deab07e1e0004026b29599b7e8567fa2a501a8154"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/Theme.kt",
+      "sha256": "7ea318aac49a5beb93a4cec6e0ade2f121e51baa0871f1037a255ca7aacd78c6"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/TransferQueue.kt",
+      "sha256": "29b263233637c760c6e613a23e7906fd6a595869714a15a55bd3fa34c7589b73"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/TrashActions.kt",
+      "sha256": "33ae17c42785f2ce003b38907f7d7319e53a1565066c9d1e5be3fadefad5bd08"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/UnlockScreen.kt",
+      "sha256": "a01976f75470d5c147972fffdf3c4cfa6872e58c9d15aaa262dce2e5be67cc6c"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/UsageGuidance.kt",
+      "sha256": "0733c45d669a98445f10808aba5a2da426451de2e606684ae576de12626c6dc7"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/VaultBiometricPrompt.kt",
+      "sha256": "e89245c8de9162bdcd1fd3b4f540071f5ac70ce951636dfcde83757ce6e26535"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/VaultGalleryArtwork.kt",
+      "sha256": "3620c36233e314a6640f38b92c686de87c2c7a7fed05230e627a9f417378955c"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/VaultImageDecode.kt",
+      "sha256": "e30acdcd00f490896ad492dc0c1a996a2056cf7973ffe70a398f2523d2fc96aa"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/VaultSecretField.kt",
+      "sha256": "c866925daeda49c150c6702000a247f5b8e0aa3efeb4833410a615cc2e4a8517"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/VideoPipOverlay.kt",
+      "sha256": "0305746c3e1566c30b606022c9009ed43c22d86fce8a6fc75ec4c8de01011719"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/VideoPlayer.kt",
+      "sha256": "20c8b8fa467c2fba120b667c60c8bbcef8d2973fd1e3a226d6699d57f8b34461"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/ViewerPlaybackSession.kt",
+      "sha256": "ca07c6e9b613cf58c2e41110060647b3af9fd0d03ffff2ec6b3754749a108af5"
+    },
+    {
+      "path": "app/src/main/res/drawable-nodpi/telegram_saved_messages_guide.png",
+      "sha256": "80eff984c5976aa92f3f655973424906bb5d845826e6e6af0faa5aececf53740"
+    },
+    {
+      "path": "app/src/main/res/drawable-nodpi/tg_photos_logo.png",
+      "sha256": "55880831a1223a60caba472995ff719f75f17fbb6861ca808ce7dc634faa55de"
+    },
+    {
+      "path": "app/src/main/res/drawable-nodpi/tg_photos_mark.png",
+      "sha256": "7565533b7f67fc901e28bc0372b99d4b2ac75f262e30323c138af2abd74f0e12"
+    },
+    {
+      "path": "app/src/main/res/drawable/ic_drive_foreground.xml",
+      "sha256": "ecf25cf1980ed0a39a71853c2f7c82cc9a6b0bd29705c24085430e7454f3f015"
+    },
+    {
+      "path": "app/src/main/res/drawable/ic_notification_tg.xml",
+      "sha256": "66257e6d948aa77d6e024b8449a376f22462fc5458fbfd2569103af34b77d009"
+    },
+    {
+      "path": "app/src/main/res/drawable/ic_photos_foreground.xml",
+      "sha256": "f2948f4c8bc82e6f34e15ffc8a13419b80a3a5649ac4af917d910c3894f08283"
+    },
+    {
+      "path": "app/src/main/res/drawable/ic_photos_monochrome.xml",
+      "sha256": "3f5955928b94ed7eb77b888bcd2da079c3d9755113dae5b39af081a2203f41f1"
+    },
+    {
+      "path": "app/src/main/res/drawable/splash_background.xml",
+      "sha256": "203ed40dce00485f6c1967bd462f5171795c4c4d2af34c4364b3c5a407272e89"
+    },
+    {
+      "path": "app/src/main/res/layout/tgphotos_video_surface.xml",
+      "sha256": "4d2a50a04dc7ec3f8226aaecacc7490960c8a349e812d8d25e70e90af233e275"
+    },
+    {
+      "path": "app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml",
+      "sha256": "34619a4a14fcfff2783c16a6eaba8cca2d2888a97f223f21088f10b9d041c6f6"
+    },
+    {
+      "path": "app/src/main/res/values-bn/strings.xml",
+      "sha256": "035a66a09130409f44e91890a955f8900a583202cfc0eef4b6da4e2af1b4c7ad"
+    },
+    {
+      "path": "app/src/main/res/values-v31/styles.xml",
+      "sha256": "82fa1dc8b25ba18d5d03e464ef988d7f89fb5457fda4d038f506d01b80750208"
+    },
+    {
+      "path": "app/src/main/res/values/colors.xml",
+      "sha256": "bc60f47daa7013d843ae4231b4d692283b1ab54d67d87ab1a77b6bfbfac8d695"
+    },
+    {
+      "path": "app/src/main/res/values/credential_assets.xml",
+      "sha256": "c73ec9a05f9694bb0f164add90355a5a90337b40edcf9a036f0dad20b9d68988"
+    },
+    {
+      "path": "app/src/main/res/values/strings.xml",
+      "sha256": "892cbd7bc8b8e91b3fa14d650a877bf0cdc4262690e34ad24c608b3464769e09"
+    },
+    {
+      "path": "app/src/main/res/values/styles.xml",
+      "sha256": "167deb029ce68dc979f22c89c42131262d2724a6cf8bcc8245636a16e82399f5"
+    },
+    {
+      "path": "app/src/main/res/xml/data_extraction_rules.xml",
+      "sha256": "e97b896cce46f4ba929fb5e4011f3cae0f896e8caf89d5d1143262784489314c"
+    },
+    {
+      "path": "app/src/main/res/xml/shared_paths.xml",
+      "sha256": "e62e0381d0381a3f212cb81c192cfa222328faf2a3649a14f312cb1db7581a62"
+    },
+    {
+      "path": "app/src/test/java/app/televault/UploadDrainHandoffTest.kt",
+      "sha256": "2c60e44765848e75b70e2a13c50fe97f7ad892331475ffc3c121d6fa0e5d5b14"
+    },
+    {
+      "path": "app/src/test/java/app/televault/data/BackupOverviewTest.kt",
+      "sha256": "6a4bc00391145e32287be39d729848daf3910e324c1fa6573760fac81e054d21"
+    },
+    {
+      "path": "app/src/test/java/app/televault/data/DeviceIndexUpdatesTest.kt",
+      "sha256": "4d0d79430398d08b67605f5882078910c87bc27e60e769175218910e945b22fe"
+    },
+    {
+      "path": "app/src/test/java/app/televault/data/DocumentPreviewsTest.kt",
+      "sha256": "db37b4c2f62879581ab2e8b43e2d12fd1677c0e51ba318b85650c0d1bbc301c3"
+    },
+    {
+      "path": "app/src/test/java/app/televault/data/LocalIndexEnvelopeTest.kt",
+      "sha256": "e718c21ecc2c688909be28fa7200717d137e68d4870e838df6105aa3a06dd093"
+    },
+    {
+      "path": "app/src/test/java/app/televault/data/MediaStorageScannerTest.kt",
+      "sha256": "b9f83dae56e3ba8e04f81d24ea93f401e4bb8a9550c0a6871bf3a29e3b2d6ce0"
+    },
+    {
+      "path": "app/src/test/java/app/televault/data/TransferOverviewTest.kt",
+      "sha256": "92eba271aef9be87179ea6d7063725660b4dabbaa151aa8bd65d04e51e7f47d6"
+    },
+    {
+      "path": "app/src/test/java/app/televault/data/VaultZipSupportTest.java",
+      "sha256": "5e0e187a35437aadb6921cda42926b06f289471e50393fc033e5988fddc7823c"
+    },
+    {
+      "path": "app/src/test/java/app/televault/ui/GridDragSelectionTest.kt",
+      "sha256": "f212a96f45eaef075a2597d998b0856d74bf64b901f4706d76943ee7a85854ad"
+    },
+    {
+      "path": "app/src/test/java/app/televault/ui/LibraryProjectionTest.kt",
+      "sha256": "602af95f654eec535eba8cb110e6f236fded08775333b22bd6fe849319128588"
+    },
+    {
+      "path": "app/src/test/java/app/televault/ui/MediaFilterOptionsTest.kt",
+      "sha256": "427063219d13987285e8d7f05e39a5b48992543a84b3ff631f2ff79fa8e6f4f4"
+    },
+    {
+      "path": "build.gradle.kts",
+      "sha256": "fb0e735592e0e5b834c942a0dd7b6177d73f4ec810eb2d70414dc3d091251590"
+    },
+    {
+      "path": "config/public-signing-cert.sha256",
+      "sha256": "93ad6b526cec6560da163bf0ba38915b46d1c58a3f94bee3bd7a417b7497bdeb"
+    },
+    {
+      "path": "core/crypto/build.gradle.kts",
+      "sha256": "b9ef7d34a0aaa31102efb388bc8d5700989c4a8b59c1308020cf92461246363a"
+    },
+    {
+      "path": "core/crypto/src/main/java/app/televault/crypto/AuthenticatedRecords.java",
+      "sha256": "2002c86c28eea70974130ba0c5c4b6c01c97360d844b97c3aec2cea28ae478be"
+    },
+    {
+      "path": "core/crypto/src/main/java/app/televault/crypto/CipherParts.java",
+      "sha256": "611fd9b03c8e7d7821946f15203770342076e0ee4fa17fda07e01c8f648f2530"
+    },
+    {
+      "path": "core/crypto/src/main/java/app/televault/crypto/CipherRangeCache.java",
+      "sha256": "6e5d0c04d24a78b09875eb5b6f699f2edfcdfa4dbb65649fb4068f6075d96f21"
+    },
+    {
+      "path": "core/crypto/src/main/java/app/televault/crypto/NestedAuthenticatedRecords.java",
+      "sha256": "3b53732b4884a52f49af04ccac8ef7e1871eabd4ca921d085437cb2d31d04727"
+    },
+    {
+      "path": "core/crypto/src/main/java/app/televault/crypto/NewPasswordPolicy.java",
+      "sha256": "635da18a8c56fbb759cc7d55f4a7102714bc5a6d490c13e2202d2abd608f656c"
+    },
+    {
+      "path": "core/crypto/src/main/java/app/televault/crypto/OfflineCipherStore.java",
+      "sha256": "8c0b758ef504bd5f302f102d3b71719d712781865e4a7c8c8526294a34a90a30"
+    },
+    {
+      "path": "core/crypto/src/main/java/app/televault/crypto/PatternRecovery.java",
+      "sha256": "07d3787db25b23e77b0b02c0281e804bcb308b7c77fee3d4388bac36b570a275"
+    },
+    {
+      "path": "core/crypto/src/main/java/app/televault/crypto/RecoveryCredentials.java",
+      "sha256": "58bdc989b8eb8b10fac97df8347dc421df916e8b5253a0846b19d4e113bcd67a"
+    },
+    {
+      "path": "core/crypto/src/main/java/app/televault/crypto/RecoveryEnvelope.java",
+      "sha256": "a5ed1cbd7300f67e9e936828b072b0b2a6f31d6c009d4d9c2b822935c78fb85c"
+    },
+    {
+      "path": "core/crypto/src/main/java/app/televault/crypto/RecoveryPhrasePolicy.java",
+      "sha256": "034d8987ae5ed07df8ab8f75d5e0343dd70ae54f154e24b0b8d268886300c0d9"
+    },
+    {
+      "path": "core/crypto/src/main/java/app/televault/crypto/TransientCipherWindow.java",
+      "sha256": "fe02d4ef1a55d91b741f29d0b9606d67c0727e4ea09b580fd11e23abb25582da"
+    },
+    {
+      "path": "core/crypto/src/main/java/app/televault/crypto/VaultCrypto.java",
+      "sha256": "91585384d97530f4d1e02ecc8c889ac7bc01321e42bcb303c0ca6a0d395f36f5"
+    },
+    {
+      "path": "core/crypto/src/test/java/app/televault/crypto/AuthenticatedRecordsTest.java",
+      "sha256": "d41128beec6f32cf0b38a465684812c1c7c771ed689eb6aae142aa023a7615ff"
+    },
+    {
+      "path": "core/crypto/src/test/java/app/televault/crypto/CipherPartsTest.java",
+      "sha256": "6106fef1dc92b5d633687c0da37d02dcf7f934806b332c9f8ebaa52cc0a1469d"
+    },
+    {
+      "path": "core/crypto/src/test/java/app/televault/crypto/CipherRangeCacheTest.java",
+      "sha256": "7a764234fe3723c3bb82c66a70ad77a35e35d81f23c1b823fa57cc73dd0bf84e"
+    },
+    {
+      "path": "core/crypto/src/test/java/app/televault/crypto/IntegrityFailureTest.java",
+      "sha256": "0b7845c7fa65297d9aaad7e59b93dab91588ad409a4f7aa7cc26893f9fa933ef"
+    },
+    {
+      "path": "core/crypto/src/test/java/app/televault/crypto/NestedAuthenticatedRecordsTest.java",
+      "sha256": "08214c70aa57dd788c02aae979f7d1a1aa704bbce5a28c76348d4ddad61a136b"
+    },
+    {
+      "path": "core/crypto/src/test/java/app/televault/crypto/NewPasswordPolicyTest.java",
+      "sha256": "777debe4282e2e9ff29b47f8ec7062da703359c8277f5526071fe9b4a4eb02f8"
+    },
+    {
+      "path": "core/crypto/src/test/java/app/televault/crypto/OfflineCipherStoreTest.java",
+      "sha256": "93022b520b122c6609f465d45206b352efa1f85ef2f09177b9c710221eca4b6c"
+    },
+    {
+      "path": "core/crypto/src/test/java/app/televault/crypto/PatternRecoveryTest.java",
+      "sha256": "9c00f3598b765aec4157ebcc9f6ef539a0308e7bd54c33d5a874d00f8573d21c"
+    },
+    {
+      "path": "core/crypto/src/test/java/app/televault/crypto/PrivateVaultIsolationTest.java",
+      "sha256": "2e0a47753627896f737772b1d49aefad29fc40e6b96ca7dc84fc54f15f78fe62"
+    },
+    {
+      "path": "core/crypto/src/test/java/app/televault/crypto/RecoveryCredentialsTest.java",
+      "sha256": "6f980302b985c367c547961ddbffb42afa4e783ea94a2b0b24065306308fea3a"
+    },
+    {
+      "path": "core/crypto/src/test/java/app/televault/crypto/RecoveryEnvelopeTest.java",
+      "sha256": "a79d09c3859315b28564f9549e697fa6ffc52792f3983cdb9ceff78d7ae3b26a"
+    },
+    {
+      "path": "core/crypto/src/test/java/app/televault/crypto/RecoveryPhrasePolicyTest.java",
+      "sha256": "92a5aed3f4d8085f90a40d3f67bad83c079193f24e4caf753493a401a190734e"
+    },
+    {
+      "path": "core/crypto/src/test/java/app/televault/crypto/TransientCipherWindowTest.java",
+      "sha256": "aff63730e8858e38784d2a314662b42ea4d4800dc5701e95fc78c799cb844597"
+    },
+    {
+      "path": "core/crypto/src/test/java/app/televault/crypto/VaultCryptoTest.java",
+      "sha256": "40e1d975a6ff2cffb2b782bfe9a89189c3d2a61f290acbd01af1283d5ff7151b"
+    },
+    {
+      "path": "core/domain/build.gradle.kts",
+      "sha256": "f2edffbed283e09005fe819275c11de861640efb2e0a77eab74fa964271c8827"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/ActivityProgress.java",
+      "sha256": "d3b7f730c8f0afbe92dba6a3f98ad77177af72d3de343fc9fc0efbda1fc0e586"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/AdaptiveMediaPolicy.java",
+      "sha256": "ab7bd1363bdacfd6af8d34e482cd0b5ab356784973f093b5b2f9e129bbc34e1a"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/AudioCut.java",
+      "sha256": "64bbf53b6596b84f1162d9f8f0faeacd22c1330fe645a6420fcf9bbf0bb7a1da"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/AuthProtocol.java",
+      "sha256": "001d140ee81f86f9f4572c86a78084e281ac5800bcd75e1307b50188bc8887a3"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/BackedCopyVerifier.java",
+      "sha256": "c7932cfeb8cc06b3d15afadf9f5760c801753b5f42e33838f053ac27f25ebac7"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/BackupBadge.java",
+      "sha256": "6e61be69d837e052c10eb194f81da5731f01679e21da288183ae80c1e184efaa"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/BackupIdentity.java",
+      "sha256": "423334dd53889d006447e5da9c3b44dee93c22f34bef36882a2234ca5e9dfea6"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/CaptureTime.java",
+      "sha256": "571294d91ce652568cfb45fc5b3b609d1d24bcc7660a198adbde28a6a3b918de"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/CloudExportFilter.java",
+      "sha256": "1c3e021e1c973450ec2bbd5e243cfb497d54fdee048562099d3d38e4ba832e98"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/CloudExportNaming.java",
+      "sha256": "78bc72594b55257862ae18d4a55d1301fc9fe8c1030f90db43554bc59aa8bf22"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/DelimitedPreview.java",
+      "sha256": "e32da933eacf3a15741399fc0632f5b64b2ed2e87de03b2eb6c63917191333c9"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/DeviceBackupFolder.java",
+      "sha256": "e02f3f8d46c426894d2d01d1a10eb5a48c0bc235631b2ed7d42b89f748fea9d2"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/DeviceFileVisibility.java",
+      "sha256": "37d76967c7ba4205300bf6aa59baf3fcb42f07be20a436e26643e0ca944de30d"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/DeviceIndexAccess.java",
+      "sha256": "c16d0d2bc0daedfa458cfffcff5d29d2d92804367bcf12bb17163da138a104d2"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/DragSelectionRange.java",
+      "sha256": "df05b46a2b165a0f612280bc4a1849a59fcfd7c059bba32e4f876606acfda949"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/ExportDateRange.java",
+      "sha256": "17d377e096a608cc94e395618019c781c55a2243e3ceb82d010538ca060cad37"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/ExportPartialOwnership.java",
+      "sha256": "d8841944fa9d9f35c67b493e7cb3d4bd8630f468d1ddfea04cb2f6bc2a821fad"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/GalleryVisibility.java",
+      "sha256": "87278c1db163c52bf8d5573fcb6ff268c60a141388d2c3e13fea6b6134b1d542"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/LibraryPath.java",
+      "sha256": "41f27dcff308b78306051076f6f9086d1481bdecadb56b4c35b9f0f6219e7206"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/LocalFolderOrder.java",
+      "sha256": "cdb1e590fd970bc6590622cff19812d03d6c683bee3606e0f704623ed74dee80"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/LockGrace.java",
+      "sha256": "ac24594c74bd0cc4b7b5660731effc7c21efbec882db43c4ef226a54e1923b7b"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/MediaBackupPolicy.java",
+      "sha256": "349fa982b55ada69d5a126aec29a696522740e81af02752571b74c82afab6bda"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/MediaCategories.java",
+      "sha256": "4d141ff043018e86e7c8bfec80ebaef51996312bc5faf493ea31ff0b0c022330"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/MosaicLayout.java",
+      "sha256": "fb1140124072ec0dc9f0da3e71a3805a18b4c025b16436060056c061fcadb133"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/MotionPolicy.java",
+      "sha256": "6a38295a1e10af94ccd6ca763a0a4d3fda1c7c8ed6883d5df66846d9f01aacd5"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/OwnedCloudCaption.java",
+      "sha256": "8c429b714b79e6b89698beba0c14594f2c4a497ca9008643571a54d305864881"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/PasswordAttempts.java",
+      "sha256": "b0447f756ebce5d19de3120a4243f68f727a711b3ce014bfca851c259704ba6a"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/PcmGain.java",
+      "sha256": "6b9e15e038360a98b5681d36cc2cbb3448dfa1bcf247ce2ba05c60c5a1555c78"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/PhoneNumberInput.java",
+      "sha256": "699ca5a5f300bbfd2138d7c0f48fe19d98036c6e6a3118fc2288165423a30107"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/PhotoDataBudget.java",
+      "sha256": "802aec548ea40027a51fff33f79243321771ca32e24e9c61ba13051632de2487"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/PreviewSize.java",
+      "sha256": "e69a76d6907fee53947a8370ee7d4318c7e78a54fc6d990dbf87869614d67429"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/ProfileIdentity.java",
+      "sha256": "ad7e5ebc9e6eec565fe67bba3399b99c3cb434e2fe0e65764c99adfa7cc6fece"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/ResumableZip.java",
+      "sha256": "e0ae909cee7715cad24a71494385c564f95bb5aa3db2731786d90891ed5cf8c5"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/RuntimeEvidence.java",
+      "sha256": "3cf0761e9f2833276194d38abe587e92e0b70919415b36b234fa6d0a24ceed67"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/SharedCopyLifetime.java",
+      "sha256": "e1f24fb19907f46667140e60f0cb8da91bd18d20a434fa23d563da328fedb410"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/TimelineZoom.java",
+      "sha256": "016b3972267edd3b0aa56e275c7c994e703dabaeba58dfb9bbcd0aaf0fed19c3"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/TopEdgeReveal.java",
+      "sha256": "0b5e96d6cdb055eb3912fef8a797ec36f52cc4e49ea7bdbfa19b15c552eff9f1"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/TransferRate.java",
+      "sha256": "a504c8338d1f16ee6666bc792e885a027f9862f933b383d4379f6f6cd0ec78ff"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/TrashChoice.java",
+      "sha256": "2d87c86f1124371b48fb9b4ea9167fd9d281f80aee347252e4933cded9271498"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/TrashCooldown.java",
+      "sha256": "687285af29fa04e4888120b063d8677b4f425dc0d5e674e130e4245f8d60bed0"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/UploadQueuePolicy.java",
+      "sha256": "54d79bdf54f1689bb983aa4f987d28e66d9ac86c60ef51176d69c7f96e688284"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/UploadTransport.java",
+      "sha256": "81bb598fbf92636867fd803ff342971de7b09e8df53cecbbd99ff83d416675b2"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/VaultScope.java",
+      "sha256": "e5d1623470587baedb8dd902da8637f2de8190d1eef1e834c63abf892e48dd07"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/VideoPresentation.java",
+      "sha256": "8be85be81e1729dba048882495ca524b8e3f5201d9f8f930eb5f4599eafb3dc2"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/ViewerOrder.java",
+      "sha256": "37eba94a039af22b2c8c601399842b7fe780f3ff34f624aeb95661130e40969e"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/ActivityProgressTest.java",
+      "sha256": "1d734f7deaacaaa611b85258f18ad72f338866dac10679cf549cedf118cfe919"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/AdaptiveMediaPolicyTest.java",
+      "sha256": "2229cbfdb621b7c38860d8fa3845b958e1cee49219aa1b3f1b46da0631308279"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/AudioCutTest.java",
+      "sha256": "ccd9c6fa8b342be01b26bb55932970cd0e942e877570424e6779c0477e421e1f"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/AuthProtocolChecks.java",
+      "sha256": "7707635206fc7cf6cd381c69fb665569975b8f1a8577cce103ff478bb15b28b6"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/AuthProtocolTest.java",
+      "sha256": "6d0e2dbee5b4f99d270911059bf3c59fc75611134eac386665e57a7123d9ca67"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/BackedCopyVerifierTest.java",
+      "sha256": "f2ef9bab0268d6250b8c9f211383b26fd255bde1dd05226f2dd8730b452556ae"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/BackupBadgeTest.java",
+      "sha256": "04d3d00a53c5f83901758a047ea40050540f11b8868445175d0ce14c63213240"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/BackupIdentityTest.java",
+      "sha256": "403f3d3e7f438679bfd25949886721eebf22f104403946c71e66dc46d6e84895"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/CaptureTimeTest.java",
+      "sha256": "d4524dde1e9c65f8b85b56b1626f0f644d702a32a9f1aaab550fb6a6895007fb"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/CloudExportFilterTest.java",
+      "sha256": "da1a5c282f7478073184c57682edf65b85cf6a9cc492c0b705325a21945d3926"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/CloudExportNamingTest.java",
+      "sha256": "20dcf9bf499370d669d4d87b5ce02123f387c63ac841497bc4345ad3ac9e7cf1"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/CodeDeliveryTest.java",
+      "sha256": "5c58ae2ce229157e4b274db72dab9078b04747a14b959c66e3d7a1c745644047"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/DelimitedPreviewTest.java",
+      "sha256": "7ac60291d5e2304c4d2285c5accab410ce8bca42ab1f4c9a31b659a1433b4339"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/DeviceBackupFolderTest.java",
+      "sha256": "b5183f6bd4a3c0fa773046ab4c3fa93fbddc0e70427bb573c867f9b0e75ddff9"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/DeviceFileVisibilityTest.java",
+      "sha256": "6ac436135fe6a9c08e63264f52e27d886b9e43bcb534f24e41c59535faac0fae"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/DeviceIndexAccessTest.java",
+      "sha256": "8e7294f456ec389b254c02068e5b8323b5f2816ddeb80b6217fc8bdf36e797e9"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/DragSelectionRangeTest.java",
+      "sha256": "c69b3b183e7c01ba81d266c82d78c3ad074683ffdebb95852b5f74c0d571d09b"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/ExportDateRangeTest.java",
+      "sha256": "dd792d495a5a9d4f083ce818f488b3cc2e92232f0887d431239d760068691bc0"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/ExportPartialOwnershipTest.java",
+      "sha256": "cc0cc0442a1663196c60e6944daa5099521d55a7a64d6c15faaeb69b8d0a1d7a"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/GalleryVisibilityTest.java",
+      "sha256": "7627bdde8e5b85f7a1913914dba458e9664780c5fc6b85eb21ed616762f60e21"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/LibraryPathTest.java",
+      "sha256": "674932aa04b8bfd1e45fef5b32aee8c0fb4199b5e4bfc116981678b304b0829b"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/LocalFolderOrderTest.java",
+      "sha256": "094887220bb70b2a3c8666171f128ab4c9fe41806ff09dae0a27415488043564"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/LockGraceTest.java",
+      "sha256": "9599abb27a2485910fff86da8ad934e9bb00872202f0a0782443a723896cc591"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/MediaBackupPolicyTest.java",
+      "sha256": "7f4763769a17644a4721fd1842e92b09872af4002e241885419d75c53748ed60"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/MediaCategoriesTest.java",
+      "sha256": "b206569ecbc92c6adf3dabeb1dd1afc0ec6d11c70ab0920ac051bd4867bf4218"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/MosaicLayoutTest.java",
+      "sha256": "9b91c29845e00095125b44559ca908cc469d7c481fc34d818b39eb3813d0b981"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/MotionPolicyTest.java",
+      "sha256": "01df85660aa502cbb8956ffa1c5f408800ab23dbd9d125a5b41d58dbf7b266d2"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/OwnedCloudCaptionTest.java",
+      "sha256": "97647e7dca3a1b70173c6e375c8f4f0376d251d82a7dd27600469bd8fdad95a6"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/PasswordAttemptsTest.java",
+      "sha256": "4011b81feff4ebd15afcaceb45467007934dee76ceefa06fd5729a8feffc375a"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/PcmGainTest.java",
+      "sha256": "67675fde4c2b7b42a2303ded30c6035390417f61249fcdbbe17b84898f23142e"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/PhoneNumberInputTest.java",
+      "sha256": "bc8b69fee19a6c051155b2319457743636bc93f2b8692c99a3bfdc81352f7a54"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/PhotoDataBudgetTest.java",
+      "sha256": "ea1e74c42eb85a48f9d88bd45bbada1c35fd12a0a0507510a7203c1229994903"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/PreviewSizeTest.java",
+      "sha256": "1f67c453a1e9d7d50ba5f037fa1a4e58aa608ec7a0574ed96dc01e6a0d638d69"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/ProfileIdentityTest.java",
+      "sha256": "9e6bf861de0ff89b85a38404c493969dc5a13bce9128699815492b6fc3dc8a38"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/ResumableZipTest.java",
+      "sha256": "58fb24a22f5176a6415665a9d1c8113fcd0aa83d317b224aa6ef83f35940def4"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/RuntimeEvidenceTest.java",
+      "sha256": "d4c3f8f6beb6d19371c92a0ea603aac9b1b5b263a957b53840e05c29b2a7ff7c"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/SharedCopyLifetimeTest.java",
+      "sha256": "3470dd887aaf5339e7975ef881a03e18f3c0034e3f1d80d7183dae5f0430846f"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/TimelineZoomTest.java",
+      "sha256": "f652f0de720233d289bea147324083db51beec82ec265baf1bddb17cfa176855"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/TopEdgeRevealTest.java",
+      "sha256": "dafa936e99053db10541a594be18edd66f71a4f6ff0f904bf63372d0dbe83387"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/TransferRateTest.java",
+      "sha256": "9279c604b1578535677b86f16dc73a9bd949c945ff0e1256435e89123929d409"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/TrashChoiceTest.java",
+      "sha256": "995ffeeb339d5198f00474dbe653c4eeaf9eac8e461fdcccddb14095e8ccec98"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/TrashCooldownTest.java",
+      "sha256": "f91ccd06f402ae93027abb64e1551b4abfaca75d6623d4c60698d056fe41b1b2"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/UploadQueuePolicyTest.java",
+      "sha256": "9429dcc3bc232da293210fe2a4055495c9daf8c41cd5a7a0957c5f8a07aba181"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/UploadTransportTest.java",
+      "sha256": "bfe495fd2f96bd9c0662220da4c7d875fd220bf4e5381c3005a7674dba84b33d"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/VaultScopeTest.java",
+      "sha256": "13e315e0695651887ddf2e707c6c951d50e5b366a9134cc896c6b42c79e0e228"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/VideoPresentationTest.java",
+      "sha256": "8785c089e8a1086723fe1bd1da39ea7620f503daad9782afc4cc550524b1da17"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/ViewerOrderTest.java",
+      "sha256": "78147d0870ff5656102bc9f1b02b545a8e46e89bcf7ba4a760a0ec1d7d39334a"
+    },
+    {
+      "path": "core/telegram/build.gradle.kts",
+      "sha256": "76a891811f4425775c95a534cc7d7f241131c3276d7226bfe945b4c80e23c05c"
+    },
+    {
+      "path": "core/telegram/src/main/AndroidManifest.xml",
+      "sha256": "343d5be1ac17cdd45d1a2f2ddc616c509290e655869125a9422a96d88aa66066"
+    },
+    {
+      "path": "core/telegram/src/main/java/app/televault/telegram/NativeCipherRanges.kt",
+      "sha256": "d3697475fdf24929afd9931855641c5c0c907fcc21536f5eab18d3182aa244e2"
+    },
+    {
+      "path": "core/telegram/src/main/java/app/televault/telegram/SessionKeyStore.kt",
+      "sha256": "8e5bf00ca8da549756070a3cd6e1a7184c5fef7d238a151122081af216791d37"
+    },
+    {
+      "path": "core/telegram/src/main/java/app/televault/telegram/TdlibTelegramGateway.kt",
+      "sha256": "0c6b7122de7f3455e4c31047ab46533efd898f731b1c321454641830e7d3d5ad"
+    },
+    {
+      "path": "core/telegram/src/main/java/app/televault/telegram/TelegramGateway.kt",
+      "sha256": "150dbeb023051106907aa77d87a0899b34ca5645d164defadb39597cffad44a8"
+    },
+    {
+      "path": "core/telegram/src/main/java/app/televault/telegram/TransportProtection.kt",
+      "sha256": "12f4e9c5fb8742f82f600fae2f3c40c25606538bac009cdaf1378fca3e169adf"
+    },
+    {
+      "path": "core/telegram/src/main/java/org/drinkless/tdlib/JsonClient.java",
+      "sha256": "e92666f288e599d1c55bf5d24774f5e3e890b0999b0629931a7cf627a4323510"
+    },
+    {
+      "path": "core/telegram/src/test/java/app/televault/telegram/FakeGatewayTest.kt",
+      "sha256": "1ef2a2519c1743e3aa2c56cbf564db6c1140e78176c6773bdc3ffb8475eebc57"
+    },
+    {
+      "path": "core/telegram/src/test/java/app/televault/telegram/FakeTelegramGateway.kt",
+      "sha256": "c1b7a55e223ab9e28b370b5280a5ad76d0648a4ba5eb3970ab6e2f996796bdd9"
+    },
+    {
+      "path": "core/telegram/src/test/java/app/televault/telegram/NativeCipherRangesTest.kt",
+      "sha256": "7d5cca213fc64ed1700131e377e29bdc786563b4559b6f2b9bb9e7e2de2835ea"
+    },
+    {
+      "path": "gradle.properties",
+      "sha256": "782f39e29894758ffbc7acb255e39a6b644d7a22d695ab89aceb6d7ea0ecebb3"
+    },
+    {
+      "path": "gradle/libs.versions.toml",
+      "sha256": "a79233ef88d4178bd7fa196d9b68a11964eeb58d7d6a4e6c2c85faad8ce47b82"
+    },
+    {
+      "path": "gradle/wrapper/gradle-wrapper.jar",
+      "sha256": "81a82aaea5abcc8ff68b3dfcb58b3c3c429378efd98e7433460610fecd7ae45f"
+    },
+    {
+      "path": "gradle/wrapper/gradle-wrapper.properties",
+      "sha256": "1bb6d43ff8af30abb0eaf03fe58f636ed9b37f758a748bf30a9cebd809639c9d"
+    },
+    {
+      "path": "gradlew",
+      "sha256": "734b3879d3501dce471cf0522d3bcbafe76873d9fc5129345b67fb43bd15e933"
+    },
+    {
+      "path": "gradlew.bat",
+      "sha256": "57931b17dd228e5c24dac90e815d0bf82477e831a4618dfab4136f5446b42a9f"
+    },
+    {
+      "path": "settings.gradle.kts",
+      "sha256": "c5e68935233daa8ab1fa9fbe6f349844332407a1cd1152ae6a98962b680534c7"
+    },
+    {
+      "path": "core/telegram/src/main/jniLibs/armeabi-v7a/libtdjsonjava.so",
+      "sha256": "99f588174ed155dacaee5ff872ea77455564c59230fd5f8d4da6213b21af4d54"
+    },
+    {
+      "path": "core/telegram/src/main/jniLibs/x86/libtdjsonjava.so",
+      "sha256": "c186f794a12e364d940bf05504e8e91ac44f34074d388a2e54b329bd36541aab"
+    },
+    {
+      "path": "core/telegram/src/main/jniLibs/x86_64/libtdjsonjava.so",
+      "sha256": "d89fbc8237211c3f4b0ae4e338a09c72b50a866f75d35a77d7527f634af6eba4"
+    },
+    {
+      "path": "core/telegram/src/main/jniLibs/arm64-v8a/libtdjsonjava.so",
+      "sha256": "9f467fa2247ddba8e123fa34555ff06a2793ae4774e011c8eef14f860b5892ab"
+    }
+  ],
+  "privateHistoryIncluded": false
+}

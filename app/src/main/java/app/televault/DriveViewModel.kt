@@ -1,0 +1,326 @@
+package app.televault
+
+import android.graphics.Bitmap
+import android.net.Uri
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import app.televault.data.DriveRepository
+import java.io.File
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.runningFold
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+
+class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
+    val state = repository.state
+
+    // Progress collectors live in small transfer components, not the album grid/player tree.
+    val contentState = state.map { value -> value.copy(indexLoading = value.indexLoading && !value.indexLoaded, transfers = value.transfers.filter { it.phase !in setOf("WAITING", "COMPLETE", "CANCELLED") && !app.televault.domain.ActivityProgress.active(it.phase) }.map { it.copy(progress = 0, total = 0) }, syncProgress = null, deviceCopyProgress = value.deviceCopyProgress?.copy(completed = 0, total = 0)) }.distinctUntilChanged().flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, state.value)
+    internal val backupBadgeTimes = state.map { it.files to it.backedDeviceFiles }.distinctUntilChanged().map { (files, links) ->
+        val times = files.associate { it.id to it.backedUpAt }
+        times + links.mapValues { times[it.value] ?: 0L }
+    }.distinctUntilChanged().flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+    val playerState = state.map { app.televault.data.DriveSnapshot(stage = it.stage, localFavorites = it.localFavorites, privateProfile = it.privateProfile) }.distinctUntilChanged().stateIn(viewModelScope, SharingStarted.Eagerly, state.value)
+    internal val transferOverview = state.map { it.transfers }.distinctUntilChanged().map { app.televault.data.transferOverviews(it) }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    internal val backupOverview = state.map { if (it.stage == app.televault.data.VaultStage.READY) it.transfers.filter { job -> !job.download } else emptyList() }.distinctUntilChanged().runningFold(app.televault.data.BackupOverview()) { previous, jobs -> app.televault.data.backupOverview(jobs, previous) }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, app.televault.data.BackupOverview())
+    private var previewJob: Job? = null
+    private val operations = mutableListOf<Job>()
+    init {
+        viewModelScope.launch {
+            state.map { it.transfers.any { job -> job.running } || it.busy }.distinctUntilChanged().collectLatest { active ->
+                while (isActive) {
+                    try {
+                        repository.pollTransfers()
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) { }
+                    delay(if (active) 1000 else 15000)
+                }
+            }
+        }
+    }
+    internal val mediaStorage = repository.mediaStorage.usage
+    fun refreshMediaStorage() = action { repository.mediaStorage.refresh() }
+    fun mediaCacheQuota(bytes: Long) = action { repository.mediaStorage.setQuota(bytes) }
+    internal val offlineDownloads = repository.offlineDownloads
+    internal val offlineIds = offlineDownloads.map { it.ids }.distinctUntilChanged().stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
+    private var offlineJob: Job? = null
+    fun cancelOfflineDownload() {
+        offlineJob?.cancel()
+    }
+    fun pinOffline(ids: Set<String>): Job? {
+        if (offlineJob?.isActive == true) {
+            report("An encrypted offline download is already running.")
+            return null
+        }
+        return action {
+            try {
+                repository.pinOffline(ids)
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (_: Exception) {
+                report("Offline download incomplete. Check the quota, free storage, Data Saver and connection. Cloud files are kept.")
+            }
+        }.also { offlineJob = it }
+    }
+    fun removeOffline(ids: Set<String>) = action { repository.removeOffline(ids) }
+    fun offlineQuota(bytes: Long) = action { repository.setOfflineQuota(bytes) }
+    internal val cloudExports = repository.cloudExports
+    fun refreshCloudExports() = action { cloudExports.refresh() }
+    internal fun exportCloud(options: app.televault.data.CloudExportOptions, destination: Uri? = null) = action {
+        check(state.value.indexLoaded && !state.value.indexNeedsRepair)
+        cloudExports.start(options, destination)
+    }
+    internal fun cancelCloudExport(id: String) = action { cloudExports.cancel(id) }
+    internal fun retryCloudExport(id: String) = action { cloudExports.retry(id) }
+    internal fun acknowledgeCloudExport(id: String) = action { cloudExports.acknowledge(id) }
+    val preferences = repository.preferences
+    val guidanceScope: String get() = repository.guidanceScope
+    val localMedia = repository.localMedia
+    internal val deviceFileTrash = repository.deviceFileTrash
+    val photoPreviews = repository.photoPreviews
+    internal val documentPreviews = repository.documentPreviews
+    fun activeTelegramSessions(finished: (List<app.televault.telegram.TelegramSessionInfo>?) -> Unit) = action {
+        try {
+            finished(repository.activeTelegramSessions())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            finished(null)
+        }
+    }
+    fun terminateOtherTelegramSessions(finished: (Boolean) -> Unit) = action {
+        try {
+            repository.terminateOtherTelegramSessions()
+            finished(true)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            repository.notice("Telegram did not allow closing other sessions. A recently created session may need to wait; try again later or use Telegram's Devices settings.")
+            finished(false)
+        }
+    }
+    suspend fun ensureOwnerProfile() = repository.ensureOwnerProfile()
+    suspend fun saveProfile(profile: app.televault.data.PrivateProfile) = repository.saveProfile(profile)
+    fun quickUnlock() = action { repository.quickUnlock() }
+    fun shareMedia(source: Uri?, cloudId: String?, name: String, mime: String, size: Long) = repository.shareMedia(source, cloudId, name, mime, size)
+    suspend fun openMedia(id: String): Uri = repository.privateMediaUri(id)
+    suspend fun preferredDeviceSource(id: String): Uri? = repository.preferredDeviceSource(id)
+    suspend fun verifiedDeviceCopies(ids: Set<String>? = null, sources: Set<String>? = null) = repository.verifiedDeviceCopies(ids, sources)
+    fun backupAndTrash(items: List<app.televault.data.LocalMedia>, origin: String) = action { repository.backupAndTrash(items, origin) }
+    fun finishDeviceCleanup(ids: Set<String>) = action { repository.finishDeviceCleanup(ids) }
+    fun localFavorite(uri: String, value: Boolean) = action { repository.localFavorite(uri, value) }
+    val playbackEpoch get() = repository.playbackEpoch
+    suspend fun playbackPosition(identity: String, epoch: Long) = repository.playbackPosition(identity, epoch)
+    fun savePlaybackPosition(identity: String, position: Long, duration: Long, ended: Boolean, epoch: Long) {
+        viewModelScope.launch {
+            try {
+                repository.savePlaybackPosition(identity, position, duration, ended, epoch)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) { /* A bookmark failure never interrupts playback or exposes data. */ }
+        }
+    }
+    suspend fun recordMediaView(id: String) = repository.recordMediaView(id)
+    suspend fun warmTimeline(ids: List<String>) {
+        try {
+            repository.warmTimeline(ids)
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (_: Exception) { /* Optional warming never interrupts the library. */ }
+    }
+    fun markVideoPosition(id: String, position: Long, duration: Long, epoch: Long) = repository.markVideoPosition(id, position, duration, epoch)
+    suspend fun videoWindow(id: String, position: Long, duration: Long) {
+        try {
+            repository.videoWindow(id, position, duration)
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (_: Exception) { /* Cache maintenance never interrupts playback. */ }
+    }
+    fun mediaSourceFactory() = repository.mediaSourceFactory()
+    suspend fun prefetch(id: String) = repository.prefetch(id)
+    fun favorite(id: String, value: Boolean) = action { repository.changeFiles(setOf(id), favorite = value) }
+    fun trash(ids: Set<String>, deleted: Boolean = true, origin: String = "") = action { repository.changeFiles(ids, trash = deleted, trashOrigin = origin) }
+    internal suspend fun trashConfirmed(ids: Set<String>, origin: String, epoch: Long) {
+        check(playbackEpoch == epoch && state.value.stage == app.televault.data.VaultStage.READY)
+        repository.changeFiles(ids, trash = true, trashOrigin = origin, expectedEpoch = epoch)
+    }
+    internal suspend fun deviceTrashOriginConfirmed(uris: List<Uri>, origin: String, epoch: Long) {
+        check(playbackEpoch == epoch && state.value.stage == app.televault.data.VaultStage.READY)
+        repository.deviceTrashOrigin(uris, origin)
+    }
+    fun deviceTrashOrigin(uris: List<Uri>, origin: String) = action { repository.deviceTrashOrigin(uris, origin) }
+    fun trashAllCloud(phrase: CharArray, finished: (Boolean?) -> Unit) = action {
+        try {
+            finished(repository.trashAllCloud(phrase))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            repository.notice("Could not queue cloud Trash. Nothing was permanently deleted. Check the connection and retry.")
+            finished(null)
+        } finally {
+            phrase.fill('\u0000')
+        }
+    }
+    fun purge(ids: Set<String>) = action { repository.purgeTrash(ids) }
+    fun verifyRecoveryPhrase(phrase: CharArray, finished: (Boolean) -> Unit) = action {
+        try {
+            finished(repository.verifyRecoveryPhrase(phrase))
+        } finally {
+            phrase.fill('\u0000')
+        }
+    }
+    fun renameFile(id: String, name: String) = action { repository.changeFiles(setOf(id), displayName = name) }
+    fun folder(ids: Set<String>, name: String, copy: Boolean) = action { if (copy) repository.copyCloud(ids, name) else repository.changeFiles(ids, folder = name) }
+    fun album(name: String, ids: Set<String>, folder: Boolean = false) = action { repository.createAlbum(name, ids, folder) }
+    fun settings(limit: Long, videos: Boolean, camera: Boolean) = action { repository.updateUploadPolicy(limit, videos, camera) }
+    fun resumeAutomaticBackups() = action { repository.resumeAutomaticUploads() }
+    fun acknowledgeAutomaticVideo(id: String) = action { repository.acknowledgeAutomaticVideo(id) }
+    suspend fun privateNote(id: String) = repository.privateNote(id)
+    fun savePrivateNote(id: String, text: String) = action { repository.savePrivateNote(id, text) }
+    fun dataSaver(enabled: Boolean) = action { repository.setDataSaver(enabled) }
+    fun clearMediaCache() = action { repository.clearMediaCache() }
+    fun rotateDeviceKey() = action { repository.rotateDeviceKey() }
+    fun overrideLimit() = action { repository.overrideMobileLimit() }
+    fun addDeviceDocumentFolder(uri: Uri) = action { repository.addDeviceDocumentFolder(uri) }
+    suspend fun reconcileDeviceMedia(items: List<app.televault.data.LocalMedia>): Boolean = try {
+        repository.reconcileDeviceMedia(items)
+        true
+    } catch (cancel: CancellationException) {
+        throw cancel
+    } catch (_: Exception) {
+        false
+    }
+    fun report(message: String) {
+        repository.notice(message)
+    }
+    private var restoreIndexJob: Job? = null
+    fun restoreVisibleIndex() {
+        if (restoreIndexJob?.isActive == true) return
+        restoreIndexJob = action { repository.restoreVisibleIndex() }
+    }
+    fun discover() = action { repository.discover() }
+    fun unlock(phrase: CharArray) = action { repository.unlock(phrase) }
+    fun unlockFromGate(phrase: CharArray, finished: (Boolean) -> Unit) = action {
+        try {
+            val verified = repository.unlock(phrase, syncAfter = false)
+            finished(verified)
+            if (verified) {
+                try {
+                    repository.sync()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    repository.notice("Unlocked locally. Cloud sync will retry when the connection is available.")
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            finished(false)
+        } finally {
+            phrase.fill('\u0000')
+        }
+    }
+    fun passwordManagerAccountFor(secret: CharArray): String = passwordManagerAccount + if (app.televault.crypto.RecoveryCredentials.kind(secret) == app.televault.crypto.RecoveryCredentials.Kind.PATTERN) " · App pattern" else ""
+    val passwordManagerAccount: String get() = repository.passwordManagerAccount()
+    fun create(phrase: CharArray, finished: (Boolean) -> Unit = {}) = action {
+        try {
+            finished(repository.create(phrase))
+        } finally {
+            phrase.fill('\u0000')
+        }
+    }
+
+    /** Call only from an already-open vault after fresh LocalDeviceAuthentication success. */
+    fun resetRecoveryPhrase(next: CharArray, finished: (Boolean) -> Unit) = action {
+        try {
+            repository.resetRecoveryPhrase(next)
+            finished(true)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            repository.notice("Could not finish password reset. Check connection and keep your recovery copy; no files were re-encrypted.")
+            finished(false)
+        } finally {
+            next.fill('\u0000')
+        }
+    }
+    fun changeRecoveryPhrase(current: CharArray, next: CharArray, finished: (Boolean) -> Unit) = action {
+        try {
+            repository.changeRecoveryPhrase(current, next)
+            finished(true)
+        } catch (e: CancellationException) {
+            finished(false)
+            throw e
+        } catch (_: Exception) {
+            repository.notice("Could not change recovery password. Check the current password and connection; your files were kept.")
+            finished(false)
+        } finally {
+            current.fill('\u0000')
+            next.fill('\u0000')
+        }
+    }
+    fun upload(uris: List<Uri>, forceCopy: Boolean = false) = action { repository.enqueueUpload(uris, allowDuplicate = forceCopy) }
+    fun download(ids: Set<String>, destination: Uri) = action { repository.enqueueDownload(ids, destination) }
+    fun backup(uri: Uri, wifi: Boolean) = action { repository.addBackup(uri, wifi) }
+    fun deviceFolderBackup(path: String, enabled: Boolean) = action { repository.setDeviceFolderBackup(path, enabled) }
+    fun stopBackup(id: String) = action { repository.stopBackup(id) }
+    fun sync() = action { repository.sync() }
+    fun retry(id: String) = action { repository.retry(id) }
+    fun cancel(id: String) = action { repository.cancel(id) }
+    fun lock() {
+        previewJob?.cancel()
+        operations.forEach { it.cancel() }
+        operations.clear()
+        repository.lock()
+    }
+    fun cachedThumbnail(id: String, pixels: Int) = repository.cachedThumbnail(id, pixels)
+    fun canPrefetchPhotos() = repository.canPrefetchPhotos()
+    suspend fun thumbnail(id: String, pixels: Int = 384): Bitmap? = repository.thumbnail(id, pixels)
+    fun preview(id: String, ready: (Uri?) -> Unit) {
+        previewJob?.cancel()
+        previewJob = viewModelScope.launch {
+            try {
+                ready(repository.openPreview(id))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                repository.notice("Preview could not open. Check the connection, file integrity or available space.")
+                ready(null)
+            }
+        }
+    }
+    fun closePreview() {
+        previewJob?.cancel()
+    }
+    private fun action(block: suspend () -> Unit): Job = viewModelScope.launch {
+        try {
+            block()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            repository.notice("Could not complete the operation. Check access, connection and available space.")
+        }
+    }.also {
+        operations.removeAll { job -> job.isCompleted }
+        operations.add(it)
+    }
+    class Factory(private val repository: DriveRepository) : ViewModelProvider.Factory {
+        override fun <T : ViewModel> create(modelClass: Class<T>): T {
+            require(modelClass.isAssignableFrom(DriveViewModel::class.java))
+            @Suppress("UNCHECKED_CAST")
+            return DriveViewModel(repository) as T
+        }
+    }
+}

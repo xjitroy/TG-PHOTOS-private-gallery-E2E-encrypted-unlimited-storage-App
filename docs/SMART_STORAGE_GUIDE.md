@@ -1,0 +1,4 @@
+# Current 0.19 adaptive storage
+
+See prd/UPDATE_0_19.md for exact limits and semantics. Normal cloud-only photo prefixes use80/60/40/20% tiers under256MiB/quota/8 budget; full device originals bypass app disk caching. Initial encrypted70-ID snapshot accelerates first paint; partial data never authorizes backup/cleanup. Actual view heat is sealed; prefetch does not count. Cold viewed media24h; repeated video48h, repeated photos dynamically up to7days. Short <=2min videos can warm fully under the budget; longer videos use native~1min lookahead, bounded memory, observed native-time±30min disk region pruning  and encrypted bookmarks. Cache pressure/Android cleanup can shorten retention. No Private Vault disk caching. Earlier fixed24h-video/photo7idle-day descriptions below apply only to legacy untagged disposable blocks, which expire naturally; new reads use adaptive receipts.
+

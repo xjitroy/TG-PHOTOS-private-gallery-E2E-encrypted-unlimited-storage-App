@@ -1,0 +1,1 @@
+TG Photos uses official TDLib (Boost 1.0), OpenSSL (Apache 2.0), AndroidX/Media3 (Apache 2.0) and Bouncy Castle. Full notices accompany this APK. Editable source includes the pinned dependency inventory and build-tool notices. No official Telegram affiliation is claimed.
