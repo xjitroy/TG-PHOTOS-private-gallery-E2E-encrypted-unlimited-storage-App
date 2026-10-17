@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -22,6 +23,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import app.televault.DriveViewModel
 import app.televault.people.PeopleState
 import app.televault.people.PersonCard
@@ -44,16 +47,18 @@ internal fun PersonPortrait(person: PersonCard, modifier: Modifier = Modifier) {
 
 @Composable
 internal fun PeopleAlbums(state: PeopleState, model: DriveViewModel, open: (PersonCard) -> Unit) {
+    var allPeople by remember { mutableStateOf(false) }
+    var faceQuery by remember { mutableStateOf("") }
     var consent by remember { mutableStateOf(false) }
     var review by remember { mutableStateOf<PersonCard?>(null) }
     var deferred by remember { mutableStateOf(setOf<String>()) }
-    var automaticPrompt by remember { mutableStateOf(false) }
+    var continuous by remember { mutableStateOf(true) }
+    var settings by remember { mutableStateOf(false) }
     val candidates = state.people.filter { it.suggestion != null && it.id !in deferred }
-    LaunchedEffect(state.enabled, candidates.firstOrNull()?.id) {
-        if (state.enabled && !automaticPrompt && candidates.isNotEmpty()) {
-            delay(2500)
+    LaunchedEffect(state.enabled, candidates.firstOrNull()?.id, review?.id, continuous) {
+        if (state.enabled && continuous && review == null && candidates.isNotEmpty()) {
+            delay(700)
             review = candidates.first()
-            automaticPrompt = true
         }
     }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -62,19 +67,27 @@ internal fun PeopleAlbums(state: PeopleState, model: DriveViewModel, open: (Pers
                 Text(label("People", "মানুষ"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                 Text(label("Recognized on your phone", "আপনার ফোনেই শনাক্ত হয়"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+            if (state.people.isNotEmpty()) TextButton({ allPeople = true }) { Text(label("View all", "সব দেখুন")) }
+            IconButton({ settings = true }) { Icon(Icons.Outlined.Settings, label("People settings", "People সেটিংস")) }
             Switch(state.enabled, { value -> if (value) consent = true else model.peopleAction { model.people.enable(false) } })
         }
         if (state.enabled) {
             Surface(shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = .6f)) {
                 Column(Modifier.fillMaxWidth().padding(14.dp)) {
                     Text(if (state.busy) label("Finding faces gently in the background…", "পটভূমিতে ধীরে মুখ শনাক্ত হচ্ছে…") else label("${state.scanned} photos / video previews checked", "${state.scanned}টি ছবি / ভিডিও প্রিভিউ দেখা হয়েছে"), style = MaterialTheme.typography.bodyMedium)
-                    Text(label("Faces can be mistaken. Review matches. Private Vault is excluded. Videos use a preview frame; tag other files yourself.", "মুখের মিল ভুল হতে পারে—যাচাই করুন। Private Vault বাদ থাকে। ভিডিওর প্রিভিউ দেখা হয়; অন্য ফাইলে নিজে ট্যাগ দিন।"), style = MaterialTheme.typography.bodySmall)
+                    Text(label("${state.people.size} people · ${candidates.size} matches to review", "${state.people.size} জন · ${candidates.size}টি মিল যাচাই বাকি"), style = MaterialTheme.typography.bodySmall)
                     Row(Modifier.horizontalScroll(rememberScrollState())) {
                         TextButton({
                             model.peopleAction { model.people.sync() }
                             model.indexPeople(model.state.value.files, model.localMedia.changes.value)
                         }) { Text(label(if (state.pendingSync) "Sync pending references" else "Sync & scan", "সিঙ্ক ও স্ক্যান")) }
-                        if (candidates.isNotEmpty()) TextButton({ review = candidates.first() }) { Text(label("Review ${candidates.size}", "${candidates.size}টি মিল যাচাই")) }
+                        if (candidates.isNotEmpty()) {
+                            TextButton({
+                                continuous = true
+                                deferred = emptySet()
+                                review = candidates.first()
+                            }) { Text(label("Review ${candidates.size}", "${candidates.size}টি মিল যাচাই")) }
+                        }
                     }
                 }
             }
@@ -94,6 +107,34 @@ internal fun PeopleAlbums(state: PeopleState, model: DriveViewModel, open: (Pers
             }
         }
     }
+    if (allPeople) {
+        Dialog(onDismissRequest = { allPeople = false }, properties = DialogProperties(usePlatformDefaultWidth = false, securePolicy = androidx.compose.ui.window.SecureFlagPolicy.SecureOn)) {
+            Surface(Modifier.fillMaxSize().safeDrawingPadding(), color = MaterialTheme.colorScheme.background) {
+                Column(Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(label("People", "মানুষ"), Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall)
+                        IconButton({ allPeople = false }) { Icon(Icons.Outlined.Close, label("Close", "বন্ধ")) }
+                    }
+                    OutlinedTextField(faceQuery, { faceQuery = it }, Modifier.fillMaxWidth(), singleLine = true, placeholder = { Text(label("Find by name", "নাম দিয়ে খুঁজুন")) }, leadingIcon = { Icon(Icons.Outlined.Search, null) }, shape = RoundedCornerShape(24.dp))
+                    LazyVerticalGrid(GridCells.Adaptive(96.dp), Modifier.weight(1f), contentPadding = PaddingValues(top = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                        items(state.people.filter { it.name.contains(faceQuery, ignoreCase = true) }, key = { it.id }) { person ->
+                            Column(
+                                Modifier.clickable {
+                                    allPeople = false
+                                    open(person)
+                                },
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                PersonPortrait(person, Modifier.size(88.dp))
+                                Text(person.name.ifBlank { label("Add name", "নাম দিন") }, Modifier.padding(top = 6.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text("${person.members.size}", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
     if (consent) {
         AlertDialog(onDismissRequest = { consent = false }, icon = { Icon(Icons.Outlined.Face, null) }, title = { Text(label("Find people privately", "ব্যক্তিগতভাবে মুখ শনাক্ত")) }, text = { Text(label("Face detection and matching run only on this phone. Encrypted names, small reference faces and cloud-file tags are saved in your Telegram Saved Messages for recovery. This is optional and can make mistakes. It is not used for unlocking. Original files and Private Vault are unchanged.", "শনাক্তকরণ ও মিল খোঁজা এই ফোনেই হয়। পুনরুদ্ধারের জন্য নাম, ছোট রেফারেন্স মুখ ও ক্লাউড ফাইলের ট্যাগ এনক্রিপ্ট করে Telegram Saved Messages-এ রাখা হয়। এটি ঐচ্ছিক এবং ভুল হতে পারে। আনলকের জন্য ব্যবহৃত হয় না। মূল ফাইল ও Private Vault অপরিবর্তিত থাকে।")) }, confirmButton = {
             TextButton({
@@ -102,14 +143,33 @@ internal fun PeopleAlbums(state: PeopleState, model: DriveViewModel, open: (Pers
             }) { Text(label("Enable", "চালু করুন")) }
         }, dismissButton = { TextButton({ consent = false }) { Text(label("Not now", "এখন নয়")) } })
     }
+    if (settings) {
+        AlertDialog(onDismissRequest = { settings = false }, title = { Text(label("People settings", "People সেটিংস")) }, text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(label("Matching runs on your phone. Your reviews improve encrypted face references; rejected pairs are remembered. Names and references sync encrypted. Private Vault is excluded. Videos use a preview frame.", "মিল এই ফোনেই খোঁজা হয়। আপনার রিভিউ থেকে এনক্রিপ্টেড রেফারেন্স উন্নত হয়; আলাদা মুখের সিদ্ধান্ত মনে থাকে। নাম ও রেফারেন্স এনক্রিপ্ট করে সিঙ্ক হয়। Private Vault বাদ থাকে। ভিডিওর প্রিভিউ দেখা হয়।"))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(label("Continuous reviews", "একের পর এক রিভিউ"), Modifier.weight(1f))
+                    Switch(continuous, { continuous = it })
+                }
+                TextButton({
+                    model.peopleAction {
+                        model.people.refreshFaceTags()
+                        model.indexPeople(model.state.value.files, model.localMedia.changes.value)
+                    }
+                    settings = false
+                }) { Text(label("Update missing face tags", "অসম্পূর্ণ ফেস-ট্যাগ আপডেট")) }
+                Text(label("Open a person to view photos, filter alone/together, rename or merge duplicate groups. Reviews improve matching examples, not the bundled model weights.", "ব্যক্তিতে ট্যাপ করে ছবি, একা/একসঙ্গে ফিল্টার, নাম ও duplicate merge পাবেন। রিভিউ মিলের রেফারেন্স উন্নত করে; মূল মডেলের ওজন বদলায় না।"), style = MaterialTheme.typography.bodySmall)
+            }
+        }, confirmButton = { TextButton({ settings = false }) { Text(label("Done", "হয়েছে")) } })
+    }
     review?.let { candidate ->
         val current = state.people.find { it.id == candidate.id }
         val target = state.people.find { it.id == current?.suggestion }
         if (current != null && target != null) {
             AlertDialog(onDismissRequest = {
-                deferred += candidate.id
+                continuous = false
                 review = null
-            }, title = { Text(label("Same person?", "একই ব্যক্তি?")) }, text = {
+            }, title = { Text(label("Same person? · ${candidates.size} remaining", "একই ব্যক্তি? · ${candidates.size}টি বাকি")) }, text = {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
                         PersonPortrait(current, Modifier.size(100.dp))
@@ -120,7 +180,8 @@ internal fun PeopleAlbums(state: PeopleState, model: DriveViewModel, open: (Pers
                 }
             }, confirmButton = {
                 TextButton({
-                    model.peopleAction { model.people.review(candidate.id, true) }
+                    deferred += candidate.id
+                    model.peopleAction { model.people.review(candidate.id, true, target.id) }
                     review = null
                 }) { Text(label("Same person", "একই ব্যক্তি")) }
             }, dismissButton = {
@@ -130,7 +191,8 @@ internal fun PeopleAlbums(state: PeopleState, model: DriveViewModel, open: (Pers
                         review = null
                     }) { Text(label("Later", "পরে")) }
                     TextButton({
-                        model.peopleAction { model.people.review(candidate.id, false) }
+                        deferred += candidate.id
+                        model.peopleAction { model.people.review(candidate.id, false, target.id) }
                         review = null
                     }) { Text(label("Different", "আলাদা")) }
                 }

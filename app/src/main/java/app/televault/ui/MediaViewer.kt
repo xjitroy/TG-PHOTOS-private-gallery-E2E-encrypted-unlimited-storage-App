@@ -50,7 +50,7 @@ import kotlinx.coroutines.flow.first
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: DriveViewModel, close: () -> Unit, choose: (MediaEntry) -> Unit, save: (MediaEntry) -> Unit, trash: (MediaEntry) -> Unit, restore: (MediaEntry) -> Unit, purge: (MediaEntry) -> Unit, favorite: (MediaEntry) -> Unit, backup: (MediaEntry, Boolean) -> Unit = { _, _ -> }, removeDevice: (MediaEntry) -> Unit = {}, profile: () -> Unit = {}) {
+internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: DriveViewModel, close: () -> Unit, choose: (MediaEntry) -> Unit, save: (MediaEntry) -> Unit, trash: (MediaEntry) -> Unit, restore: (MediaEntry) -> Unit, purge: (MediaEntry) -> Unit, favorite: (MediaEntry) -> Unit, backup: (MediaEntry, Boolean) -> Unit = { _, _ -> }, removeDevice: (MediaEntry) -> Unit = {}, profile: () -> Unit = {}, personProfile: (String) -> Unit = {}) {
     var presented by remember { mutableStateOf(false) }
     var closing by remember { mutableStateOf(false) }
     val finishClose by rememberUpdatedState(close)
@@ -70,6 +70,8 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
     DisposableEffect(videoSession) { onDispose { videoSession.release() } }
     val offlineIds by model.offlineIds.collectAsStateWithLifecycle()
     val snapshot by model.contentState.collectAsStateWithLifecycle()
+    val people by model.people.state.collectAsStateWithLifecycle()
+    var faceTag by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val initial = remember { app.televault.domain.ViewerOrder.ensureSelected(entries, entry) { it.id } }
     val initialById = remember { initial.associateBy { it.id } }
@@ -137,6 +139,35 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
             } finally {
                 textReading = false
             }
+        }
+    }
+    faceTag?.let { fromId ->
+        val from = people.people.find { it.id == fromId }
+        if (from != null) {
+            AlertDialog(onDismissRequest = { faceTag = null }, title = { Text(label("Correct this face tag", "ফেস-ট্যাগ ঠিক করুন")) }, text = {
+                Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
+                    Text(label("Move this photo's tag to the correct person:", "ছবির ট্যাগ সঠিক ব্যক্তিতে সরান:"))
+                    TextButton({
+                        model.peopleAction { model.people.separateTag(fromId, currentLive.id) }
+                        faceTag = null
+                    }) { Text(label("Create separate person", "আলাদা ব্যক্তির গ্রুপ করুন")) }
+                    people.people.filter { it.id != fromId }.forEach { into ->
+                        TextButton({
+                            model.peopleAction { model.people.moveTag(fromId, into.id, currentLive.id) }
+                            faceTag = null
+                        }) {
+                            PersonPortrait(into, Modifier.size(32.dp))
+                            Spacer(Modifier.width(10.dp))
+                            Text(into.name.ifBlank { label("Unnamed person", "নাম দেওয়া হয়নি") })
+                        }
+                    }
+                }
+            }, confirmButton = {
+                TextButton({
+                    model.peopleAction { model.people.untag(fromId, currentLive.id) }
+                    faceTag = null
+                }) { Text(label("Remove wrong tag", "ভুল ট্যাগ সরান")) }
+            }, dismissButton = { TextButton({ faceTag = null }) { Text(label("Cancel", "বাতিল")) } })
         }
     }
     if (textConsent) OcrEnableDialog(model, { textConsent = false }) { readText(textPhotoMode) }
@@ -439,6 +470,14 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
                                 }
                                 Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = .9f), border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = .35f)), tonalElevation = 1.dp) {
                                     Column(Modifier.padding(horizontal = 4.dp, vertical = 6.dp)) {
+                                        val tags = people.people.filter { current.id in it.members }
+                                        if (tags.isNotEmpty()) {
+                                            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                tags.forEach { person ->
+                                                    InputChip(false, { personProfile(person.id) }, label = { Text(person.name.ifBlank { label("Add name", "নাম দিন") }) }, avatar = { PersonPortrait(person, Modifier.size(28.dp)) }, trailingIcon = { IconButton({ faceTag = person.id }, Modifier.size(28.dp)) { Icon(Icons.Outlined.MoreVert, label("Edit face tag", "ফেস-ট্যাগ বদলান"), Modifier.size(18.dp)) } })
+                                                }
+                                            }
+                                        }
                                         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.SpaceEvenly) {
                                             ViewerAction(Icons.Outlined.Share, label("Share", "শেয়ার"), !busy) { send(Intent.ACTION_SEND) }
                                             if (current.mime.startsWith("image/")) ViewerAction(Icons.Outlined.Edit, label("Edit", "এডিট"), preparedSource != null && !busy) { editing = true }

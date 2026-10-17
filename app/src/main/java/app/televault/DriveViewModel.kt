@@ -134,7 +134,7 @@ class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
                     if (epoch != playbackEpoch) break
                     repository.photoPriority.await("people-index")
                     val original = originals[file.id]
-                    val changed = people.analyze(file.id, "${file.hash}:${file.thumbnail.hashCode()}") {
+                    val changed = people.analyze(file.id, file.hash) {
                         if (original != null) localMedia.thumbnail(original, 768) else repository.thumbnail(file.id, 384)
                     }
                     if (changed) delay(160)

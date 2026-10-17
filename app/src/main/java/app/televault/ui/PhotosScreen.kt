@@ -1881,6 +1881,11 @@ fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDynamicColo
             entry,
             viewerEntries ?: visible,
             model,
+            personProfile = { id ->
+                opening = null
+                searchPerson = id
+                universalSearch = true
+            },
             close = { opening = null },
             choose = { opening = it },
             profile = {

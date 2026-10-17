@@ -31,8 +31,8 @@ android {
         applicationId = providers.gradleProperty("televault.applicationId").getOrElse("app.televault")
         minSdk = 26
         targetSdk = 36
-        versionCode = 32
-        versionName = "0.19.3"
+        versionCode = 33
+        versionName = "0.19.4"
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64") }
         javaCompileOptions {
             annotationProcessorOptions {
@@ -44,12 +44,15 @@ android {
     }
     splits {
         abi {
-            isEnable = true
+            isEnable = providers.gradleProperty("tgUniversalOnly").orNull != "true"
             reset()
             include("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
             isUniversalApk = true
         }
     }
+    // A single universal APK compresses native libraries, then Android extracts only
+    // this device's ABI at install time. No CPU support or native runtime is omitted.
+    packaging { jniLibs { useLegacyPackaging = providers.gradleProperty("tgUniversalOnly").orNull == "true" } }
     signingConfigs.getByName("debug") {
         val compatible = System.getenv("TG_PHOTOS_SIGNING_KEYSTORE")?.let { file(it) } ?: rootProject.file(".tools/signing/debug.keystore")
         if (compatible.isFile) storeFile = compatible

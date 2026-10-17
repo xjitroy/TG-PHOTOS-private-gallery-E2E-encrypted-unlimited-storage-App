@@ -21,7 +21,13 @@ internal class OcrEngine(private val models: OcrModels) : AutoCloseable {
     private var language = ""
     suspend fun read(image: Bitmap, thorough: Boolean = false): OcrText {
         models.prepare(false)
-        val script = OcrScript.nativeScript(java.io.File(models.directory, "tessdata").absolutePath, image)?.lineSequence()?.firstOrNull()
+        val script = try {
+            OcrScript.nativeScript(java.io.File(models.directory, "tessdata").absolutePath, image)?.lineSequence()?.firstOrNull()
+        } catch (_: LinkageError) {
+            null
+        } catch (_: RuntimeException) {
+            null
+        }
         val selected = if (thorough) {
             "ben+hin+eng+mar+tam+tel+ara+spa"
         } else {
