@@ -1,0 +1,34 @@
+{
+  "apk": "TG-Photos-0.19.3-x86.apk",
+  "bytes": 53021573,
+  "sha256": "19966a2284146b45af53ae00437022086734f1411d410a448962b834b44c6aed",
+  "versionCode": 32,
+  "versionName": "0.19.3",
+  "package": "app.televault.photos",
+  "distribution": "public",
+  "sourceCommit": "b6c9524c79d64cdcec09790ea80e07672b06bad6",
+  "sourceTree": "da46f8133a7ad8eccacd65a0ba9f8a13a0dce7cd",
+  "certificateSHA256": "3e7c1029cb5e2da80026758abd483b5bd7f0551b6a56bee6b21640b8ae774559",
+  "debuggable": false,
+  "productionVerified": false,
+  "nativeAbis": [
+    "x86"
+  ],
+  "nativeLibraries": {
+    "x86": {
+      "bytes": 27017648,
+      "sha256": "c186f794a12e364d940bf05504e8e91ac44f34074d388a2e54b329bd36541aab"
+    }
+  },
+  "checks": [
+    "ZIP CRC",
+    "signature and pinned distribution certificate",
+    "non-debuggable, backup/cleartext disabled manifest",
+    "requested pinned native ABI byte equality",
+    "16 KB ZIP alignment",
+    "shrunk JNI/Room entry points",
+    "frozen source VCS checkpoint",
+    "bundled dependency notices"
+  ],
+  "nativeAcceptance": "Authorized but unavailable in this workspace: native phone/account/provider/background-worker/performance/security acceptance. See PRODUCTION_READINESS.md for actual release gates."
+}

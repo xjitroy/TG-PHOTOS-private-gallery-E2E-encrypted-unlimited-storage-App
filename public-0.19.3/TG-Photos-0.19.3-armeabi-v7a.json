@@ -1,0 +1,34 @@
+{
+  "apk": "TG-Photos-0.19.3-armeabi-v7a.apk",
+  "bytes": 36555405,
+  "sha256": "5a7951ea78cd2a53a3b22cc9bf8849178bdff2d9309ccc71e7a7d1127ab00852",
+  "versionCode": 32,
+  "versionName": "0.19.3",
+  "package": "app.televault.photos",
+  "distribution": "public",
+  "sourceCommit": "b6c9524c79d64cdcec09790ea80e07672b06bad6",
+  "sourceTree": "da46f8133a7ad8eccacd65a0ba9f8a13a0dce7cd",
+  "certificateSHA256": "3e7c1029cb5e2da80026758abd483b5bd7f0551b6a56bee6b21640b8ae774559",
+  "debuggable": false,
+  "productionVerified": false,
+  "nativeAbis": [
+    "armeabi-v7a"
+  ],
+  "nativeLibraries": {
+    "armeabi-v7a": {
+      "bytes": 16623720,
+      "sha256": "99f588174ed155dacaee5ff872ea77455564c59230fd5f8d4da6213b21af4d54"
+    }
+  },
+  "checks": [
+    "ZIP CRC",
+    "signature and pinned distribution certificate",
+    "non-debuggable, backup/cleartext disabled manifest",
+    "requested pinned native ABI byte equality",
+    "16 KB ZIP alignment",
+    "shrunk JNI/Room entry points",
+    "frozen source VCS checkpoint",
+    "bundled dependency notices"
+  ],
+  "nativeAcceptance": "Authorized but unavailable in this workspace: native phone/account/provider/background-worker/performance/security acceptance. See PRODUCTION_READINESS.md for actual release gates."
+}
