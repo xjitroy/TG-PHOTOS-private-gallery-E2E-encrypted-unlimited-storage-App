@@ -26,6 +26,8 @@ public final class ForgottenVaultPolicy {
         if (caption == null || !validId(photos) || privateVault != null && !validId(privateVault)) return false;
         if (privateVault != null) return OwnedCloudCaption.matches(caption, ":PV2:"+photos+":"+privateVault);
         if (caption.equals("TGDRIVE_V1_ROOT:"+photos) || caption.equals("TGDRIVE_V1_PRIVATE_ROOT:"+photos)) return true;
+        if (caption.matches("TGDRIVE_V1_AI_PRIVATE:"+photos+":"+UUID)) return true;
+        if (caption.matches("TGDRIVE_V1_PEOPLE:"+photos+":"+UUID+":"+UUID)) return true;
         if (caption.matches("TGDRIVE_V1_(FILE|EVENT):"+photos+":"+UUID)) return true;
         if (caption.matches("TGDRIVE_V1_DATA:"+photos+":"+UUID+"(:[0-9]+|:"+UUID+":[0-9]+:)?")) return true;
         return caption.matches("TGDRIVE_V1_FILE:PV2:"+photos+":"+UUID)

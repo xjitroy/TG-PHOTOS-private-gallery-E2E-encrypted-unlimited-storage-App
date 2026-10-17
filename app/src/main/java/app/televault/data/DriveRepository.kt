@@ -41,6 +41,8 @@ import app.televault.domain.UploadQueuePolicy
 import app.televault.domain.VaultNames
 import app.televault.domain.VaultScope
 import app.televault.domain.VideoPresentation
+import app.televault.ocr.OcrStore
+import app.televault.people.PeopleStore
 import app.televault.telegram.RemoteDocument
 import app.televault.telegram.TelegramFailure
 import app.televault.telegram.TelegramGateway
@@ -106,6 +108,9 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
     private val reconciliation = Mutex()
     private val transferLocks = Array(64) { Mutex() }
     internal val cloudExports by lazy { CloudExports(app, database, telegram, protection, { account to vault }, { unlockedKey() }, { backgroundKey(it) }, { releaseWorkKey(it) }, { state.value.stage == VaultStage.READY }, { sync(requireComplete = true, backgroundTask = it) }, { file(it) }) }
+    internal val privateAi by lazy { PrivateIntelligenceExclusions(app, this, telegram) }
+    internal val ocr by lazy { OcrStore(app, this, (app as app.televault.TeleVaultApplication).ocrModels) }
+    internal val people by lazy { PeopleStore(app, this, telegram) }
     val localMedia = LocalMediaRepository(app)
     internal val deviceFileTrash = LocalFileTrash(app)
     private val deviceCopies = DeviceCopyResolver(app)
@@ -554,6 +559,9 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
         synchronized(this) {
             accessEpoch.incrementAndGet()
             photoPriority.clear()
+            people.lock()
+            ocr.lock()
+            privateAi.lock()
             restoreMutable.value = null
             vaultChoicesMutable.update { choices -> choices.map { it.copy(name = if (it.createdAt > 0) VaultNames.generated(it.createdAt, java.time.ZoneId.systemDefault(), it.id) else "TG Photos vault · ${it.id.take(8)}") } }
             PrivateMediaGrants.clear()
@@ -607,6 +615,128 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
                 return result
             } finally {
                 if (!returned) result.fill(0)
+            }
+        } finally {
+            key.fill(0)
+        }
+    }
+
+    /** Independent AAD namespace for optional encrypted People metadata; master never leaves repository. */
+    internal fun peopleEnvelope(bytes: ByteArray, objectId: String, binding: Pair<Long, String>, open: Boolean): ByteArray {
+        val epoch = accessEpoch.get()
+        check(privateVaultBinding() == binding)
+        val key = unlockedKey()
+        try {
+            val aad = context("people-v1/$objectId", binding.first, binding.second)
+            val result = if (open) VaultCrypto.open(key, bytes, aad) else VaultCrypto.seal(key, bytes, aad)
+            try {
+                check(accessEpoch.get() == epoch && privateVaultBinding() == binding)
+                return result
+            } catch (failure: Throwable) {
+                result.fill(0)
+                throw failure
+            }
+        } finally {
+            key.fill(0)
+        }
+    }
+
+    internal fun normalIntelligenceMedia(id: String): Boolean {
+        check(state.value.stage == VaultStage.READY)
+        val cloud = state.value.files.find { it.id == id }
+        if (cloud != null)return cloud.trashedAt == 0L && !privateAi.excluded(id, cloud.hash) && (cloud.mime.startsWith("image/") || cloud.mime.startsWith("video/"))
+        return !privateAi.excluded(id) && localMedia.changes.value.any { it.uri.toString() == id && !it.trashed && !it.galleryHidden && (it.mime.startsWith("image/") || it.mime.startsWith("video/")) }
+    }
+    internal suspend fun intelligenceContentHash(id: String): String = withContext(Dispatchers.IO) {
+        val scope = privateVaultBinding()
+        state.value.files.find { it.id == id }?.let { return@withContext it.hash }
+        val local = localMedia.changes.value.find { it.uri.toString() == id && !it.trashed } ?: return@withContext ""
+        if (!local.mime.startsWith("image/") || local.size !in 1..64L * 1024 * 1024)return@withContext ""
+        val digest = MessageDigest.getInstance("SHA-256")
+        var total = 0L
+        app.contentResolver.openInputStream(local.uri)!!.use { input ->
+            val block = ByteArray(65536)
+            try {
+                while (true) {
+                    currentCoroutineContext().ensureActive()
+                    check(privateVaultBinding() == scope)
+                    val count = input.read(block)
+                    if (count < 0)break
+                    total += count
+                    check(total <= local.size)
+                    digest.update(block, 0, count)
+                }
+            } finally {
+                block.fill(0)
+            }
+        }
+        check(total == local.size && privateVaultBinding() == scope)
+        encode(digest.digest())
+    }
+    internal suspend fun notePrivateIntelligenceHash(hash: ByteArray) {
+        privateAi.activate()
+        privateAi.block(emptySet(), setOf(encode(hash)))
+        ocr.cleanPrivateSources()
+        people.cleanPrivateSources()
+    }
+    internal suspend fun retryPrivateIntelligenceCleanup() {
+        privateAi.activate()
+        if (!privateAi.needsCleanup())return
+        privateAi.sync()
+        people.cleanPrivateSources()
+        ocr.cleanPrivateSources()
+        people.sync()
+        privateAi.finishCleanup()
+    }
+    internal suspend fun retireIntelligenceForPrivateMove(source: Uri, size: Long, hash: ByteArray, extraSource: Uri? = null) = withContext(Dispatchers.IO) {
+        val scope = privateVaultBinding()
+        privateAi.activate()
+        val encoded = encode(hash)
+        val cloud = state.value.files.filter { it.size == size && MessageDigest.isEqual(decode(it.hash), hash) }
+        val cloudIds = cloud.mapTo(hashSetOf()) { it.id }
+        val sourceKeys = setOfNotNull(source.toString(), extraSource?.toString())
+        val local = localMedia.changes.value.filter { it.uri.toString() in sourceKeys || state.value.backedDeviceFiles[it.fingerprint] in cloudIds || cloud.any { file -> file.sourceUri == it.uri.toString() } }
+        val ids = sourceKeys + cloudIds + local.map { it.uri.toString() }
+        privateAi.block(ids, setOf(encoded)) // Persist before network/deletion; failed cleanup cannot re-enable scanning.
+        ocr.cleanPrivateSources()
+        people.cleanPrivateSources()
+        privateAi.sync() // Read back the encrypted exclusion before removing owned remote references/originals.
+        people.sync()
+        privateAi.finishCleanup()
+        check(privateVaultBinding() == scope)
+    }
+    internal fun ocrEnvelope(bytes: ByteArray, objectId: String, binding: Pair<Long, String>, open: Boolean): ByteArray {
+        val epoch = accessEpoch.get()
+        check(privateVaultBinding() == binding)
+        val key = unlockedKey()
+        try {
+            val aad = context("ocr-v1/$objectId", binding.first, binding.second)
+            val result = if (open) VaultCrypto.open(key, bytes, aad) else VaultCrypto.seal(key, bytes, aad)
+            try {
+                check(accessEpoch.get() == epoch && privateVaultBinding() == binding)
+                return result
+            } catch (failure: Throwable) {
+                result.fill(0)
+                throw failure
+            }
+        } finally {
+            key.fill(0)
+        }
+    }
+
+    internal fun intelligencePrivacyEnvelope(bytes: ByteArray, objectId: String, binding: Pair<Long, String>, open: Boolean): ByteArray {
+        val epoch = accessEpoch.get()
+        check(privateVaultBinding() == binding)
+        val key = unlockedKey()
+        try {
+            val aad = context("ai-private-v1/$objectId", binding.first, binding.second)
+            val result = if (open) VaultCrypto.open(key, bytes, aad) else VaultCrypto.seal(key, bytes, aad)
+            try {
+                check(accessEpoch.get() == epoch && privateVaultBinding() == binding)
+                return result
+            } catch (failure: Throwable) {
+                result.fill(0)
+                throw failure
             }
         } finally {
             key.fill(0)
@@ -1072,6 +1202,9 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
             val cipher = File(encryptedCache, "$id.bin")
             check(!cipher.exists() || cipher.delete())
         }
+        people.retire(owner, scope)
+        ocr.retire(owner, scope)
+        privateAi.retire(owner, scope)
         dao.removeVault(owner, scope)
         archivedRoot(owner, scope).delete()
         deviceKey.erase(owner, scope)
@@ -2921,6 +3054,8 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
                 val item = checkNotNull(state.value.files.find { it.id == id && it.trashedAt == 0L })
                 check(item.size == verifiedSize && MessageDigest.isEqual(decode(item.hash), verifiedHash)) { "Vault copy differs from the cloud source." }
                 check(id !in runningTransfers)
+                retireIntelligenceForPrivateMove(Uri.parse("content://${app.packageName}.private-media/media/$id"), verifiedSize, verifiedHash)
+                access()
                 val metadata = payload(checkNotNull(dao.get("file:$id")), key)
                 retiredJobs = dao.list(account, vault, "job").filter { job ->
                     val data = payload(job, key)

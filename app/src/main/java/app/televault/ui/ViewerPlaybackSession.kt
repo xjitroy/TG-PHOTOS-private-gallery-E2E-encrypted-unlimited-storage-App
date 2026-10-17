@@ -14,6 +14,10 @@ import app.televault.domain.AdaptiveMediaPolicy
 internal class ViewerPlaybackSession(context: Context, private val model: DriveViewModel) {
     private val app = context.applicationContext
     private val activity = videoActivity(context)
+    private val orientation = activity?.let { owner -> ViewerOrientationLease(owner.requestedOrientation, android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT, android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE, { owner.requestedOrientation }, { target -> runCatching { owner.requestedOrientation = target } }) }
+    fun orientation(identity: String, landscape: Boolean, pip: Boolean) {
+        if (owns(identity)) orientation?.request(identity, landscape, pip)
+    }
     private val epoch = model.playbackEpoch
     private val sourceFactory = model.mediaSourceFactory()
     private var engine: ExoPlayer? = null
@@ -128,6 +132,7 @@ internal class ViewerPlaybackSession(context: Context, private val model: DriveV
         }
     }
     fun visible(identity: String?) {
+        orientation?.select(identity)
         if (currentIdentity != identity) {
             saveCurrent()
             engine?.pause()
@@ -137,6 +142,7 @@ internal class ViewerPlaybackSession(context: Context, private val model: DriveV
         if (released) return
         saveCurrent()
         released = true
+        orientation?.close()
         currentIdentity = null
         currentSource = null
         engine?.let { activity?.detachVideoPiP(it) }

@@ -14,3 +14,13 @@
 -keep,allowoptimization class app.televault.data.** extends androidx.work.ListenableWorker {
     public <init>(android.content.Context, androidx.work.WorkerParameters);
 }
+
+# Native OCR bridge and public Tesseract JNI entry points.
+-keep class app.televault.ocr.OcrScript { *; }
+-keep class com.googlecode.tesseract.android.** { *; }
+
+# OCR also exposes Leptonica JNI wrapper names and a persisted WorkManager identity.
+-keep class com.googlecode.leptonica.android.** { *; }
+-keep,allowoptimization class app.televault.ocr.OcrModelsWorker {
+    public <init>(android.content.Context, androidx.work.WorkerParameters);
+}

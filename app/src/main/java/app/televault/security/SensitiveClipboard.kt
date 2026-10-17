@@ -26,7 +26,7 @@ internal object SensitiveClipboard {
     private var expires = 0L
     private val expiry = Runnable { clearExpired() }
 
-    fun copy(context: Context, secret: String) {
+    fun copy(context: Context, secret: String, title: String = "Private Vault secret") {
         check(Looper.myLooper() == Looper.getMainLooper())
         if (clipboard == null) {
             val app = context.applicationContext as Application
@@ -47,7 +47,7 @@ internal object SensitiveClipboard {
             })
         }
         val nextToken = UUID.randomUUID().toString()
-        val clip = ClipData.newPlainText("Private Vault secret", secret)
+        val clip = ClipData.newPlainText(title, secret)
         clip.description.extras = PersistableBundle().apply {
             putString(OWNER_TOKEN, nextToken)
             // Android 12L and older ignore this documented forward-compatible flag.

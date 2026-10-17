@@ -15,6 +15,11 @@ public final class VideoPresentation {
     }
     public static boolean replayAfterEnd(int completedPlays){return completedPlays>=1 && completedPlays<3;}
 
+    /** Portrait feed paging and unknown/reset frames never request a landscape Activity. */
+    public static boolean landscapePlayback(boolean verticalFeed, boolean portrait, boolean fullscreen, boolean knownFrame) {
+        return fullscreen && knownFrame && !verticalFeed && !portrait;
+    }
+
     /** Movie gestures resize the same player; no seek, media change or restart is implied. */
     public static boolean fullscreenAfterSwipe(boolean fullscreen, float distanceY, float threshold) {
         if (!Float.isFinite(distanceY) || !Float.isFinite(threshold) || threshold <= 0) return fullscreen;

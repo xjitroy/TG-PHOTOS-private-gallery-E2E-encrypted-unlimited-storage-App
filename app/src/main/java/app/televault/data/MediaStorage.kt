@@ -10,7 +10,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
-internal data class MediaStorageUsage(val limit: Long = 4L * 1024 * 1024 * 1024, val temporary: Long = 0, val native: Long = 0, val offline: Long = 0, val staging: Long = 0, val catalog: Long = 0, val other: Long = 0)
+internal data class MediaStorageUsage(val limit: Long = 4L * 1024 * 1024 * 1024, val temporary: Long = 0, val native: Long = 0, val offline: Long = 0, val staging: Long = 0, val catalog: Long = 0, val other: Long = 0, val derived: Long = 0, val models: Long = 0)
 
 /** Only disposable ciphertext is managed; never delete device originals, pins, keys or jobs. */
 internal class MediaStorage(context: Context) {

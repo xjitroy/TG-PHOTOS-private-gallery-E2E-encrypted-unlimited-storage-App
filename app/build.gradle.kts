@@ -31,8 +31,8 @@ android {
         applicationId = providers.gradleProperty("televault.applicationId").getOrElse("app.televault")
         minSdk = 26
         targetSdk = 36
-        versionCode = 31
-        versionName = "0.19.2"
+        versionCode = 32
+        versionName = "0.19.3"
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64") }
         javaCompileOptions {
             annotationProcessorOptions {
@@ -41,6 +41,14 @@ android {
         }
         buildConfigField("int", "TELEGRAM_API_ID", apiId.toString())
         buildConfigField("String", "TELEGRAM_API_HASH", "\"$apiHash\"")
+    }
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
+            isUniversalApk = true
+        }
     }
     signingConfigs.getByName("debug") {
         val compatible = System.getenv("TG_PHOTOS_SIGNING_KEYSTORE")?.let { file(it) } ?: rootProject.file(".tools/signing/debug.keystore")
@@ -120,6 +128,7 @@ tasks.configureEach {
     if (name in setOf("preReleaseBuild", "validateSigningRelease", "assembleRelease", "bundleRelease", "packageRelease")) dependsOn(validateReleaseInputs)
 }
 dependencies {
+    implementation(files("libs/litert-1.4.1.aar", "libs/litert-api-1.4.1.aar", "libs/tesseract4android-4.9.0.aar"))
     implementation(files("libs/zip4j-2.11.5.jar"))
     implementation(project(":core:domain"))
     implementation(project(":core:telegram"))

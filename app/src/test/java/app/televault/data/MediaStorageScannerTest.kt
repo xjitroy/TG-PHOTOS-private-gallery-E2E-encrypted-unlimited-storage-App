@@ -69,4 +69,26 @@ class MediaStorageScannerTest {
             root.deleteRecursively()
         }
     }
+
+    @Test fun derivedIndexesAndPublicLanguageModelsHaveSeparateStorageOwners() {
+        val root = Files.createTempDirectory("derived-storage").toFile()
+        try {
+            fun sized(path: String, n: Int) {
+                File(root, path).apply {
+                    parentFile!!.mkdirs()
+                    writeBytes(ByteArray(n))
+                }
+            }
+            sized("noBackup/people/7/vault/catalog.bin", 3)
+            sized("noBackup/ocr-index/7/vault/word.bin", 5)
+            sized("noBackup/ocr-models/tessdata/ben.traineddata", 7)
+            val result = mediaStorageSnapshot(File(root, "files"), File(root, "noBackup"), File(root, "cache"), 4096)
+            assertEquals(8L, result.derived)
+            assertEquals(7L, result.models)
+            assertEquals(0L, result.other)
+            assertEquals(0L, result.temporary)
+        } finally {
+            root.deleteRecursively()
+        }
+    }
 }

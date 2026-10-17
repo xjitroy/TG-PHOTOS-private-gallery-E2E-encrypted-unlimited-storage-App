@@ -25,3 +25,7 @@ No automatic hourly key rotation or promise of decrypt immunity after a data-key
 ## Explicit offline / source retirement (0.18)
 
 Normal-cloud offline pins retain original authenticated TVLT1 ciphertext, with SHA256 scope-derived opaque names and no TTL. The encrypted existing Room envelope stores the account/root scoped pin IDs/hash/length and quota. Every record plus plaintext SHA256 is checked before atomic commit; metadata is committed last. Private Vault entries never enter this store. A server-acknowledged Move-to-Vault retirement uses an encrypted local state-event journal (PREPARED is never replayed as deleted; only REVOKED is), then removes the old normal file-key/job/offline/preview copies. Normal Photos stream formats and per-file keys are not otherwise changed.
+
+## Optional normal-Photos intelligence metadata (0.19.3)
+
+People catalogs/revision snapshots use a distinct `people-v1/<object>` AAD namespace under the unlocked normal Photos master. Optional local OCR text/word-box records use `ocr-v1/<hashed-record-key>`; filenames are SHA-256 source-ID keys, not plaintext names/text. Private-transfer exclusion ledgers/operations use independent `ai-private-v1/<object>` AAD. All include the existing account/vault context and access-epoch guards; ciphertext cannot be substituted between these capabilities. No Private Vault key is supplied to an analysis engine. These new optional metadata namespaces do not change existing file, catalog, recovery or nested Private Vault cipher formats.

@@ -33,6 +33,8 @@ internal fun MediaStorageCard(model: DriveViewModel) {
                 label("Explicit offline downloads", "ইচ্ছা করে রাখা অফলাইন কপি") to usage.offline,
                 label("Transfers, exports & share staging", "ট্রান্সফার, এক্সপোর্ট ও শেয়ারের অস্থায়ী ফাইল") to usage.staging,
                 label("Encrypted catalogs & Telegram database", "এনক্রিপ্টেড তালিকা ও Telegram ডেটাবেস") to usage.catalog,
+                label("Encrypted People & text indexes", "এনক্রিপ্টেড People ও লেখার ইনডেক্স") to usage.derived,
+                label("Offline OCR language models", "অফলাইন OCR ভাষার মডেল") to usage.models,
                 label("Other private app files", "অ্যাপের অন্য ব্যক্তিগত ফাইল") to usage.other
             ).forEach { (name, bytes) ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

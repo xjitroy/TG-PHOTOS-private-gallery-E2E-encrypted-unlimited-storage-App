@@ -1,0 +1,98 @@
+{
+  "sourceCommit": "87416418657359cb625c412a48b6e1d6d41c29bd",
+  "modelLicense": "Apache-2.0",
+  "runtime": "Tesseract4Android4.9.0 (Apache-2.0), Tesseract5.5.1, Leptonica/BSD, libjpeg/IJG, libpng/zlib",
+  "models": [
+    {
+      "id": "ara",
+      "path": "ara.traineddata",
+      "bytes": 1432056,
+      "sha256": "e3206d3dc87fd50c24a0fb9f01838615911d25168f4e64415244b67d2bb3e729",
+      "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/87416418657359cb625c412a48b6e1d6d41c29bd/ara.traineddata"
+    },
+    {
+      "id": "ben",
+      "path": "ben.traineddata",
+      "bytes": 855841,
+      "sha256": "31163084c279aaebd376216f0c3d5c17ad4b5fee8db49dae79c20000b5de5964",
+      "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/87416418657359cb625c412a48b6e1d6d41c29bd/ben.traineddata"
+    },
+    {
+      "id": "eng",
+      "path": "eng.traineddata",
+      "bytes": 4113088,
+      "sha256": "7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2",
+      "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/87416418657359cb625c412a48b6e1d6d41c29bd/eng.traineddata"
+    },
+    {
+      "id": "hin",
+      "path": "hin.traineddata",
+      "bytes": 1122751,
+      "sha256": "4c73ffc59d497c186b19d1e90f5d721d678ea6b2e277b719bee4e2af12271825",
+      "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/87416418657359cb625c412a48b6e1d6d41c29bd/hin.traineddata"
+    },
+    {
+      "id": "mar",
+      "path": "mar.traineddata",
+      "bytes": 2118233,
+      "sha256": "0ba3f2d116972e72fe9e176bc84c38e81dfb6670f4ed1f7f6c8e16a27da7cb61",
+      "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/87416418657359cb625c412a48b6e1d6d41c29bd/mar.traineddata"
+    },
+    {
+      "id": "osd",
+      "path": "osd.traineddata",
+      "bytes": 10562727,
+      "sha256": "9cf5d576fcc47564f11265841e5ca839001e7e6f38ff7f7aacf46d15a96b00ff",
+      "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/87416418657359cb625c412a48b6e1d6d41c29bd/osd.traineddata"
+    },
+    {
+      "id": "spa",
+      "path": "spa.traineddata",
+      "bytes": 2294433,
+      "sha256": "6f2e04d02774a18f01bed44b1111f2cd7f3ba7ac9dc4373cd3f898a40ea6b464",
+      "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/87416418657359cb625c412a48b6e1d6d41c29bd/spa.traineddata"
+    },
+    {
+      "id": "tam",
+      "path": "tam.traineddata",
+      "bytes": 3237963,
+      "sha256": "d02fbec24be4b07e32e80d0ccfc3b6b67a3c5d61c9d0a7c8532677990912c6ec",
+      "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/87416418657359cb625c412a48b6e1d6d41c29bd/tam.traineddata"
+    },
+    {
+      "id": "tel",
+      "path": "tel.traineddata",
+      "bytes": 2769654,
+      "sha256": "d10691fddd5b67802e1c12800ebb321d3b8bcd8d24a2ac3ff206f93188c04ab5",
+      "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/87416418657359cb625c412a48b6e1d6d41c29bd/tel.traineddata"
+    }
+  ],
+  "files": [
+    {
+      "path": "app/libs/tesseract4android-4.9.0.aar",
+      "bytes": 12848454,
+      "sha256": "bce5d6413a1a5ae3d7240033fbbc851ba3217d0a08d9769400e17a077f42cb2a"
+    },
+    {
+      "path": "app/src/main/jniLibs/arm64-v8a/libtgocrscript.so",
+      "bytes": 5512,
+      "sha256": "6a66f92612940dd88d5ff6bf24f15193fc7bd64a8509f12dabe79c136b10a779"
+    },
+    {
+      "path": "app/src/main/jniLibs/armeabi-v7a/libtgocrscript.so",
+      "bytes": 4064,
+      "sha256": "2c1be22cd64919737f2b4a0fa0d23dbb9b092523d4ff921149ed6183949a4df9"
+    },
+    {
+      "path": "app/src/main/jniLibs/x86/libtgocrscript.so",
+      "bytes": 4384,
+      "sha256": "500a785abd9d57b119a2367949684bbc45765e51414d7f95438446dddabe69d8"
+    },
+    {
+      "path": "app/src/main/jniLibs/x86_64/libtgocrscript.so",
+      "bytes": 5608,
+      "sha256": "d9a060589b659ec712e17890ca5b29a241545309402184d1ca4c89a06a9d293b"
+    }
+  ],
+  "allModelBytes": 28506746
+}

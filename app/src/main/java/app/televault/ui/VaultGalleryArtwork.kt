@@ -17,7 +17,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import app.televault.data.PrivateVaultItem
-import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -28,20 +27,20 @@ private val vaultArtworkReads = Semaphore(2)
 @Composable
 internal fun VaultGalleryArtwork(item: PrivateVaultItem, uri: Uri, contentScale: ContentScale = ContentScale.Crop) {
     val context = LocalContext.current
-    val pixels = remember(item.id) { AtomicReference<Bitmap?>() }
-    var image by remember(item.id) { mutableStateOf<Bitmap?>(null) }
-    LaunchedEffect(item.id) {
+    val pixels = remember(item.id, uri) { vaultImageSlot() }
+    var image by remember(item.id, uri) { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(item.id, uri) {
         if (item.mime.startsWith("image/")) {
             var delivered = false
             try {
-                image = withContext(Dispatchers.IO) {
+                withContext(Dispatchers.IO) {
                     vaultArtworkReads.withPermit {
                         val bitmap = decodeVaultImage(context, uri, 160 * 160)
-                        pixels.set(bitmap)
+                        pixels.offer(bitmap)
                         currentCoroutineContext().ensureActive()
-                        bitmap
                     }
                 }
+                image = pixels.publish()
                 delivered = true
             } catch (cancel: CancellationException) {
                 throw cancel
@@ -49,21 +48,15 @@ internal fun VaultGalleryArtwork(item: PrivateVaultItem, uri: Uri, contentScale:
                 image = null
             } finally {
                 if (!delivered) {
-                    pixels.getAndSet(null)?.let {
-                        it.eraseColor(0)
-                        it.recycle()
-                    }
+                    pixels.retire()
                 }
             }
         }
     }
-    DisposableEffect(item.id) {
+    DisposableEffect(item.id, uri) {
         onDispose {
             image = null
-            pixels.getAndSet(null)?.let {
-                it.eraseColor(0)
-                it.recycle()
-            }
+            pixels.retire()
         }
     }
     val colors = MaterialTheme.colorScheme

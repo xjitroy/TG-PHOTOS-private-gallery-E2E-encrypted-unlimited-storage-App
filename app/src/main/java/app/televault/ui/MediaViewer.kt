@@ -98,6 +98,72 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
     var prepared by remember { mutableStateOf<Uri?>(null) }
     var preparedId by remember { mutableStateOf<String?>(null) }
     val current = media.getOrElse(pager.settledPage) { entry }
+    val currentLive by rememberUpdatedState(current)
+    var lensConfirm by remember { mutableStateOf<MediaEntry?>(null) }
+    var textReading by remember { mutableStateOf(false) }
+    var textConsent by remember { mutableStateOf(false) }
+    var textPhotoMode by remember { mutableStateOf(false) }
+    var textResult by remember { mutableStateOf<Pair<app.televault.ocr.OcrText, Uri>?>(null) }
+    fun readText(onPhoto: Boolean) {
+        val item = currentLive
+        if (textReading)return
+        if (!item.mime.startsWith("image/") || item.cloud?.trashedAt?.let { it > 0 } == true || item.local?.trashed == true)return
+        textPhotoMode = onPhoto
+        if (!model.ocr.state.value.enabled) {
+            textConsent = true
+            return
+        }
+        val epoch = model.playbackEpoch
+        textReading = true
+        controls = true
+        message = "Reading text on this phone…"
+        scope.launch {
+            try {
+                val result = model.photoText(item)
+                val source = item.local?.uri ?: model.preferredDeviceSource(item.id) ?: model.openMedia(item.id)
+                if (model.playbackEpoch == epoch && currentLive.id == item.id) {
+                    textResult = result to source
+                    message = ""
+                }
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (_: LinkageError) {
+                message = "On-device OCR is unavailable on this device. Original photos are unchanged."
+            } catch (_: OutOfMemoryError) {
+                model.ocr.pauseEngine()
+                message = "Text reading paused to free memory. Try again with a smaller photo."
+            } catch (_: Exception) {
+                message = "Text could not be read. Check language download/access and retry from Search."
+            } finally {
+                textReading = false
+            }
+        }
+    }
+    if (textConsent) OcrEnableDialog(model, { textConsent = false }) { readText(textPhotoMode) }
+    textResult?.let { (result, source) -> PhotoTextSelection(result, source, textPhotoMode) { textResult = null } }
+    lensConfirm?.let { item ->
+        AlertDialog(onDismissRequest = { lensConfirm = null }, icon = { Icon(Icons.Outlined.CenterFocusStrong, null) }, title = { Text(label("Open in Google Lens?", "Google Lens-এ খুলবেন?")) }, text = { Text(label("This sends the selected photo to another app. Google may process it online under its privacy policy. Private Vault is never sent.", "নির্বাচিত ছবিটি অন্য অ্যাপে যাবে। Google তাদের গোপনীয়তা নীতি অনুযায়ী অনলাইনে প্রসেস করতে পারে। Private Vault কখনো পাঠানো হবে না।")) }, confirmButton = {
+            TextButton({
+                lensConfirm = null
+                try {
+                    check(item.mime.startsWith("image/") && currentLive.id == item.id)
+                    val uri = model.shareMedia(item.local?.uri, item.cloud?.id, originalMediaName(item.name), item.mime, item.size)
+                    val intent = Intent(Intent.ACTION_SEND).setType(item.mime).putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION).apply { clipData = ClipData.newRawUri("Selected photo", uri) }
+                    try {
+                        context.startActivity(Intent(intent).setPackage("com.google.ar.lens"))
+                    } catch (_: android.content.ActivityNotFoundException) {
+                        try {
+                            context.startActivity(Intent(intent).setPackage("com.google.android.googlequicksearchbox"))
+                        } catch (_: android.content.ActivityNotFoundException) {
+                            message = "Install Google Lens or the Google app, then try again."
+                        }
+                    }
+                } catch (_: Exception) {
+                    message = "Could not open Google Lens. Unlock and try again."
+                }
+            }) { Text(label("Continue", "চালিয়ে যান")) }
+        }, dismissButton = { TextButton({ lensConfirm = null }) { Text(label("Cancel", "বাতিল")) } })
+    }
     val photoLoadToken = remember(current.id) { if (current.mime.startsWith("image/")) model.beginPhotoLoad(current.id) else 0L }
     DisposableEffect(photoLoadToken) {
         onDispose { if (photoLoadToken != 0L) model.finishPhotoLoad(photoLoadToken) }
@@ -316,7 +382,7 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
                                 prepared = it
                                 preparedId = media[index].id
                             }
-                        }, videos, ::select, { direction -> app.televault.domain.ViewerOrder.adjacent(media, index, direction)?.let(::select) }, vertical, { portrait -> if (index == pager.settledPage) portraitPage = media[index].id to portrait }, videoSession, fullscreenExit, { if (index == pager.settledPage) videoFullscreen = it }, { controls = !controls }, if (vertical) null else ({ details = true }), { favorite(media[index]) }, { send(Intent.ACTION_SEND) }, { send(Intent.ACTION_VIEW) }, { cleanup -> backup(media[index], cleanup) }, { removeDevice(media[index]) }, snapshot.backedDeviceFiles, { copy -> editedAudio[stableIds[index]] = copy }, profile, resolvedSources[media[index].id], requestClose, movieDetails)
+                        }, videos, ::select, { direction -> app.televault.domain.ViewerOrder.adjacent(media, index, direction)?.let(::select) }, vertical, { portrait -> if (index == pager.settledPage) portraitPage = media[index].id to portrait }, videoSession, fullscreenExit, { if (index == pager.settledPage) videoFullscreen = it }, { controls = !controls }, if (vertical) null else ({ details = true }), { favorite(media[index]) }, { send(Intent.ACTION_SEND) }, { send(Intent.ACTION_VIEW) }, { cleanup -> backup(media[index], cleanup) }, { removeDevice(media[index]) }, snapshot.backedDeviceFiles, { copy -> editedAudio[stableIds[index]] = copy }, profile, resolvedSources[media[index].id], requestClose, movieDetails, { if (index == pager.settledPage) readText(true) })
                     }
                     if (vertical) VerticalPager(pager, key = { media[it].id }, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = 1, userScrollEnabled = !busy) { page(it) } else HorizontalPager(pager, key = { media[it].id }, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = 1, userScrollEnabled = !busy) { page(it) }
                 }
@@ -336,8 +402,12 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
                             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp).clip(RoundedCornerShape(26.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh).padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                                 IconButton(requestClose) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, label("Back", "ফিরুন")) }
                                 Column(Modifier.weight(1f)) {
-                                    Text(SimpleDateFormat("d MMMM", Locale.getDefault()).format(current.date) + " · ${pager.currentPage + 1}/${media.size}", style = MaterialTheme.typography.titleMedium)
+                                    Text(SimpleDateFormat("d MMMM", Locale.getDefault()).format(current.date) + " · ${pager.currentPage + 1}/${media.size}", style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     Text(originalMediaName(current.name), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                                if (current.mime.startsWith("image/") && !trashed) {
+                                    IconButton({ lensConfirm = current }) { Icon(Icons.Outlined.CenterFocusStrong, label("Google Lens", "Google Lens")) }
+                                    IconButton({ readText(false) }) { Icon(Icons.Outlined.TextFields, label("Text in photo", "ছবির লেখা")) }
                                 }
                                 IconButton({ details = true }) { Icon(Icons.Outlined.Info, label("Photo information", "ছবির তথ্য")) }
                                 Box {
@@ -418,7 +488,7 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
     }
 }
 
-@Composable private fun MediaPage(item: MediaEntry, active: Boolean, preload: Boolean, model: DriveViewModel, pixelsReady: () -> Unit, ready: (Uri) -> Unit, videos: List<MediaEntry>, choose: (MediaEntry) -> Unit, adjacent: (Int) -> Unit, verticalPaging: Boolean, portraitChanged: (Boolean) -> Unit, videoSession: ViewerPlaybackSession, fullscreenExit: Int, fullScreenChanged: (Boolean) -> Unit, tap: () -> Unit, info: (() -> Unit)?, favorite: () -> Unit, share: () -> Unit, openWith: () -> Unit, backup: (Boolean) -> Unit, removeDevice: () -> Unit, backedDeviceFiles: Map<String, String>, editedCopy: (MediaEntry) -> Unit, profile: () -> Unit, cachedSource: Uri?, closeViewer: () -> Unit, movieDetails: @Composable () -> Unit) {
+@Composable private fun MediaPage(item: MediaEntry, active: Boolean, preload: Boolean, model: DriveViewModel, pixelsReady: () -> Unit, ready: (Uri) -> Unit, videos: List<MediaEntry>, choose: (MediaEntry) -> Unit, adjacent: (Int) -> Unit, verticalPaging: Boolean, portraitChanged: (Boolean) -> Unit, videoSession: ViewerPlaybackSession, fullscreenExit: Int, fullScreenChanged: (Boolean) -> Unit, tap: () -> Unit, info: (() -> Unit)?, favorite: () -> Unit, share: () -> Unit, openWith: () -> Unit, backup: (Boolean) -> Unit, removeDevice: () -> Unit, backedDeviceFiles: Map<String, String>, editedCopy: (MediaEntry) -> Unit, profile: () -> Unit, cachedSource: Uri?, closeViewer: () -> Unit, movieDetails: @Composable () -> Unit, longHold: () -> Unit) {
     val context = LocalContext.current
     var uri by remember(item.id) { mutableStateOf(cachedSource) }
     var deviceSource by remember(item.id) { mutableStateOf(false) }
@@ -478,7 +548,7 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
                     }
                 }
             }
-            item.mime.startsWith("image/") -> key(item.id, source, item.local?.fingerprint) { RegionImage(source, Modifier.fillMaxSize(), tap = tap, swipeUp = info, placeholder = { MediaThumbnail(item, model, Modifier.fillMaxSize(), 384, ContentScale.Fit) }, pixelsReady = pixelsReady, cache = model.photoPreviews, cacheKey = item.id + ":" + (item.local?.fingerprint ?: item.cloud?.hash.orEmpty())) }
+            item.mime.startsWith("image/") -> key(item.id, source, item.local?.fingerprint) { RegionImage(source, Modifier.fillMaxSize(), tap = tap, swipeUp = info, placeholder = { MediaThumbnail(item, model, Modifier.fillMaxSize(), 384, ContentScale.Fit) }, pixelsReady = pixelsReady, cache = model.photoPreviews, cacheKey = item.id + ":" + (item.local?.fingerprint ?: item.cloud?.hash.orEmpty()), longHold = if (active) longHold else null) }
             item.mime.startsWith("audio/") -> AudioPlayer(source, item, model, editedCopy, share)
             item.mime.startsWith("video/") -> VideoPlayer(source, true, videos, choose, model = model, current = item, session = videoSession, adjacent = adjacent, verticalPaging = verticalPaging, portraitChanged = portraitChanged, openWith = openWith, fullScreenChanged = fullScreenChanged, fullscreenExit = fullscreenExit, favorite = favorite, share = share, backup = backup, removeDevice = removeDevice, profile = profile, closeViewer = closeViewer, movieDetails = movieDetails)
             else -> DocumentViewer(source, item, model, openWith)

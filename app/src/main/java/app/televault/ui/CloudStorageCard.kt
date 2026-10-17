@@ -4,6 +4,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.EnhancedEncryption
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -13,15 +14,23 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.televault.data.DriveSnapshot
-import java.util.Locale
 
 /** Current authenticated original bytes, not a guessed Telegram quota or lifetime traffic. */
 @Composable
-internal fun CloudStorageCard(state: DriveSnapshot, compact: Boolean = false, onClick: (() -> Unit)? = null) {
+internal fun CloudStorageCard(state: DriveSnapshot, compact: Boolean = false, onClick: (() -> Unit)? = null, minimal: Boolean = false) {
     val total = remember(state.files) { state.files.distinctBy { it.id }.sumOf { it.size } }
     val trash = remember(state.files) { state.files.filter { it.trashedAt > 0 }.sumOf { it.size } }
-    val mb = String.format(Locale.getDefault(), "%.2f MB", total / (1024.0 * 1024))
-    val gb = String.format(Locale.getDefault(), "%.2f GB", total / (1024.0 * 1024 * 1024))
+    if (minimal) {
+        Surface(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier), shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = .44f)) {
+            Row(Modifier.padding(horizontal = 14.dp).heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Outlined.EnhancedEncryption, null, Modifier.size(19.dp), tint = MaterialTheme.colorScheme.primary)
+                Text(label("Backup status", "ব্যাকআপ স্ট্যাটাস"), Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
+                Text(sizeLabel(total), style = MaterialTheme.typography.labelMedium)
+                Icon(Icons.Outlined.ChevronRight, null, Modifier.size(18.dp))
+            }
+        }
+        return
+    }
     Surface(Modifier.fillMaxWidth().padding(horizontal = if (compact) 20.dp else 0.dp, vertical = 6.dp).pageEntrance().then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier), shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .55f)) {
         Column(Modifier.padding(if (compact) 14.dp else 20.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -29,7 +38,7 @@ internal fun CloudStorageCard(state: DriveSnapshot, compact: Boolean = false, on
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text(label("Encrypted backup", "এনক্রিপ্টেড ব্যাকআপ"), style = MaterialTheme.typography.titleSmall)
-                    Text(label("Backed up: ", "ব্যাকআপ: ") + gb + " · " + mb, style = MaterialTheme.typography.bodySmall)
+                    Text(label("Backed up: ", "ব্যাকআপ: ") + sizeLabel(total), style = MaterialTheme.typography.bodySmall)
                 }
                 Icon(Icons.Outlined.EnhancedEncryption, null, tint = MaterialTheme.colorScheme.primary)
             }

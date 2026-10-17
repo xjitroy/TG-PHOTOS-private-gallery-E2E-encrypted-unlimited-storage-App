@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -27,23 +29,23 @@ internal data class GlassTab(val name: String, val icon: ImageVector)
 
 /** Stable destination slots with a readable selected pill and a compact, inset-safe glass shell. */
 @Composable
-internal fun GlassNavigation(tabs: List<GlassTab>, selected: Int, choose: (Int) -> Unit) {
+internal fun GlassNavigation(tabs: List<GlassTab>, selected: Int, search: (() -> Unit)? = null, choose: (Int) -> Unit) {
     val colors = MaterialTheme.colorScheme
     val glass = LocalInterfaceStyle.current == app.televault.InterfaceStyle.GLASS
-    Box(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))).padding(horizontal = 12.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
+    Row(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))).padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Surface(
-            modifier = Modifier.widthIn(max = 480.dp).fillMaxWidth(),
-            shape = RoundedCornerShape(32.dp),
-            color = colors.surfaceContainerHigh.copy(alpha = if (glass) .94f else 1f),
+            modifier = Modifier.weight(1f).widthIn(max = 460.dp),
+            shape = RoundedCornerShape(100.dp),
+            color = colors.surfaceContainerHigh.copy(alpha = if (glass) .91f else 1f),
             tonalElevation = if (glass) 0.dp else 3.dp,
-            shadowElevation = 6.dp,
+            shadowElevation = 10.dp,
             border = BorderStroke(
                 1.dp,
                 Brush.verticalGradient(
                     listOf(
-                        colors.onSurface.copy(alpha = if (glass) .22f else .10f),
-                        colors.primary.copy(alpha = .16f),
-                        colors.onSurface.copy(alpha = .05f)
+                        colors.onSurface.copy(alpha = if (glass) .12f else .08f),
+                        colors.primary.copy(alpha = .09f),
+                        colors.onSurface.copy(alpha = .03f)
                     )
                 )
             )
@@ -53,8 +55,8 @@ internal fun GlassNavigation(tabs: List<GlassTab>, selected: Int, choose: (Int) 
                 val slotWidth = (maxWidth - 2.dp * (tabs.size - 1).coerceAtLeast(0)) / tabs.size.coerceAtLeast(1)
                 // Large type gets an icon above its full two-line label, rather than squeezing
                 // the active destination into an animated-width pill and cutting off its name.
-                val stacked = fontScale > 1.25f || slotWidth < 72.dp
-                val inlineIcon = !stacked && slotWidth >= 96.dp * fontScale
+                val stacked = fontScale > 1.25f || slotWidth < 52.dp
+                val inlineIcon = !stacked && slotWidth >= 52.dp * fontScale
                 Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).selectableGroup(), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
                     tabs.forEachIndexed { index, tab ->
                         val active = index == selected
@@ -75,10 +77,10 @@ internal fun GlassNavigation(tabs: List<GlassTab>, selected: Int, choose: (Int) 
                         }
                         val tint by animateColorAsState(if (active) selectedContent else colors.onSurfaceVariant, tween(180), label = "Tab color")
                         val background by animateColorAsState(if (active) selectedContainer else Color.Transparent, tween(180), label = "Tab pill")
-                        val outline by animateColorAsState(if (active) accent.copy(alpha = .30f) else Color.Transparent, tween(180), label = "Tab outline")
-                        val shape = RoundedCornerShape(26.dp)
+                        val outline by animateColorAsState(if (active) accent.copy(alpha = .08f) else Color.Transparent, tween(180), label = "Tab outline")
+                        val shape = RoundedCornerShape(100.dp)
                         Box(
-                            Modifier.weight(1f).heightIn(min = 52.dp).fillMaxHeight().clip(shape).background(background, shape)
+                            Modifier.weight(if (active && !stacked) 1.28f else 1f).heightIn(min = 52.dp).fillMaxHeight().clip(shape).background(background, shape)
                                 .border(1.dp, outline, shape)
                                 .selectable(active, role = Role.Tab, onClick = { choose(index) }),
                             contentAlignment = Alignment.Center
@@ -100,6 +102,11 @@ internal fun GlassNavigation(tabs: List<GlassTab>, selected: Int, choose: (Int) 
                         }
                     }
                 }
+            }
+        }
+        if (search != null) {
+            Surface(shape = RoundedCornerShape(100.dp), color = colors.surfaceContainerHigh.copy(alpha = if (glass) .94f else 1f), shadowElevation = 8.dp) {
+                IconButton(search, Modifier.size(58.dp)) { Icon(Icons.Outlined.Search, label("Search everything", "সবকিছু খুঁজুন"), Modifier.size(26.dp)) }
             }
         }
     }

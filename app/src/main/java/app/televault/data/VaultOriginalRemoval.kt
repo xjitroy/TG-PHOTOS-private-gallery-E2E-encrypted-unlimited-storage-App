@@ -77,6 +77,8 @@ internal object VaultOriginalRemoval {
                 } else {
                     null
                 }
+                (context.applicationContext as app.televault.TeleVaultApplication).drive.retireIntelligenceForPrivateMove(source, item.size, item.hash, mediaUri)
+                check(vault.valid(epoch))
                 when {
                     mediaUri != null && Build.VERSION.SDK_INT >= 30 -> media.add(mediaUri)
                     DocumentsContract.isDocumentUri(context, source) -> check(DocumentsContract.deleteDocument(context.contentResolver, source))

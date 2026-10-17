@@ -1,11 +1,13 @@
 package app.televault.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -59,8 +61,8 @@ internal fun rememberMediaFilters(model: DriveViewModel?, changed: () -> Unit): 
 internal fun MediaFilterBar(controls: MediaFilterControls, modifier: Modifier = Modifier) {
     var sheet by rememberSaveable { mutableStateOf(false) }
     val options = controls.options
-    Row(modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        FilterChip(options.category != Category.ALL || options.hidden != 0, { sheet = true }, label = { Text(if (options.category == Category.ALL) label("Categories", "ক্যাটাগরি") else mediaCategoryLabel(options.category)) }, leadingIcon = { Icon(Icons.Outlined.FilterAlt, null, Modifier.size(18.dp)) }, trailingIcon = { Icon(Icons.Outlined.ExpandMore, null, Modifier.size(18.dp)) })
+    Row(modifier.fillMaxWidth().padding(horizontal = 16.dp).background(MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = .84f), RoundedCornerShape(28.dp)).horizontalScroll(rememberScrollState()).padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        FilterChip(options.category != Category.ALL || options.hidden != 0, { sheet = true }, shape = RoundedCornerShape(28.dp), label = { Text(if (options.category == Category.ALL) label("Categories", "ক্যাটাগরি") else mediaCategoryLabel(options.category)) }, leadingIcon = { Icon(Icons.Outlined.FilterAlt, null, Modifier.size(18.dp)) }, trailingIcon = { Icon(Icons.Outlined.ExpandMore, null, Modifier.size(18.dp)) })
         Row(Modifier.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(label("Clean view", "ক্লিন ভিউ"), style = MaterialTheme.typography.labelLarge)
             val cleanDescription = label("Clean view", "ক্লিন ভিউ")

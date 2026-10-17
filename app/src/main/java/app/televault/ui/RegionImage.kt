@@ -55,6 +55,14 @@ internal class RegionImageView(context: Context) : View(context) {
     private companion object {
         val cleanup = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     }
+    var longHeld: (() -> Unit)? = null
+    private val holdPolicy = app.televault.domain.PhotoTextHold()
+    private val hold = Runnable {
+        if (!closed && longHeld != null && holdPolicy.fire(android.os.SystemClock.elapsedRealtime())) {
+            performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+            longHeld?.invoke()
+        }
+    }
     var tapped: () -> Unit = {}
     var swipeUp: (() -> Unit)? = null
     init {
@@ -291,7 +299,12 @@ internal class RegionImageView(context: Context) : View(context) {
         if (event.actionMasked == MotionEvent.ACTION_DOWN) {
             downX = event.x
             downY = event.y
+            removeCallbacks(hold)
+            holdPolicy.begin(android.os.SystemClock.elapsedRealtime(), event.x, event.y, ViewConfiguration.get(context).scaledTouchSlop.toFloat())
+            if (longHeld != null) postDelayed(hold, app.televault.domain.PhotoTextHold.DELAY)
         }
+        if (event.pointerCount > 1 || (event.x - downX) * (event.x - downX) + (event.y - downY) * (event.y - downY) > ViewConfiguration.get(context).scaledTouchSlop.toFloat().let { it * it } || event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) removeCallbacks(hold)
+        holdPolicy.update(event.x, event.y, event.pointerCount, event.actionMasked != MotionEvent.ACTION_UP && event.actionMasked != MotionEvent.ACTION_CANCEL)
         val upward = swipeUp != null && downY - event.y > ViewConfiguration.get(context).scaledTouchSlop && downY - event.y > abs(event.x - downX) * 1.5f
         parent?.requestDisallowInterceptTouchEvent(event.pointerCount > 1 || scale > 1f || upward)
         pinch.onTouchEvent(event)
@@ -301,6 +314,9 @@ internal class RegionImageView(context: Context) : View(context) {
     }
     fun close() {
         closed = true
+        removeCallbacks(hold)
+        holdPolicy.cancel()
+        longHeld = null
         ++serial
         animation?.cancel()
         pending = null
@@ -323,7 +339,7 @@ internal class RegionImageView(context: Context) : View(context) {
     }
 }
 
-@Composable internal fun RegionImage(uri: Uri, modifier: Modifier, tap: () -> Unit = {}, swipeUp: (() -> Unit)? = null, placeholder: @Composable () -> Unit = {}, pixelsReady: () -> Unit = {}, cache: DecodedPhotoCache? = null, cacheKey: String = uri.toString()) {
+@Composable internal fun RegionImage(uri: Uri, modifier: Modifier, tap: () -> Unit = {}, swipeUp: (() -> Unit)? = null, placeholder: @Composable () -> Unit = {}, pixelsReady: () -> Unit = {}, cache: DecodedPhotoCache? = null, cacheKey: String = uri.toString(), longHold: (() -> Unit)? = null) {
     var retry by remember(uri) { mutableIntStateOf(0) }
     var loading by remember(uri, retry) { mutableStateOf(true) }
     var error by remember(uri, retry) { mutableStateOf(false) }
@@ -336,6 +352,7 @@ internal class RegionImageView(context: Context) : View(context) {
             AndroidView(modifier = Modifier.fillMaxSize(), factory = {
                 RegionImageView(it).also { v ->
                     v.tapped = tap
+                    v.longHeld = longHold
                     v.swipeUp = swipeUp
                     v.loadingChanged = { busy, failed, visible ->
                         loading = busy
@@ -346,6 +363,7 @@ internal class RegionImageView(context: Context) : View(context) {
                 }
             }, onReset = null, onRelease = { it.close() }, update = {
                 it.tapped = tap
+                it.longHeld = longHold
                 it.swipeUp = swipeUp
             })
         }

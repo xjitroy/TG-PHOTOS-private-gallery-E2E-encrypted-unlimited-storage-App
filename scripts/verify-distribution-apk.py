@@ -7,7 +7,8 @@ parser = argparse.ArgumentParser()
 parser.add_argument('apk', type=Path)
 parser.add_argument('--sdk', type=Path, required=True)
 parser.add_argument('--distribution', choices=['personal','public'], required=True)
-parser.add_argument('--version-code', type=int, default=31)
+parser.add_argument('--abi', choices=['arm64-v8a','armeabi-v7a','x86','x86_64'], help='Optional native ABI-specific APK from the same app/source/signing identity')
+parser.add_argument('--version-code', type=int, default=32)
 parser.add_argument('--version-name', required=True)
 parser.add_argument('--source-commit', help='Original compiled checkpoint for a sanitized public snapshot; checks its executable manifest too')
 args = parser.parse_args()
@@ -53,7 +54,7 @@ if args.source_commit:
         assert not relative.is_absolute() and '..' not in relative.parts
         assert hashlib.sha256((root/relative).read_bytes()).hexdigest() == entry['sha256'], str(relative)+' differs from compiled source'
 
-abis = {'arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64'}
+abis = {args.abi} if args.abi else {'arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64'}
 native = {}
 with zipfile.ZipFile(apk) as z:
     assert z.testzip() is None
@@ -70,9 +71,18 @@ with zipfile.ZipFile(apk) as z:
         data = z.read(name)
         assert data == (root / 'core/telegram/src/main/jniLibs' / abi / 'libtdjsonjava.so').read_bytes()
         native[abi] = {'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()}
-    for notice in (['Zip4j-Apache-2.0.txt'] if args.version_code >= 19 else []) + ['TDLib-Boost-1.0.txt', 'OpenSSL-Apache-2.0.txt', 'AndroidX-Apache-2.0.txt', 'BouncyCastle-0.txt']:
+    if args.version_code >= 32:
+        for row in json.loads((root/'config/people-models.json').read_text())['files']:
+            if '/assets/' in row['path']:
+                name=row['path'].split('/assets/',1)[1]
+                assert hashlib.sha256(z.read('assets/'+name)).hexdigest()==row['sha256']
+        assert b'Lapp/televault/ocr/OcrScript;' in dex and b'Lcom/googlecode/tesseract/android/TessBaseAPI;' in dex
+        for abi in abis:
+            assert z.read(f'lib/{abi}/libtgocrscript.so')==(root/f'app/src/main/jniLibs/{abi}/libtgocrscript.so').read_bytes()
+        assert 'assets/ocr-models.json' in z.namelist()
+    for notice in (['Zip4j-Apache-2.0.txt'] if args.version_code >= 19 else []) + (['MobileFaceNet-Apache-2.0.txt','MediaPipe-Apache-2.0.txt','Qualcomm-BSD-3-Clause.txt','LiteRT-Apache-2.0.txt','Tesseract4Android-Apache-2.0.txt','Tesseract-Apache-2.0.txt','Leptonica-BSD.txt','Libpng-License.txt','Libjpeg-IJG.txt'] if args.version_code >= 32 else []) + ['TDLib-Boost-1.0.txt', 'OpenSSL-Apache-2.0.txt', 'AndroidX-Apache-2.0.txt', 'BouncyCastle-0.txt']:
         assert f'assets/third-party/{notice}' in z.namelist()
 subprocess.run([str(tools / 'zipalign'), '-c', '-P', '16', '-v', '4', str(apk)], check=True, stdout=subprocess.DEVNULL)
-report = {'apk': apk.name, 'bytes': apk.stat().st_size, 'sha256': hashlib.sha256(apk.read_bytes()).hexdigest(), 'versionCode': args.version_code, 'versionName': args.version_name, 'package': package, 'distribution': args.distribution, 'sourceCommit': head, 'sourceTree': command('git', '-C', root, 'rev-parse', 'HEAD^{tree}').strip(), 'certificateSHA256': certificate, 'debuggable': False, 'productionVerified': False, 'nativeLibraries': native, 'checks': ['ZIP CRC', 'signature and pinned distribution certificate', 'non-debuggable, backup/cleartext disabled manifest', 'four pinned ABI byte equality', '16 KB ZIP alignment', 'shrunk JNI/Room entry points', 'frozen source VCS checkpoint', 'bundled dependency notices'], 'nativeAcceptance': 'Authorized but unavailable in this workspace: native phone/account/provider/background-worker/performance/security acceptance. See PRODUCTION_READINESS.md for actual release gates.'}
+report = {'apk': apk.name, 'bytes': apk.stat().st_size, 'sha256': hashlib.sha256(apk.read_bytes()).hexdigest(), 'versionCode': args.version_code, 'versionName': args.version_name, 'package': package, 'distribution': args.distribution, 'sourceCommit': head, 'sourceTree': command('git', '-C', root, 'rev-parse', 'HEAD^{tree}').strip(), 'certificateSHA256': certificate, 'debuggable': False, 'productionVerified': False, 'nativeAbis': sorted(abis), 'nativeLibraries': native, 'checks': ['ZIP CRC', 'signature and pinned distribution certificate', 'non-debuggable, backup/cleartext disabled manifest', 'requested pinned native ABI byte equality', '16 KB ZIP alignment', 'shrunk JNI/Room entry points', 'frozen source VCS checkpoint', 'bundled dependency notices'], 'nativeAcceptance': 'Authorized but unavailable in this workspace: native phone/account/provider/background-worker/performance/security acceptance. See PRODUCTION_READINESS.md for actual release gates.'}
 apk.with_suffix('.json').write_text(json.dumps(report, indent=2) + '\n')
 print(json.dumps(report, indent=2))

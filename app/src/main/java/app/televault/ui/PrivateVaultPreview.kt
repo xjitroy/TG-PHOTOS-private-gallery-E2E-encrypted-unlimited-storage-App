@@ -52,20 +52,22 @@ internal fun PrivateVaultPreview(item: PrivateVaultItem, uri: Uri, model: DriveV
             }
             when {
                 item.mime.startsWith("image/") -> {
-                    var bitmap by remember(item.id) { mutableStateOf<android.graphics.Bitmap?>(null) }
+                    var bitmap by remember(item.id, uri) { mutableStateOf<android.graphics.Bitmap?>(null) }
+                    val pixels = remember(item.id, uri) { vaultImageSlot() }
                     var failed by remember(item.id) { mutableStateOf(false) }
-                    LaunchedEffect(item.id) {
+                    LaunchedEffect(item.id, uri) {
                         try {
-                            bitmap = withContext(Dispatchers.IO) { decodeVaultImage(context, uri) }
+                            withContext(Dispatchers.IO) { pixels.offer(decodeVaultImage(context, uri)) }
+                            bitmap = pixels.publish()
                         } catch (e: CancellationException) {
                             throw e
                         } catch (_: Exception) {
                             failed = true
                         }
                     }
-                    DisposableEffect(item.id) {
+                    DisposableEffect(item.id, uri) {
                         onDispose {
-                            bitmap?.recycle()
+                            pixels.retire()
                             bitmap = null
                         }
                     }

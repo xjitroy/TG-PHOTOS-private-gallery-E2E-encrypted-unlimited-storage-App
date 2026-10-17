@@ -6,6 +6,7 @@ import android.os.SystemClock
 import android.util.Base64
 import app.televault.domain.AuthProtocol
 import app.televault.domain.ForgottenVaultPolicy
+import app.televault.domain.IntelligencePrivacy
 import app.televault.domain.OwnedCloudCaption
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -544,6 +545,33 @@ class TdlibTelegramGateway(context: Context, private val credentials: TelegramCr
             nativeStreamRetirements.edit().remove("$selfChatId/$id").commit()
             nativeRetainedBytes.remove(id)
             documentIds.entries.removeAll { it.value == id }
+        }
+    }
+    override suspend fun deletePeopleDocuments(references: List<RemoteDocument>, photos: String, person: String) {
+        require(ForgottenVaultPolicy.validId(photos) && ForgottenVaultPolicy.validId(person))
+        val chat = selfChat()
+        val messages = mutableListOf<Long>()
+        val local = mutableListOf<Int>()
+        for (reference in references) {
+            require(reference.chatId == chat && IntelligencePrivacy.ownedPersonCaption(reference.marker, photos, person))
+            val message = request(json("getMessage").put("chat_id", chat).put("message_id", reference.messageId))
+            if (message.optString("@type") == "error" && message.optInt("code") == 404)continue
+            check(message.optString("@type") == "message" && message.isNull("sending_state"))
+            // Edited/forwarded copies were made outside this app; never delete them as owned uploads.
+            if (!message.optBoolean("is_outgoing") || message.optLong("edit_date") != 0L || !message.isNull("forward_info"))continue
+            val content = message.getJSONObject("content")
+            check(content.getString("@type") == "messageDocument")
+            check(content.getJSONObject("caption").getString("text") == reference.marker)
+            val data = content.getJSONObject("document").getJSONObject("document")
+            check(data.getLong("size") == reference.bytes)
+            messages += reference.messageId
+            local += data.getInt("id")
+        }
+        for (batch in messages.chunked(100))checked(json("deleteMessages").put("chat_id", chat).put("message_ids", org.json.JSONArray(batch)).put("revoke", true))
+        for (id in local) {
+            checked(json("deleteFile").put("file_id", id))
+            nativeStreamRetirements.edit().remove("$selfChatId/$id").commit()
+            nativeRetainedBytes.remove(id)
         }
     }
     override suspend fun deleteOwnedDocuments(references: List<RemoteDocument>, ownerMarker: String) {

@@ -83,7 +83,7 @@ internal fun MediaThumbnail(entry: MediaEntry, model: DriveViewModel, modifier: 
 }
 
 @Composable
-internal fun AlbumsGrid(device: List<AlbumTile>, cloud: List<AlbumTile>, model: DriveViewModel, open: (AlbumTile) -> Unit, create: () -> Unit, modifier: Modifier = Modifier, scopeKey: String = "albums") {
+internal fun AlbumsGrid(device: List<AlbumTile>, cloud: List<AlbumTile>, model: DriveViewModel, open: (AlbumTile) -> Unit, create: () -> Unit, modifier: Modifier = Modifier, scopeKey: String = "albums", peopleContent: (@Composable () -> Unit)? = null) {
     val grid = remember(scopeKey) { LazyGridState() }
     var touched by remember(grid) { mutableStateOf(false) }
     val input = remember(grid) {
@@ -121,6 +121,7 @@ internal fun AlbumsGrid(device: List<AlbumTile>, cloud: List<AlbumTile>, model: 
         } else {
             items(cloud, key = { "remote:${it.id}" }) { tile -> AlbumCover(tile, model, Modifier.animateItem()) { open(tile) } }
         }
+        if (peopleContent != null) item(key = "people", span = { GridItemSpan(maxLineSpan) }) { peopleContent() }
         item(key = "bottom-gap", span = { GridItemSpan(maxLineSpan) }) { Spacer(Modifier.height(72.dp)) }
     }
 }
@@ -200,26 +201,46 @@ internal fun Modifier.timelinePinch(density: Float, changed: (Float) -> Unit, en
 }
 
 @Composable
-internal fun TimelineControls(density: Float, changed: (Float) -> Unit, count: Int, mosaic: Boolean = false, changeMosaic: ((Boolean) -> Unit)? = null) {
+internal fun TimelineControls(density: Float, changed: (Float) -> Unit, count: Int, mosaic: Boolean = false, changeMosaic: ((Boolean) -> Unit)? = null, compact: Boolean = false) {
+    var periodMenu by remember { mutableStateOf(false) }
+    val periods = listOf(TimelineZoom.DAY_COLUMNS, TimelineZoom.WEEK_COLUMNS, TimelineZoom.MONTH_COLUMNS)
+    val titles = listOf(label("Day", "দিন"), label("Week", "সপ্তাহ"), label("Month", "মাস"))
     Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("$count " + label("items", "আইটেম"), Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (compact) {
+                Box {
+                    TextButton({ periodMenu = true }) {
+                        Text(titles[periods.indexOfFirst { TimelineZoom.period(it.toFloat()) == TimelineZoom.period(density) }.coerceAtLeast(0)])
+                        Icon(Icons.Outlined.ExpandMore, null, Modifier.size(16.dp))
+                    }
+                    DropdownMenu(periodMenu, { periodMenu = false }) {
+                        periods.forEachIndexed { index, columns ->
+                            DropdownMenuItem(text = { Text(titles[index]) }, onClick = {
+                                changed(columns.toFloat())
+                                periodMenu = false
+                            })
+                        }
+                    }
+                }
+            }
             if (changeMosaic != null) IconToggleButton(mosaic, changeMosaic) { Icon(if (mosaic) Icons.Outlined.Dashboard else Icons.Outlined.GridView, label("Mosaic photo layout", "মোজাইক ছবির বিন্যাস")) }
             IconButton({ changed((density - 1f).coerceAtLeast(2f)) }) { Icon(Icons.Outlined.ZoomIn, label("Zoom in timeline", "টাইমলাইনে জুম ইন")) }
             IconButton({ changed((density + 1f).coerceAtMost(TimelineZoom.MONTH_COLUMNS.toFloat())) }) { Icon(Icons.Outlined.ZoomOut, label("Zoom out timeline", "টাইমলাইনে জুম আউট")) }
         }
-        val periods = listOf(TimelineZoom.DAY_COLUMNS, TimelineZoom.WEEK_COLUMNS, TimelineZoom.MONTH_COLUMNS)
-        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-            periods.forEachIndexed { index, columns ->
-                SegmentedButton(selected = TimelineZoom.period(density) == TimelineZoom.period(columns.toFloat()), onClick = { changed(columns.toFloat()) }, shape = SegmentedButtonDefaults.itemShape(index, periods.size)) {
-                    Text(
-                        when (index) {
-                            0 -> label("Day", "দিন")
-                            1 -> label("Week", "সপ্তাহ")
-                            else -> label("Month", "মাস")
-                        },
-                        style = MaterialTheme.typography.labelMedium
-                    )
+        if (!compact) {
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                periods.forEachIndexed { index, columns ->
+                    SegmentedButton(selected = TimelineZoom.period(density) == TimelineZoom.period(columns.toFloat()), onClick = { changed(columns.toFloat()) }, shape = SegmentedButtonDefaults.itemShape(index, periods.size)) {
+                        Text(
+                            when (index) {
+                                0 -> label("Day", "দিন")
+                                1 -> label("Week", "সপ্তাহ")
+                                else -> label("Month", "মাস")
+                            },
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    }
                 }
             }
         }
@@ -241,7 +262,7 @@ internal fun timeGroups(files: List<MediaEntry>, density: Float): Map<String, Li
 }
 
 @Composable
-internal fun MediaGrid(files: List<MediaEntry>, selected: Set<String>, model: DriveViewModel, device: Boolean, click: (MediaEntry) -> Unit, hold: (MediaEntry) -> Unit, density: Float, densityChanged: (Float) -> Unit, grid: LazyGridState = rememberLazyGridState(), mosaic: Boolean = true, selectionChanged: (Set<String>) -> Unit = {}) {
+internal fun MediaGrid(files: List<MediaEntry>, selected: Set<String>, model: DriveViewModel, device: Boolean, click: (MediaEntry) -> Unit, hold: (MediaEntry) -> Unit, density: Float, densityChanged: (Float) -> Unit, grid: LazyGridState = rememberLazyGridState(), mosaic: Boolean = true, selectionChanged: (Set<String>) -> Unit = {}, leadingContent: (@Composable () -> Unit)? = null) {
     val snapshot by model.contentState.collectAsStateWithLifecycle()
     var high by remember { mutableStateOf(true) }
     var anchor by remember { mutableStateOf<String?>(null) }
@@ -252,9 +273,10 @@ internal fun MediaGrid(files: List<MediaEntry>, selected: Set<String>, model: Dr
     val guardedHold: (MediaEntry) -> Unit = { if (!drag.active) hold(it) }
     val useMosaic = mosaic && columns in 3..4
     val blocks = remember(groups, useMosaic) { if (useMosaic) groups.mapValues { (_, entries) -> MosaicLayout.plan(entries.size) { entries[it].mime.startsWith("image/") } } else emptyMap() }
-    val keyPositions = remember(groups, blocks) {
+    val keyPositions = remember(groups, blocks, leadingContent != null) {
         buildMap<String, Int> {
             var position = 0
+            if (leadingContent != null) put("timeline-introduction", position++)
             groups.forEach { (date, entries) ->
                 put("date:$date", position++)
                 if (useMosaic) {
@@ -320,8 +342,15 @@ internal fun MediaGrid(files: List<MediaEntry>, selected: Set<String>, model: Dr
         densityChanged(value)
     }
     LazyVerticalGrid(columns = GridCells.Fixed(columns), state = grid, modifier = Modifier.fillMaxSize().nestedScroll(input).then(dragModifier).timelinePinch(density, change, enabled = !drag.active), contentPadding = PaddingValues(bottom = 92.dp), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        if (leadingContent != null) item(key = "timeline-introduction", span = { GridItemSpan(maxLineSpan) }, contentType = "timeline-introduction") { leadingContent() }
         groups.forEach { (date, group) ->
-            stickyHeader(key = "date:$date") { Text(date, Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background.copy(alpha = .96f)).padding(horizontal = 20.dp, vertical = 14.dp), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium) }
+            stickyHeader(key = "date:$date") {
+                Box(Modifier.fillMaxWidth().padding(top = if (leadingContent != null) WindowInsets.statusBars.asPaddingValues().calculateTopPadding() else 0.dp, bottom = 8.dp), contentAlignment = Alignment.Center) {
+                    Surface(shape = RoundedCornerShape(32.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = .94f), shadowElevation = 3.dp) {
+                        Text(date, Modifier.padding(horizontal = 18.dp, vertical = 10.dp), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium)
+                    }
+                }
+            }
             if (useMosaic) {
                 items(blocks.getValue(date), key = { group[it.cells().first().index()].id }, span = { GridItemSpan(maxLineSpan) }) { block ->
                     MosaicPhotoBlock(group, block, selected, snapshot, model, high, click, guardedHold, drag, Modifier.animateItem(fadeInSpec = null, fadeOutSpec = null))

@@ -45,4 +45,12 @@ public class ForgottenVaultPolicyTest {
     @Test(expected=IllegalArgumentException.class) public void completionWithoutValidServerStartCannotEraseLocalData() {
         ForgottenVaultPolicy.phase(1000,0,0,0,12,86401000);
     }
+ @Test public void normalRetirementIncludesOnlyItsExactPeopleNamespace() {
+  String photos="11111111-1111-1111-1111-111111111111",person="22222222-2222-2222-2222-222222222222",revision="33333333-3333-3333-3333-333333333333";
+  assertTrue(ForgottenVaultPolicy.owns("TGDRIVE_V1_PEOPLE:"+photos+":"+person+":"+revision,photos,null));
+  assertFalse(ForgottenVaultPolicy.owns("TGDRIVE_V1_PEOPLE:"+person+":"+photos+":"+revision,photos,null));
+  assertFalse(ForgottenVaultPolicy.owns("TGDRIVE_V1_PEOPLE:"+photos+":"+person+":"+revision,photos,person));
+  assertFalse(ForgottenVaultPolicy.owns("TGDRIVE_V1_PEOPLE:"+photos+":"+person+":"+revision+":other",photos,null));
+ }
+ @Test public void privateAiExclusionsBelongOnlyToTheirNormalPhotosNamespace() { String v="11111111-1111-1111-1111-111111111111",r="22222222-2222-2222-2222-222222222222";String marker="TGDRIVE_V1_AI_PRIVATE:"+v+":"+r;assertTrue(ForgottenVaultPolicy.owns(marker,v,null));assertFalse(ForgottenVaultPolicy.owns(marker,r,null));assertFalse(ForgottenVaultPolicy.owns(marker,v,r));assertFalse(ForgottenVaultPolicy.owns(marker+":extra",v,null)); }
 }

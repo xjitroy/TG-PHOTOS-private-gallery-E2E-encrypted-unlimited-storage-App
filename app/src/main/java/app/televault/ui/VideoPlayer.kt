@@ -102,13 +102,13 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
     val snapshot by model.playerState.collectAsStateWithLifecycle()
     val onAdjacent by rememberUpdatedState(adjacent)
     val onPortraitChanged by rememberUpdatedState(portraitChanged)
-    val nativeWidth = player.videoSize.width
-    val nativeHeight = player.videoSize.height
-    val initialWidth = (current.cloud?.facts?.width ?: current.local?.width ?: 0).takeIf { it > 0 } ?: nativeWidth
-    val initialHeight = (current.cloud?.facts?.height ?: current.local?.height ?: 0).takeIf { it > 0 } ?: nativeHeight
+    val initialWidth = current.cloud?.facts?.width ?: current.local?.width ?: 0
+    val initialHeight = current.cloud?.facts?.height ?: current.local?.height ?: 0
     var frameRatio by remember(identity) { mutableFloatStateOf(if (initialWidth > 0 && initialHeight > 0) initialWidth * player.videoSize.pixelWidthHeightRatio / initialHeight else 16f / 9f) }
     LaunchedEffect(player, identity) { if (session.owns(identity)) player.play() }
-    var short by remember(uri) { mutableStateOf(VideoPresentation.shortLayout((current.cloud?.facts?.width ?: current.local?.width ?: 0).takeIf { it > 0 } ?: nativeWidth, (current.cloud?.facts?.height ?: current.local?.height ?: 0).takeIf { it > 0 } ?: nativeHeight, player.videoSize.pixelWidthHeightRatio)) }
+    var frameKnown by remember(identity) { mutableStateOf(initialWidth > 0 && initialHeight > 0) }
+    var short by remember(uri) { mutableStateOf(verticalPaging || VideoPresentation.shortLayout(initialWidth, initialHeight, 1f)) }
+
     var wrongSwipes by remember { mutableIntStateOf(0) }
     var actionsVisible by remember(uri) { mutableStateOf(true) }
     var bufferedPercent by remember(uri) { mutableIntStateOf(0) }
@@ -222,24 +222,8 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
         controlEpoch++
     }
     LaunchedEffect(fullscreen, short) { fullScreenChanged(fullscreen || short) }
-    val previousOrientation = remember(activity) { activity?.requestedOrientation }
-    val appliedOrientation = remember(activity) { arrayOfNulls<Int>(1) }
-    LaunchedEffect(activity, fullscreen, short, pipVisible) {
-        val target = if (pipVisible) {
-            previousOrientation
-        } else if (fullscreen && !short) {
-            android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-        } else {
-            android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
-        }
-        if (activity != null && target != null) {
-            runCatching { activity.requestedOrientation = target }.onSuccess { appliedOrientation[0] = target }
-        }
-    }
-    DisposableEffect(activity) {
-        onDispose {
-            if (activity != null && previousOrientation != null && activity.requestedOrientation == appliedOrientation[0]) runCatching { activity.requestedOrientation = previousOrientation }
-        }
+    LaunchedEffect(identity, fullscreen, short, verticalPaging, frameKnown, pipVisible) {
+        session.orientation(identity, VideoPresentation.landscapePlayback(verticalPaging, short, fullscreen, frameKnown), pipVisible)
     }
     LaunchedEffect(controlEpoch, short) {
         delay(if (short) 3000 else 5000)
@@ -275,8 +259,10 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
             }
 
             override fun onVideoSizeChanged(size: VideoSize) {
-                short = VideoPresentation.shortLayout(size.width, size.height, size.pixelWidthHeightRatio)
-                if (size.width > 0 && size.height > 0) frameRatio = size.width * size.pixelWidthHeightRatio / size.height
+                if (!session.owns(identity) || size.width <= 0 || size.height <= 0) return
+                frameKnown = true
+                short = verticalPaging || VideoPresentation.shortLayout(size.width, size.height, size.pixelWidthHeightRatio)
+                frameRatio = size.width * size.pixelWidthHeightRatio / size.height
                 quality = "${size.width} × ${size.height}"
                 badge = true
                 badgeEpoch++
@@ -348,13 +334,13 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
                             controls = true
                             controlEpoch++
                         })
-                    }.pointerInput(short, verticalPaging, current.id, fullscreen) {
+                    }.pointerInput(short, verticalPaging, current.id, fullscreen, frameKnown) {
                         if (verticalPaging) return@pointerInput
                         var dragged = 0f
                         detectVerticalDragGestures(onDragStart = { dragged = 0f }, onDragEnd = {
                             if (short && !verticalPaging && kotlin.math.abs(dragged) > 80.dp.toPx()) {
                                 onAdjacent(if (dragged < 0) 1 else -1)
-                            } else if (!short) {
+                            } else if (!short && frameKnown) {
                                 fullscreen = VideoPresentation.fullscreenAfterSwipe(fullscreen, dragged, 72.dp.toPx())
                                 controls = true
                                 controlEpoch++

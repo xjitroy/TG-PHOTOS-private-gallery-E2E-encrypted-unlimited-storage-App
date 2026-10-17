@@ -445,6 +445,9 @@ internal class PrivateVaultRepository(private val context: Context) {
                 check(valid(epoch))
                 write(AtomicFile(file(objectId, "cloud")), metadata)
                 replaceItems(key, epoch)
+                // The independent server copy is verified. Retire normal AI representations too.
+                app.drive.notePrivateIntelligenceHash(hash)
+                check(valid(epoch))
                 objectId
             } catch (cancel: CancellationException) {
                 throw cancel

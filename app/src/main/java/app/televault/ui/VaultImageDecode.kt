@@ -14,6 +14,7 @@ internal fun decodeVaultImage(context: Context, uri: Uri, maxPixels: Int = Int.M
     val bitmap = if (Build.VERSION.SDK_INT >= 28) {
         ImageDecoder.decodeBitmap(ImageDecoder.createSource(context.contentResolver, uri)) { decoder, info, _ ->
             decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+            decoder.isMutableRequired = true
             var sample = 1
             while (info.size.width.toLong() * info.size.height / sample / sample > pixels) sample *= 2
             decoder.setTargetSampleSize(sample)
@@ -24,7 +25,18 @@ internal fun decodeVaultImage(context: Context, uri: Uri, maxPixels: Int = Int.M
         check(bounds.outWidth > 0 && bounds.outHeight > 0)
         var sample = 1
         while (bounds.outWidth.toLong() * bounds.outHeight / sample / sample > pixels) sample *= 2
-        val decoded = checkNotNull(context.contentResolver.openInputStream(uri)!!.use { BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample }) })
+        val decoded = checkNotNull(
+            context.contentResolver.openInputStream(uri)!!.use {
+                BitmapFactory.decodeStream(
+                    it,
+                    null,
+                    BitmapFactory.Options().apply {
+                        inSampleSize = sample
+                        inMutable = true
+                    }
+                )
+            }
+        )
         try {
             val exif = context.contentResolver.openInputStream(uri)!!.use { androidx.exifinterface.media.ExifInterface(it) }
             if (exif.rotationDegrees != 0 || exif.isFlipped) {
@@ -41,11 +53,18 @@ internal fun decodeVaultImage(context: Context, uri: Uri, maxPixels: Int = Int.M
             throw error
         }
     }
+    val mutable = if (bitmap.isMutable) bitmap else checkNotNull(bitmap.copy(Bitmap.Config.ARGB_8888, true)).also { bitmap.recycle() }
     try {
         (context.applicationContext as app.televault.TeleVaultApplication).privateVault.validateUri(uri)
-        return bitmap
+        return mutable
     } catch (error: Exception) {
-        bitmap.recycle()
+        mutable.eraseColor(0)
+        mutable.recycle()
         throw error
     }
 }
+
+internal fun vaultImageSlot() = EphemeralImageSlot<Bitmap>(
+    wipe = { if (!it.isRecycled && it.isMutable) it.eraseColor(0) },
+    discard = { if (!it.isRecycled) it.recycle() }
+)

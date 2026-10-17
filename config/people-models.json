@@ -1,0 +1,28 @@
+{
+  "mobileFaceNetSource": "https://huggingface.co/qualcomm/MobileFaceNet/blob/main/README.md",
+  "mobileFaceNetRelease": "v0.64.0",
+  "detectorSource": "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite",
+  "runtime": "com.google.ai.edge.litert:litert:1.4.1 + litert-api:1.4.1",
+  "files": [
+    {
+      "path": "app/src/main/assets/models/mobile_facenet.tflite",
+      "bytes": 3988392,
+      "sha256": "2046ab776fba2ec7e420767ffe7eb74a7402a8412d3d7ea8b9f4ca8420e5f3d7"
+    },
+    {
+      "path": "app/src/main/assets/models/blazeface_short_range.tflite",
+      "bytes": 229746,
+      "sha256": "b4578f35940bf5a1a655214a1cce5cab13eba73c1297cd78e1a04c2380b0152f"
+    },
+    {
+      "path": "app/libs/litert-1.4.1.aar",
+      "bytes": 7965225,
+      "sha256": "815ef39f7d40f579adda1c7bcb7ce090685fb286777ffd8283f33202f67da1b4"
+    },
+    {
+      "path": "app/libs/litert-api-1.4.1.aar",
+      "bytes": 23586,
+      "sha256": "ce5f6cc1924f0b9eb0fc339e0d3a3e6c9d041b9deb5e99f800fd6a42150f1875"
+    }
+  ]
+}

@@ -29,4 +29,15 @@ public class VideoPresentationTest {
   assertEquals(202.5f,VideoPresentation.compactHeight(360,780,Float.NaN),.01f);
   assertEquals(1,VideoPresentation.compactHeight(Float.NaN,780,1),.01f);
  }
+ @Test public void portraitFeedCannotRotateEvenWithALandscapeClip(){
+  assertFalse(VideoPresentation.landscapePlayback(true,false,true,true));
+  assertFalse(VideoPresentation.landscapePlayback(false,true,true,true));
+ }
+ @Test public void resetOrUnknownFramesCannotRotateTheActivity(){
+  assertFalse(VideoPresentation.landscapePlayback(false,false,true,false));
+ }
+ @Test public void knownMovieStillSupportsExplicitLandscapeAndCompactReturn(){
+  assertTrue(VideoPresentation.landscapePlayback(false,false,true,true));
+  assertFalse(VideoPresentation.landscapePlayback(false,false,false,true));
+ }
 }

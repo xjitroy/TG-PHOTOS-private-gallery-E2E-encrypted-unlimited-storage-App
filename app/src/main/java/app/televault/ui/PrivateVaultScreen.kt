@@ -519,7 +519,8 @@ internal fun PrivateVaultScreen(model: DriveViewModel, modifier: Modifier = Modi
                     ) {
                         Column {
                             Box(Modifier.fillMaxWidth().aspectRatio(1.15f)) {
-                                VaultGalleryArtwork(item, remember(item.id) { vault.uri(item.id) })
+                                val artworkUri = remember(item.id, unlocked) { runCatching { vault.uri(item.id) }.getOrNull() }
+                                if (artworkUri != null) VaultGalleryArtwork(item, artworkUri)
                                 if (item.id in selected) Icon(Icons.Outlined.CheckCircle, label("Selected", "নির্বাচিত"), Modifier.align(Alignment.TopStart).padding(10.dp), tint = colors.primary)
                                 Box(Modifier.align(Alignment.TopEnd)) {
                                     IconButton({ itemMenu = true }) { Icon(Icons.Outlined.MoreVert, label("File actions", "ফাইলের অপশন")) }
@@ -673,10 +674,13 @@ internal fun PrivateVaultScreen(model: DriveViewModel, modifier: Modifier = Modi
     }
     if (unlocked && opening != null) {
         val item = checkNotNull(opening)
-        PrivateVaultPreview(item, vault.uri(item.id), model, exportCopy = {
-            opening = null
-            chooseAction(VaultAction.DOWNLOAD, setOf(item.id))
-        }, close = { opening = null })
+        val previewUri = remember(item.id, unlocked) { runCatching { vault.uri(item.id) }.getOrNull() }
+        if (previewUri != null) {
+            PrivateVaultPreview(item, previewUri, model, exportCopy = {
+                opening = null
+                chooseAction(VaultAction.DOWNLOAD, setOf(item.id))
+            }, close = { opening = null })
+        }
     }
 }
 
