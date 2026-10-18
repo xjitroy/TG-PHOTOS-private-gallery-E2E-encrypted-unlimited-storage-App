@@ -659,6 +659,12 @@ fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDynamicColo
             model.indexText(model.state.value.files, model.localMedia.changes.value, restart = false)
         }
     }
+    LaunchedEffect(people.enabled) {
+        while (people.enabled) {
+            delay(60_000)
+            model.indexPeople(model.state.value.files, model.localMedia.changes.value, restart = false)
+        }
+    }
     val cloud = projection.value.cloud
     val device = projection.value.device
     val base = projection.value.base
@@ -725,7 +731,7 @@ fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDynamicColo
         search = ""
         showSearch = false
     }
-    val memoryCards = if (isPhotoTimeline && section == "All" && search.isBlank() && selected.isEmpty()) rememberPhotoMemories(visible, projectionScope, people.people) else emptyList()
+    val memoryCards = if (isPhotoTimeline && section == "All" && search.isBlank() && selected.isEmpty()) rememberPhotoMemories(visible, projectionScope, people.people, people.selfId) else emptyList()
     val choosePhotoSection: (String) -> Unit = { key ->
         section = key
         folder = null

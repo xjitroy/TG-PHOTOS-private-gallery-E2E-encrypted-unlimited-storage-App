@@ -31,19 +31,24 @@ internal class OcrEngine(private val models: OcrModels) : AutoCloseable {
         }
         var best = OcrText.EMPTY
         var bestConfidence = -1
-        for (selected in app.televault.domain.OcrLanguagePolicy.candidates(script, thorough)) {
+        for ((pass, selected) in app.televault.domain.OcrLanguagePolicy.candidates(script, thorough).withIndex()) {
             kotlinx.coroutines.currentCoroutineContext().ensureActive()
-            val result = readLanguage(image, selected)
-            val confidence = lastConfidence
-            if (result.text.isNotBlank() && (confidence > bestConfidence || best.text.isBlank())) {
-                best = result
-                bestConfidence = confidence
+            var result = readLanguage(image, selected, TessBaseAPI.PageSegMode.PSM_AUTO_OSD)
+            var confidence = lastConfidence
+            if (bestConfidence < 0 && (thorough || confidence < 75 || result.words.size < 12)) {
+                val sparse = readLanguage(image, selected, TessBaseAPI.PageSegMode.PSM_SPARSE_TEXT)
+                if (lastConfidence >= 35) result = mergeOcrLayouts(result, sparse)
+                confidence = maxOf(confidence, lastConfidence)
             }
-            if (bestConfidence >= 65 && best.words.isNotEmpty()) break
+            if (result.text.isNotBlank() && (confidence >= 35 || best.text.isBlank())) {
+                best = if (best.words.isEmpty()) result else mergeOcrLayouts(best, result)
+                bestConfidence = maxOf(bestConfidence, confidence)
+            }
+            if (!thorough && pass + 1 >= app.televault.domain.OcrLanguagePolicy.candidates(script, false).size && bestConfidence >= 65 && best.words.isNotEmpty()) break
         }
         return best
     }
-    private fun readLanguage(image: Bitmap, selected: String): OcrText {
+    private fun readLanguage(image: Bitmap, selected: String, mode: Int): OcrText {
         if (language != selected || recognizer == null) {
             recognizer?.recycle()
             recognizer = null
@@ -62,6 +67,7 @@ internal class OcrEngine(private val models: OcrModels) : AutoCloseable {
             }
         }
         val api = checkNotNull(recognizer)
+        api.setPageSegMode(mode)
         api.setImage(image)
         return try {
             val text = api.getUTF8Text().orEmpty().take(64000).trim()
@@ -73,7 +79,7 @@ internal class OcrEngine(private val models: OcrModels) : AutoCloseable {
                     do {
                         val value = iterator.getUTF8Text(TessBaseAPI.PageIteratorLevel.RIL_WORD).orEmpty().trim().take(256)
                         val box = iterator.getBoundingBox(TessBaseAPI.PageIteratorLevel.RIL_WORD)
-                        if (value.isNotEmpty() && box.size == 4 && words.size < 4096) words += OcrWord(value, box[0].coerceIn(0, image.width), box[1].coerceIn(0, image.height), box[2].coerceIn(box[0].coerceIn(0, image.width), image.width), box[3].coerceIn(box[1].coerceIn(0, image.height), image.height))
+                        if (value.isNotEmpty() && box.size == 4 && words.size < 4096) words += OcrWord(value, box[0].coerceIn(0, image.width), box[1].coerceIn(0, image.height), box[2].coerceIn(box[0].coerceIn(0, image.width), image.width), box[3].coerceIn(box[1].coerceIn(0, image.height), image.height), iterator.confidence(TessBaseAPI.PageIteratorLevel.RIL_WORD).takeIf { it.isFinite() }?.coerceIn(0f, 100f) ?: 0f)
                     } while (iterator.next(TessBaseAPI.PageIteratorLevel.RIL_WORD) && words.size < 4096)
                 } finally {
                     iterator.delete()

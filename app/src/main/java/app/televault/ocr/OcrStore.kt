@@ -15,7 +15,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 
-internal data class OcrState(val enabled: Boolean = false, val indexed: Int = 0, val busy: Boolean = false, val notice: String = "")
+internal data class OcrState(val enabled: Boolean = false, val indexed: Int = 0, val processed: Long = 0, val busy: Boolean = false, val notice: String = "")
 
 /** Optional derived text is local authenticated ciphertext; never a cloud AI upload. */
 internal class OcrStore(private val context: Context, private val drive: DriveRepository, val models: OcrModels) {
@@ -110,13 +110,11 @@ internal class OcrStore(private val context: Context, private val drive: DriveRe
             if (enabled)models.install()
         }
     }
-    suspend fun analyze(id: String, stamp: String, source: suspend () -> Uri, thorough: Boolean = false): OcrText = withContext(Dispatchers.IO) {
+    suspend fun analyze(id: String, stamp: String, source: suspend () -> Uri, thorough: Boolean = false, preferCached: Boolean = false): OcrText = withContext(Dispatchers.IO) {
         check(mutable.value.enabled)
         val requestedScope = drive.privateVaultBinding()
         val requestedToken = token.get()
         if (!drive.normalIntelligenceMedia(id))return@withContext OcrText.EMPTY
-        val contentHash = drive.intelligenceContentHash(id)
-        if (drive.privateAi.excluded(id, contentHash))return@withContext OcrText.EMPTY
         guard(requestedScope, requestedToken)
         mutex.withLock {
             val scope = drive.privateVaultBinding()
@@ -129,11 +127,13 @@ internal class OcrStore(private val context: Context, private val drive: DriveRe
             } catch (_: Exception) {
                 null
             }
-            if (saved?.optString("stamp") == stamp && (!thorough || saved.optBoolean("thorough") && saved.optInt("engineRevision") >= 2)) {
+            if (saved?.optString("stamp") == stamp && saved.optInt("engineRevision") >= 3 && (!thorough || saved.optBoolean("thorough") || preferCached && (saved.optJSONArray("words")?.length() ?: 0) > 0) && !drive.privateAi.excluded(id, saved.optString("contentHash"))) {
                 try {
                     return@withLock OcrText.read(saved)
                 } catch (_: org.json.JSONException) { } catch (_: IllegalStateException) { }
             }
+            val contentHash = drive.intelligenceContentHash(id)
+            if (drive.privateAi.excluded(id, contentHash))return@withLock OcrText.EMPTY
             models.prepare(false)
             val files = root(scope).listFiles().orEmpty()
             check(files.size < 50000 && files.sumOf { it.length() } < 256L * 1024 * 1024) { "Text index is full; clear it in Search to rebuild" }
@@ -146,8 +146,8 @@ internal class OcrStore(private val context: Context, private val drive: DriveRe
                 val text = app.televault.OnDeviceAnalysis.run { (engine ?: OcrEngine(models).also { engine = it }).read(image, thorough) }
                 guard(scope, generation)
                 if (drive.privateAi.excluded(id, contentHash))return@withLock OcrText.EMPTY
-                write(scope, generation, id, text.json().put("contentHash", contentHash).put("id", id).put("stamp", stamp).put("thorough", thorough).put("engineRevision", 2))
-                publish(scope, generation, mutable.value.copy(indexed = mutable.value.indexed + if (saved == null) 1 else 0, busy = false))
+                write(scope, generation, id, text.json().put("contentHash", contentHash).put("id", id).put("stamp", stamp).put("thorough", thorough).put("engineRevision", 3))
+                publish(scope, generation, mutable.value.copy(indexed = mutable.value.indexed + if (saved == null) 1 else 0, processed = mutable.value.processed + 1, busy = false))
                 text
             } finally {
                 bitmap?.let {

@@ -28,7 +28,7 @@ import kotlinx.coroutines.delay
 internal data class PhotoMemory(val key: String, val years: Int, val date: LocalDate, val entries: List<MediaEntry>, val title: String? = null)
 
 @Composable
-internal fun rememberPhotoMemories(files: List<MediaEntry>, scope: Any, people: List<app.televault.people.PersonCard> = emptyList()): List<PhotoMemory> {
+internal fun rememberPhotoMemories(files: List<MediaEntry>, scope: Any, people: List<app.televault.people.PersonCard> = emptyList(), selfId: String? = null): List<PhotoMemory> {
     val zone = ZoneId.systemDefault()
     val today by produceState(LocalDate.now(zone), zone) {
         while (true) {
@@ -36,14 +36,21 @@ internal fun rememberPhotoMemories(files: List<MediaEntry>, scope: Any, people: 
             value = LocalDate.now(zone)
         }
     }
-    val named = people.filter { it.name.isNotBlank() }.map { Triple(it.id, it.name, it.members) }
-    return rememberBackgroundProjection(listOf(scope, today, named), files, emptyList<PhotoMemory>()) { input ->
+    val you = label("You", "আপনি")
+    val ownTitle = label("Your moments", "আপনার মুহূর্তগুলো")
+    val named = people.filter { it.name.isNotBlank() || it.id == selfId }.map { Triple(it.id, if (it.id == selfId) you else it.name, it.members) }
+    return rememberBackgroundProjection(listOf(scope, today, named, selfId, you, ownTitle), files, emptyList<PhotoMemory>()) { input ->
         val hidden = Category.SCREENSHOTS.mask or Category.SCREEN_RECORDINGS.mask or Category.DOCUMENTS.mask
         val eligible = input.filter { it.mime.startsWith("image/") && it.mediaCategories and hidden == 0 }
         val byId = eligible.associateBy { it.id }
         val dateCards = MemoryHighlights.select(eligible.map { MemoryHighlights.Photo(it.id, it.date) }, today, zone).map { card ->
             PhotoMemory(card.key(), card.yearsAgo(), card.date(), card.ids().mapNotNull(byId::get))
         }.filter { it.entries.isNotEmpty() }
+        val self = people.find { it.id == selfId }
+        val own = if (self == null) emptyList() else eligible.filter { it.id in self.members }
+        val personal = MemoryHighlights.select(own.map { MemoryHighlights.Photo(it.id, it.date) }, today, zone).map { card ->
+            PhotoMemory("self:$selfId:${card.key()}", card.yearsAgo(), card.date(), card.ids().mapNotNull(byId::get), if (card.yearsAgo() == 0) ownTitle else null)
+        }.filter { it.entries.isNotEmpty() }.take(2)
         val together = mutableMapOf<Pair<String, String>, MutableList<MediaEntry>>()
         val old = eligible.filter { it.date > 0 && java.time.Instant.ofEpochMilli(it.date).atZone(zone).toLocalDate().isBefore(today.minusDays(30)) }
         for (photo in old) {
@@ -55,12 +62,12 @@ internal fun rememberPhotoMemories(files: List<MediaEntry>, scope: Any, people: 
                 }
             }
         }
-        val pairs = together.entries.filter { (_, photos) -> photos.map { java.time.Instant.ofEpochMilli(it.date).atZone(zone).toLocalDate() }.distinct().size >= 2 && photos.size >= 3 }.sortedByDescending { it.value.maxOf { photo -> photo.date } }.take(2).map { (ids, photos) ->
+        val pairs = together.entries.filter { (_, photos) -> photos.map { java.time.Instant.ofEpochMilli(it.date).atZone(zone).toLocalDate() }.distinct().size >= 2 && photos.size >= 3 }.sortedWith(compareByDescending<Map.Entry<Pair<String, String>, MutableList<MediaEntry>>> { it.key.first == selfId || it.key.second == selfId }.thenByDescending { it.value.maxOf { photo -> photo.date } }).take(2).map { (ids, photos) ->
             val names = named.filter { it.first == ids.first || it.first == ids.second }.joinToString(" & ") { it.second }
             val entries = photos.distinctBy { it.id }.sortedByDescending { it.date }.take(30)
             PhotoMemory("together:${ids.first}:${ids.second}", 0, java.time.Instant.ofEpochMilli(entries.first().date).atZone(zone).toLocalDate(), entries, names)
         }
-        pairs + dateCards
+        (personal + pairs + dateCards.filter { card -> personal.none { ownCard -> ownCard.entries.map { it.id }.toSet() == card.entries.map { it.id }.toSet() } }).take(6)
     }.value
 }
 

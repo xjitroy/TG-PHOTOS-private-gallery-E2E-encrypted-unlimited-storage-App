@@ -60,56 +60,65 @@ internal class FaceEngine(private val context: Context) : AutoCloseable {
         }
     }
     private fun detect(source: Bitmap): List<FaceSample> {
-        val side = max(source.width, source.height).toFloat()
-        val scale = 128f / side
-        val dx = (128 - source.width * scale) / 2
-        val dy = (128 - source.height * scale) / 2
         val image = Bitmap.createBitmap(128, 128, Bitmap.Config.ARGB_8888)
-        val matrix = Matrix().apply {
-            setScale(scale, scale)
-            postTranslate(dx, dy)
-        }
-        Canvas(image).drawBitmap(source, matrix, Paint(Paint.FILTER_BITMAP_FLAG))
         val pixels = IntArray(128 * 128)
         val input = ByteBuffer.allocateDirect(128 * 128 * 3 * 4).order(ByteOrder.nativeOrder())
         val boxes = Array(1) { Array(896) { FloatArray(16) } }
         val scores = Array(1) { Array(896) { FloatArray(1) } }
         val samples = mutableListOf<FaceSample>()
         try {
-            image.getPixels(pixels, 0, 128, 0, 0, 128, 128)
-            for (p in pixels) {
-                input.putFloat(((p shr 16) and 255) / 127.5f - 1)
-                input.putFloat(((p shr 8) and 255) / 127.5f - 1)
-                input.putFloat((p and 255) / 127.5f - 1)
-            }
-            input.rewind()
-            detector.runForMultipleInputsOutputs(arrayOf(input), mutableMapOf<Int, Any>(0 to boxes, 1 to scores))
             val candidates = mutableListOf<Detection>()
-            var index = 0
-            for (grid in intArrayOf(16, 8)) {
-                for (y in 0 until grid) {
-                    for (x in 0 until grid) {
-                        repeat(if (grid == 16) 2 else 6) {
-                            val row = boxes[0][index]
-                            val score = 1f / (1f + exp(-scores[0][index][0].coerceIn(-80f, 80f)))
-                            index++
-                            if (score >= .75f && row.all { it.isFinite() }) {
-                                val cx = row[0] + (x + .5f) * 128 / grid
-                                val cy = row[1] + (y + .5f) * 128 / grid
-                                val box = RectF((cx - row[2] / 2 - dx) / scale, (cy - row[3] / 2 - dy) / scale, (cx + row[2] / 2 - dx) / scale, (cy + row[3] / 2 - dy) / scale)
-                                if (box.width() >= 24 && box.height() >= 24 && box.centerX() in 0f..source.width.toFloat() && box.centerY() in 0f..source.height.toFloat()) {
-                                    val points = FloatArray(12) { k -> (row[4 + k] + (if (k % 2 == 0) (x + .5f) * 128 / grid - dx else (y + .5f) * 128 / grid - dy)) / scale }
-                                    candidates += Detection(box, points, score)
+            val paint = Paint(Paint.FILTER_BITMAP_FLAG)
+            for (window in app.televault.domain.FaceScanWindows.forImage(source.width, source.height)) {
+                val scale = 128f / max(window.width(), window.height())
+                val dx = (128 - window.width() * scale) / 2
+                val dy = (128 - window.height() * scale) / 2
+                image.eraseColor(Color.BLACK)
+                Canvas(image).drawBitmap(source, Rect(window.left(), window.top(), window.left() + window.width(), window.top() + window.height()), RectF(dx, dy, dx + window.width() * scale, dy + window.height() * scale), paint)
+                image.getPixels(pixels, 0, 128, 0, 0, 128, 128)
+                input.clear()
+                for (p in pixels) {
+                    input.putFloat(((p shr 16) and 255) / 127.5f - 1)
+                    input.putFloat(((p shr 8) and 255) / 127.5f - 1)
+                    input.putFloat((p and 255) / 127.5f - 1)
+                }
+                input.rewind()
+                detector.runForMultipleInputsOutputs(arrayOf(input), mutableMapOf<Int, Any>(0 to boxes, 1 to scores))
+                val tile = mutableListOf<Detection>()
+                var index = 0
+                for (grid in intArrayOf(16, 8)) {
+                    for (y in 0 until grid) {
+                        for (x in 0 until grid) {
+                            repeat(if (grid == 16) 2 else 6) {
+                                val row = boxes[0][index]
+                                val score = 1f / (1f + exp(-scores[0][index][0].coerceIn(-80f, 80f)))
+                                index++
+                                if (score >= .75f && row.all { it.isFinite() }) {
+                                    val ax = (x + .5f) * 128 / grid
+                                    val ay = (y + .5f) * 128 / grid
+                                    val cx = row[0] + ax
+                                    val cy = row[1] + ay
+                                    val box = RectF((cx - row[2] / 2 - dx) / scale + window.left(), (cy - row[3] / 2 - dy) / scale + window.top(), (cx + row[2] / 2 - dx) / scale + window.left(), (cy + row[3] / 2 - dy) / scale + window.top())
+                                    if (box.width() >= 24 && box.height() >= 24 && box.centerX() in window.left().toFloat()..(window.left() + window.width()).toFloat() && box.centerY() in window.top().toFloat()..(window.top() + window.height()).toFloat()) {
+                                        val points = FloatArray(12) { k -> (row[4 + k] + (if (k % 2 == 0) ax - dx else ay - dy)) / scale + if (k % 2 == 0) window.left() else window.top() }
+                                        tile += Detection(box, points, score)
+                                    }
                                 }
                             }
                         }
                     }
                 }
+                val retained = mutableListOf<Detection>()
+                for (candidate in tile.sortedByDescending { it.score }) {
+                    if (retained.none { overlap(it.box, candidate.box) > .3f }) retained += candidate
+                    if (retained.size == 32)break
+                }
+                candidates += retained
             }
             val kept = mutableListOf<Detection>()
             for (candidate in candidates.sortedByDescending { it.score }) {
                 if (kept.none { overlap(it.box, candidate.box) > .3f }) kept += candidate
-                if (kept.size == 10) break
+                if (kept.size == 32) break
             }
             for (face in kept) {
                 val crop = Bitmap.createBitmap(112, 112, Bitmap.Config.ARGB_8888)
@@ -120,7 +129,7 @@ internal class FaceEngine(private val context: Context) : AutoCloseable {
                     Canvas(crop).drawBitmap(source, align, Paint(Paint.FILTER_BITMAP_FLAG))
                     val embedding = embedding(crop)
                     val jpeg = ByteArrayOutputStream().use {
-                        crop.compress(Bitmap.CompressFormat.JPEG, 75, it)
+                        crop.compress(Bitmap.CompressFormat.JPEG, 85, it)
                         it.toByteArray()
                     }
                     if (jpeg.size <= 24000) {

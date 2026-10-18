@@ -49,7 +49,7 @@ internal fun UniversalSearch(files: List<MediaEntry>, people: PeopleState, model
     var tagging by remember { mutableStateOf<MediaEntry?>(null) }
     val person = people.people.find { it.id == personId }
     val parsed = remember(query, start, end) { UniversalMediaSearch.parse(query, start, end) }
-    val scope = listOf(model.playbackEpoch, query, start, end, type, personId, companion, alone, people.faceCounts, textIndex.indexed)
+    val scope = listOf(model.playbackEpoch, query, start, end, type, personId, companion, alone, people.faceCounts, textIndex.indexed, textIndex.processed)
     val projection = rememberBackgroundProjection(scope, files to people, emptyList<MediaEntry>()) { (all, index) ->
         val personNames = mutableMapOf<String, MutableList<String>>()
         index.people.filter { it.name.isNotBlank() }.forEach { group -> group.members.forEach { personNames.getOrPut(it) { mutableListOf() }.add(group.name) } }
@@ -107,6 +107,13 @@ internal fun UniversalSearch(files: List<MediaEntry>, people: PeopleState, model
                     }
                 }
                 if (person != null) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(label("This is me", "এটি আমার ফেস"), style = MaterialTheme.typography.titleSmall)
+                            Text(label("Personalize your Memories. Saved and synced encrypted.", "আপনার স্মৃতি সাজাতে ব্যবহার হবে। এনক্রিপ্ট করে সেভ ও সিঙ্ক হবে।"), style = MaterialTheme.typography.bodySmall)
+                        }
+                        Switch(people.selfId == person.id, { selected -> model.peopleAction { model.people.selectSelf(person.id, selected) } })
+                    }
                     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterChip(!alone && companion == null, {
                             alone = false

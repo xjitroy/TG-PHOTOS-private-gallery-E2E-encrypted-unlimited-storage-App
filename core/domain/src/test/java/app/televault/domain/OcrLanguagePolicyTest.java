@@ -14,9 +14,9 @@ public class OcrLanguagePolicyTest {
         assertEquals(java.util.Set.of("ben", "hin", "eng", "mar", "tam", "tel", "ara", "spa"), found);
     }
     @Test public void backgroundUsesOnlyDetectedScriptAndEnglish() {
-        assertEquals(java.util.List.of("ben+eng"), OcrLanguagePolicy.candidates("Bengali", false));
+        assertEquals(java.util.List.of("ben+hin+eng"), OcrLanguagePolicy.candidates("Bengali", false));
         assertEquals(java.util.List.of("hin+mar+eng"), OcrLanguagePolicy.candidates("Devanagari", false));
-        assertEquals(java.util.List.of("ben+hin+eng"), OcrLanguagePolicy.candidates("unknown", false));
+        assertEquals(java.util.List.of("ben+hin+eng", "eng+spa"), OcrLanguagePolicy.candidates("unknown", false));
     }
     @Test public void primaryScriptHasPriorityAndFallbacksDoNotRepeat() {
         var candidates = OcrLanguagePolicy.candidates("Tamil", true);

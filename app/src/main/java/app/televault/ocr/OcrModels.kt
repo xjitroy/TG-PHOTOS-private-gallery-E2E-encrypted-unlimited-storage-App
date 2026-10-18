@@ -2,6 +2,7 @@ package app.televault.ocr
 
 import android.content.Context
 import androidx.work.*
+import app.televault.domain.BackgroundAnalysisPolicy
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -28,7 +29,7 @@ internal class OcrModels(context: Context) {
 
     @Volatile private var preparedForSession = false
     private val verified = mutableSetOf<String>()
-    fun backgroundAllowed(): Boolean = !app.getSystemService(android.net.ConnectivityManager::class.java).isActiveNetworkMetered && !app.getSystemService(android.os.PowerManager::class.java).isPowerSaveMode
+    fun backgroundAllowed(needsNetwork: Boolean = true): Boolean = BackgroundAnalysisPolicy.allowed(app.getSystemService(android.os.PowerManager::class.java).isPowerSaveMode, app.getSystemService(android.net.ConnectivityManager::class.java).isActiveNetworkMetered, needsNetwork)
     fun installedBytes(): Long = packs.sumOf { File(directory, "tessdata/${it.path}").takeIf(File::isFile)?.length() ?: 0L }
     fun install(all: Boolean = false) {
         val work = OneTimeWorkRequestBuilder<OcrModelsWorker>().setInputData(workDataOf("all" to all)).setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).setRequiresStorageNotLow(true).build()).addTag("ocr-models").build()

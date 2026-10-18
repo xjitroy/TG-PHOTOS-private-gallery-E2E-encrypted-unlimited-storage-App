@@ -1,11 +1,11 @@
 {
-  "version": "0.19.5",
-  "code": 34,
+  "version": "0.19.6",
+  "code": 35,
   "checks": {
-    "distinctHostTests": 324,
+    "distinctHostTests": 343,
     "suites": {
       "domain": {
-        "tests": 208,
+        "tests": 222,
         "failures": 0,
         "errors": 0,
         "skipped": 0
@@ -23,7 +23,7 @@
         "skipped": 0
       },
       "app": {
-        "tests": 54,
+        "tests": 59,
         "failures": 0,
         "errors": 0,
         "skipped": 0
@@ -36,90 +36,102 @@
     "otpRootCauseVerified": false,
     "hostSmoke": {
       "people": {
-        "test": "host CPU model contract and public-domain image smoke",
-        "hostRuntime": "2.3.0",
-        "androidBundledRuntime": "1.4.1; native Android invocation unrun",
-        "fixture": "scikit-image v0.25.2 astronaut.png; NASA Eileen Collins public-domain image; private tooling only, not shipped",
-        "fixtureSha256": "88431cd9653ccd539741b555fb0a46b61558b301d4110412b5bc28b5e3ea6cb5",
-        "detectorInput": [
-          1,
-          128,
-          128,
-          3
-        ],
-        "detectorOutputs": [
-          [
-            1,
-            896,
-            16
-          ],
-          [
-            1,
-            896,
-            1
-          ]
-        ],
-        "recognizerInputs": [
-          [
-            1,
-            3,
-            112,
-            112
-          ],
-          [
-            1,
-            3,
-            112,
-            112
-          ]
-        ],
-        "recognizerOutput": [
-          2,
-          128
-        ],
-        "detectedFaces": 1,
-        "blankFaces": 0,
-        "repeatCosine": 1.0,
-        "horizontalFlipCosine": 1.0,
-        "accuracyBenchmark": false,
-        "nativeAcceptance": false
+        "test": "original-size synthetic small-face collage, actual production Java windows + host pinned model",
+        "baselineFullFrameFaces": 0,
+        "tiledFaces": 3,
+        "matchedKnownPlacements": 3,
+        "windows": 16,
+        "seconds": 2.361,
+        "fixture": "three placements of existing NASA public-domain astronaut photo; no owner images or identity benchmark",
+        "androidJniAcceptance": false
       },
       "ocr": {
-        "checks": [
+        "test": "synthetic mixed Bengali/English package label, separated small text/brand/date",
+        "runs": [
           {
-            "script": "Bengali",
-            "models": "ben+eng",
-            "expectedWordFound": true,
-            "seconds": 0.579
+            "layout": "old",
+            "edge": 1600,
+            "mode": 1,
+            "words": [
+              "MAYA",
+              "FOODS",
+              "\u09aa\u09c1\u09b7\u09cd\u099f\u09bf",
+              "\u09a4\u09a5\u09cd\u09af",
+              "PROTEIN",
+              "20g",
+              "BEST",
+              "BEFORE",
+              "2027"
+            ]
           },
           {
-            "script": "Devanagari",
-            "models": "hin+mar+eng",
-            "expectedWordFound": true,
-            "seconds": 0.323
+            "layout": "auto",
+            "edge": 2309,
+            "mode": 1,
+            "words": [
+              "MAYA",
+              "FOODS",
+              "\u09aa\u09c1\u09b7\u09cd\u099f\u09bf",
+              "\u09a4\u09a5\u09cd\u09af",
+              "PROTEIN",
+              "20g",
+              "BEST",
+              "BEFORE",
+              "2027"
+            ]
           },
           {
-            "script": "Latin",
-            "models": "eng+spa",
-            "expectedWordFound": true,
-            "seconds": 0.389
+            "layout": "sparse",
+            "edge": 2309,
+            "mode": 11,
+            "words": [
+              "MAYA",
+              "FOODS",
+              "\u09aa\u09c1\u09b7\u09cd\u099f\u09bf",
+              "\u09a4\u09a5\u09cd\u09af",
+              "PROTEIN",
+              "20g",
+              "200g",
+              "BEST",
+              "BEFORE",
+              "2027"
+            ]
+          },
+          {
+            "layout": "latin",
+            "edge": 2309,
+            "mode": 11,
+            "words": [
+              "MAYA",
+              "FOODS",
+              "aff",
+              "25",
+              "PROTEIN",
+              "20g",
+              "200g",
+              "BEST",
+              "BEFORE",
+              "2027"
+            ]
           }
         ],
-        "fixture": "synthetic printed text only; no owner images",
-        "scope": "Linux pinned-model smoke; not Android JNI or natural-photo accuracy acceptance"
+        "newRequiredBrandWeightDateBengaliFound": true,
+        "seconds": 7.4,
+        "scope": "Linux pinned-language smoke; not Android JNI/real package accuracy guarantee",
+        "ownerImagesUsed": false
       }
     }
   },
   "artifact": {
-    "apk": "TG-Photos-0.19.5-universal.apk",
-    "bytes": 71746555,
-    "sha256": "28e19eb62498d3e9c231542ff9a48617597f544acd268cd3ed110dc42d3a9f53",
-    "versionCode": 34,
-    "versionName": "0.19.5",
+    "apk": "TG-Photos-0.19.6-universal.apk",
+    "bytes": 71756967,
+    "sha256": "5cdd44b0d0d3a47e0e398e1327b2fe5df811868597a0ecfbf3683e17e1429852",
+    "versionCode": 35,
+    "versionName": "0.19.6",
     "package": "app.televault.photos",
     "distribution": "public",
-    "sourceCommit": "42ec39f823b0b58de51ba8bea42ceb46a0e3c2aa",
-    "sourceTree": "dccfe1a13b255a41e0587bc41d3b0e53581f424b",
+    "sourceCommit": "cc2253b834401957f6d593c4f1d2188685d9dfdf",
+    "sourceTree": "bc9a269f9b7438e5fa05f3ce81f8a130beba7fb3",
     "certificateSHA256": "3e7c1029cb5e2da80026758abd483b5bd7f0551b6a56bee6b21640b8ae774559",
     "debuggable": false,
     "productionVerified": false,

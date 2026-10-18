@@ -127,32 +127,32 @@ class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
         }
     }
     private var peopleIndex: Job? = null
-    internal fun indexPeople(cloud: List<app.televault.data.DriveFile>, local: List<app.televault.data.LocalMedia>) {
-        if (!intelligenceActive)return
+    internal fun indexPeople(cloud: List<app.televault.data.DriveFile>, local: List<app.televault.data.LocalMedia>, restart: Boolean = true) {
+        if (!intelligenceActive || !restart && peopleIndex?.isActive == true)return
         peopleIndex?.cancel()
         peopleIndex = viewModelScope.launch(Dispatchers.IO) {
             try {
-                if (!people.state.value.enabled) return@launch
+                if (!people.state.value.enabled || !ocr.models.backgroundAllowed(false)) return@launch
                 val epoch = playbackEpoch
                 val byCloud = state.value.backedDeviceFiles
-                val localById = local.associateBy { it.uri.toString() }
-                val originals = local.mapNotNull { item -> byCloud[item.fingerprint]?.let { it to item } }.toMap()
+                val allowCloud = ocr.models.backgroundAllowed()
+                suspend fun scan(id: String, stamp: String, photo: Boolean, videoPreview: suspend () -> Bitmap?) {
+                    repository.photoPriority.await("people-index")
+                    try {
+                        val changed = people.analyze(id, stamp, ownedSource = photo) { if (photo) repository.analysisPhoto(id, allowCloud) else videoPreview() }
+                        if (changed) delay(160)
+                    } catch (_: java.io.IOException) { } catch (_: SecurityException) { }
+                }
                 for (file in cloud.filter { it.trashedAt == 0L && (it.mime.startsWith("image/") || it.mime.startsWith("video/")) }.sortedByDescending { it.date }) {
                     if (epoch != playbackEpoch) break
-                    repository.photoPriority.await("people-index")
-                    val original = originals[file.id]
-                    val changed = people.analyze(file.id, file.hash) {
-                        if (original != null) localMedia.thumbnail(original, 768) else repository.thumbnail(file.id, 384)
-                    }
-                    if (changed) delay(160)
+                    scan(file.id, file.hash, file.mime.startsWith("image/")) { repository.thumbnail(file.id, 384) }
                 }
-                for (file in localById.values.filter { !it.trashed && !it.galleryHidden && (it.mime.startsWith("image/") || it.mime.startsWith("video/")) && byCloud[it.fingerprint] == null }.sortedByDescending { it.date }) {
+                for (file in local.distinctBy { it.uri }.filter { !it.trashed && !it.galleryHidden && (it.mime.startsWith("image/") || it.mime.startsWith("video/")) && byCloud[it.fingerprint] == null }.sortedByDescending { it.date }) {
                     if (epoch != playbackEpoch) break
-                    repository.photoPriority.await("people-index")
-                    val changed = people.analyze(file.uri.toString(), file.fingerprint) { localMedia.thumbnail(file, 768) }
-                    if (changed) delay(160)
+                    scan(file.uri.toString(), file.fingerprint, file.mime.startsWith("image/")) { localMedia.thumbnail(file, 768) }
                 }
-                people.sync()
+                people.finishScan()
+                if (people.state.value.pendingSync) people.sync()
             } catch (cancel: CancellationException) {
                 throw cancel
             } catch (_: LinkageError) {
@@ -162,6 +162,8 @@ class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
                 repository.notice("People indexing paused to free memory. Your media is unchanged.")
             } catch (_: Exception) {
                 repository.notice("People indexing paused. Open Albums → People to sync or retry. Your media is unchanged.")
+            } finally {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { runCatching { people.finishScan() } }
             }
         }
     }
@@ -177,18 +179,24 @@ class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
                 val epoch = playbackEpoch
                 for (file in cloud.filter { it.trashedAt == 0L && it.mime.startsWith("image/") }.sortedByDescending { it.date }) {
                     if (epoch != playbackEpoch)break
-                    if (!ocr.models.backgroundAllowed()) continue
+                    val original = repository.preferredDeviceSource(file.id)
+                    if (!ocr.models.backgroundAllowed(original == null)) continue
                     repository.photoPriority.await("text-index")
-                    val before = ocr.state.value.indexed
-                    ocr.analyze(file.id, file.hash, { repository.preferredDeviceSource(file.id) ?: repository.privateMediaUri(file.id) })
-                    if (ocr.state.value.indexed > before)delay(500)
+                    val before = ocr.state.value.processed
+                    try {
+                        ocr.analyze(file.id, file.hash, { original ?: repository.privateMediaUri(file.id) })
+                    } catch (_: java.io.IOException) { } catch (_: SecurityException) { }
+                    if (ocr.state.value.processed > before)delay(500)
                 }
                 for (file in local.filter { !it.trashed && !it.galleryHidden && it.mime.startsWith("image/") && state.value.backedDeviceFiles[it.fingerprint] == null }.sortedByDescending { it.date }) {
                     if (epoch != playbackEpoch)break
+                    if (!ocr.models.backgroundAllowed(false))continue
                     repository.photoPriority.await("text-index")
-                    val before = ocr.state.value.indexed
-                    ocr.analyze(file.uri.toString(), file.fingerprint, { file.uri })
-                    if (ocr.state.value.indexed > before)delay(500)
+                    val before = ocr.state.value.processed
+                    try {
+                        ocr.analyze(file.uri.toString(), file.fingerprint, { file.uri })
+                    } catch (_: java.io.IOException) { } catch (_: SecurityException) { }
+                    if (ocr.state.value.processed > before)delay(500)
                 }
             } catch (cancel: CancellationException) {
                 throw cancel
@@ -202,9 +210,9 @@ class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
             }
         }
     }
-    internal suspend fun photoText(item: app.televault.ui.MediaEntry): app.televault.ocr.OcrText {
+    internal suspend fun photoText(item: app.televault.ui.MediaEntry, preferCached: Boolean = false): app.televault.ocr.OcrText {
         check(item.mime.startsWith("image/") && (item.cloud == null || item.cloud.trashedAt == 0L) && item.local?.trashed != true)
-        return ocr.analyze(item.id, item.local?.fingerprint ?: item.cloud!!.hash, { item.local?.uri ?: repository.preferredDeviceSource(item.id) ?: repository.privateMediaUri(item.id) }, thorough = true)
+        return ocr.analyze(item.id, item.local?.fingerprint ?: item.cloud!!.hash, { item.local?.uri ?: repository.preferredDeviceSource(item.id) ?: repository.privateMediaUri(item.id) }, thorough = true, preferCached = preferCached)
     }
     internal val mediaStorage = repository.mediaStorage.usage
     fun refreshMediaStorage() = action { repository.mediaStorage.refresh() }

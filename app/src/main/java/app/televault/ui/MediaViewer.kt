@@ -121,7 +121,7 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
         message = "Reading text on this phone…"
         scope.launch {
             try {
-                val result = model.photoText(item)
+                val result = model.photoText(item, preferCached = onPhoto)
                 val source = item.local?.uri ?: model.preferredDeviceSource(item.id) ?: model.openMedia(item.id)
                 if (model.playbackEpoch == epoch && currentLive.id == item.id) {
                     textResult = result to source

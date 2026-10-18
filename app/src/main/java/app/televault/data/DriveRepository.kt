@@ -42,6 +42,7 @@ import app.televault.domain.VaultNames
 import app.televault.domain.VaultScope
 import app.televault.domain.VideoPresentation
 import app.televault.ocr.OcrStore
+import app.televault.ocr.decodeOcrPhoto
 import app.televault.people.PeopleStore
 import app.televault.telegram.RemoteDocument
 import app.televault.telegram.TelegramFailure
@@ -646,6 +647,12 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
         val cloud = state.value.files.find { it.id == id }
         if (cloud != null)return cloud.trashedAt == 0L && !privateAi.excluded(id, cloud.hash) && (cloud.mime.startsWith("image/") || cloud.mime.startsWith("video/"))
         return !privateAi.excluded(id) && localMedia.changes.value.any { it.uri.toString() == id && !it.trashed && !it.galleryHidden && (it.mime.startsWith("image/") || it.mime.startsWith("video/")) }
+    }
+    internal suspend fun analysisPhoto(id: String, allowCloud: Boolean): Bitmap? = withContext(Dispatchers.IO) {
+        if (!normalIntelligenceMedia(id)) return@withContext null
+        val cloud = state.value.files.find { it.id == id }
+        val uri = if (cloud != null) preferredDeviceSource(id) ?: if (allowCloud) privateMediaUri(id) else return@withContext null else localMedia.changes.value.find { it.uri.toString() == id && !it.trashed && !it.galleryHidden }?.uri ?: return@withContext null
+        decodeOcrPhoto(app, uri)
     }
     internal suspend fun intelligenceContentHash(id: String): String = withContext(Dispatchers.IO) {
         val scope = privateVaultBinding()

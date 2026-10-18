@@ -2,7 +2,7 @@
 
 Native Android photo gallery, encrypted Telegram backups, media player, file management and an independent Private Vault. Android8.0+; One Universal APK includes ARM64, ARMv7, x86 and x86_64 with the same app and signing identity.
 
-[Download public APK](https://github.com/xjitroy/TG-PHOTOS-private-gallery-E2E-encrypted-unlimited-storage-App/tree/apk-downloads/public-0.19.5) · [Build source](BUILD.md) · [Privacy](PRIVACY.md) · [Security](SECURITY.md)
+[Download public APK](https://github.com/xjitroy/TG-PHOTOS-private-gallery-E2E-encrypted-unlimited-storage-App/tree/apk-downloads/public-0.19.6) · [Build source](BUILD.md) · [Privacy](PRIVACY.md) · [Security](SECURITY.md)
 
 Photos, Albums, Files and Vault share a native Kotlin/Jetpack Compose interface with Glass/Material You options. Verified device originals open directly. Cloud media streams as authenticated encrypted ranges with bounded temporary storage. Background folder backup, manual-priority uploads, restore-safe content dedup, category/date ZIP export and media editing are included.
 
@@ -10,7 +10,7 @@ Private Vault uses a separate password/recovery key and nested cloud encryption.
 
 **DO NOT DELETE the TG Photos attachments, recovery/catalog messages or Saved Messages chat in Telegram.** Those messages contain your backups. Use TG Photos to manage deletion. Keep your passwords and recovery keys privately; uninstalling or clearing data removes local recovery convenience and biometric enrollment.
 
-The public distribution is `app.televault.photos`, version0.19.5, signed with the certificate pinned in config/public-signing-cert.sha256. Official future APK updates require the same private signing identity. Public source can be inspected/forked and APKs can be reverse engineered; code visibility/obfuscation does not prevent every modification. Other users cannot push to this repository merely because it is public. Verify the certificate/checksums before installation.
+The public distribution is `app.televault.photos`, version0.19.6, signed with the certificate pinned in config/public-signing-cert.sha256. Official future APK updates require the same private signing identity. Public source can be inspected/forked and APKs can be reverse engineered; code visibility/obfuscation does not prevent every modification. Other users cannot push to this repository merely because it is public. Verify the certificate/checksums before installation.
 
 This repository contains a sanitized snapshot of the same app's current executable source, not personal development history or owner backups. No private signing/session/recovery/encryption keys or client source credential values are included. Telegram client API identity necessarily exists in a working APK and must not be treated as a server secret. Supply your own client configuration when building.
 
@@ -26,8 +26,10 @@ Optional encrypted vault names and independent vault selection preserve existing
 
 Photos includes phone-local date-based Memories cards and floating, scroll-aware controls. Private Vault artwork uses bounded mutable RAM images with renderer-safe cleanup; it never writes Vault thumbnails to disk. Optional face/text analysis runs on this device; no photo is sent to an AI analysis provider.
 
-0.19.4 adds optional on-device People groups with encrypted named-reference recovery, reviewable matches and co-occurrence Memories; universal name/person/date/type search; and optional eight-language photo OCR with an encrypted local text/word index. The language pack downloads once (28.5MB). Hold a normal photo for five seconds to select words, or use Text to see/copy all text. Lens requires confirmation before external sharing. Private Vault excludes faces, OCR and Lens. Model inference accuracy/native gestures are not certified by host tests.
+0.19.4 adds optional on-device People groups with encrypted named-reference recovery, reviewable matches and co-occurrence Memories; universal name/person/date/type search; and optional eight-language photo OCR with an encrypted local text/word index. The language pack downloads once (28.5MB). Hold a normal photo for three seconds to select words, or use Text to see/copy all text. Lens requires confirmation before external sharing. Private Vault excludes faces, OCR and Lens. Model inference accuracy/native gestures are not certified by host tests.
 
 0.19.4 focuses on People review/merge/per-photo tags and selective photo text copying. Reviews update encrypted matching references and rejected-pair constraints; ordinary reopen reuses content-based scan results. Person profiles show a photo grid with alone/together filters. Public delivery is one signed universal APK containing all four ABIs.
 
 0.19.5 repairs cold-start session presentation, guards unavailable OCR search/photo previews, bounds native inference concurrency and loads OCR language groups sequentially. Existing encrypted Telegram sessions/data are preserved. An affected-phone force-stop/OTP regression has not been reproduced here; session diagnostics are available without storing authentication secrets.
+
+0.19.6 scans original device photos with overlapping face-detection windows, persists unchanged tags and retries older zero-face thumbnail scans once. Photo OCR combines page/sparse layouts and word confidence for small/mixed-script labels. Local photos can be indexed offline after language download; cloud analysis waits for unmetered access. Select “This is me” in a person’s profile to prioritize personal Memories. Names, references, membership hashes, review decisions and this preference sync as authenticated encrypted People metadata; Memories are rebuilt locally from these inputs and restored encrypted media dates. Original photos need not be reuploaded just to change a name. Private Vault stays excluded.
