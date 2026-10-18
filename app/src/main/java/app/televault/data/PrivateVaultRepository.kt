@@ -894,44 +894,46 @@ internal class PrivateVaultRepository(private val context: Context) {
         check(unlocked.value)
         return list.value.first { it.id == id }
     }
-    fun reader(id: String): Pair<AuthenticatedRecords, Long> {
+    fun reader(id: String, readJob: kotlinx.coroutines.Job? = null): Pair<AuthenticatedRecords, Long> {
+        readJob?.ensureActive()
         val (key, vaultId, epoch) = session()
-        val entry = item(id)
-        if (entry.cloud != null) {
-            try {
-                val (reader, close) = cloudStore.reader(entry, vaultId, cloudStore.binding()) { check(valid(epoch)) }
+        try {
+            val entry = item(id)
+            if (entry.cloud != null) {
+                val (reader, close) = cloudStore.reader(entry, vaultId, cloudStore.binding(), readJob) {
+                    readJob?.ensureActive()
+                    check(valid(epoch))
+                }
                 synchronized(readers) {
-                    if (!valid(epoch)) {
+                    if (!valid(epoch) || readJob?.isActive == false) {
                         close.close()
-                        error("Vault locked")
+                        error("Vault locked or read cancelled")
                     }
                     readers[reader] = close
                 }
                 return reader to epoch
-            } finally {
-                key.fill(0)
             }
-        }
-        val input = RandomAccessFile(file(id, "cipher"), "r")
-        try {
-            val reader = AuthenticatedRecords({ position, output, offset, length ->
-                synchronized(input) {
-                    input.seek(position)
-                    input.readFully(output, offset, length)
+            val input = RandomAccessFile(file(id, "cipher"), "r")
+            try {
+                val reader = AuthenticatedRecords({ position, output, offset, length ->
+                    readJob?.ensureActive()
+                    synchronized(input) {
+                        input.seek(position)
+                        input.readFully(output, offset, length)
+                    }
+                }, entry.fileKey, vaultId, UUID.fromString(id), entry.size, input.length())
+                synchronized(readers) {
+                    if (!valid(epoch) || readJob?.isActive == false) {
+                        reader.close()
+                        error("Vault locked or read cancelled")
+                    }
+                    readers[reader] = input
                 }
-            }, entry.fileKey, vaultId, UUID.fromString(id), entry.size, input.length())
-            synchronized(readers) {
-                if (!valid(epoch)) {
-                    reader.close()
-                    input.close()
-                    error("Vault locked")
-                }
-                readers[reader] = input
+                return reader to epoch
+            } catch (failure: Throwable) {
+                input.close()
+                throw failure
             }
-            return reader to epoch
-        } catch (e: Exception) {
-            input.close()
-            throw e
         } finally {
             key.fill(0)
         }

@@ -38,14 +38,26 @@ class EncryptedPreviewProvider : ContentProvider() {
     private fun privateVault() = (checkNotNull(context).applicationContext as TeleVaultApplication).privateVault
     private fun drive() = (checkNotNull(context).applicationContext as TeleVaultApplication).drive
     override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor {
-        if (uri.pathSegments.firstOrNull() == "private-vault") return openVaultFile(uri, mode)
+        val readJob = MediaReadSession.readerJob(uri)
+        try {
+            return openOwnedFile(uri, mode, readJob)
+        } catch (failure: Throwable) {
+            readJob.cancel()
+            throw failure
+        }
+    }
+    private fun openOwnedFile(uri: Uri, mode: String, readJob: Job): ParcelFileDescriptor {
+        if (uri.pathSegments.firstOrNull() == "private-vault") return openVaultFile(uri, mode, readJob)
         require(mode == "r" && uri.pathSegments.size == 2 && uri.pathSegments[0] in setOf("media", "share"))
         val repository = drive()
         val value = if (uri.pathSegments[0] == "share") grant(uri) else null
-        if (value?.source != null) return checkNotNull(context).contentResolver.openFileDescriptor(value.source, "r") ?: error("Source unavailable")
+        if (value?.source != null) {
+            readJob.cancel()
+            return checkNotNull(context).contentResolver.openFileDescriptor(value.source, "r") ?: error("Source unavailable")
+        }
         val epoch = repository.currentAccessEpoch()
         val reader = try {
-            runBlocking(Dispatchers.IO) { repository.authenticatedReader(value?.cloudId ?: checkNotNull(uri.lastPathSegment)) }
+            runBlocking(Dispatchers.IO) { repository.authenticatedReader(value?.cloudId ?: checkNotNull(uri.lastPathSegment), readJob) }
         } catch (failure: Exception) {
             if (AuthenticatedRecords.integrityFailure(failure)) repository.invalidateStreamCache(value?.cloudId ?: uri.lastPathSegment)
             throw java.io.FileNotFoundException("Authenticated media unavailable").apply { initCause(failure) }
@@ -55,7 +67,13 @@ class EncryptedPreviewProvider : ContentProvider() {
             return manager.openProxyFileDescriptor(
                 ParcelFileDescriptor.MODE_READ_ONLY,
                 object : ProxyFileDescriptorCallback() {
-                    override fun onGetSize() = reader.length()
+                    override fun onGetSize(): Long = try {
+                        readJob.ensureActive()
+                        check(repository.currentAccessEpoch() == epoch)
+                        reader.length()
+                    } catch (_: Exception) {
+                        throw ErrnoException("media unavailable", OsConstants.EIO)
+                    }
                     override fun onRead(offset: Long, size: Int, data: ByteArray): Int {
                         if (repository.state.value.stage != VaultStage.READY || runCatching { repository.currentAccessEpoch() }.getOrNull() != epoch || value != null && value.expires <= SystemClock.elapsedRealtime()) {
                             data.fill(0)
@@ -63,7 +81,9 @@ class EncryptedPreviewProvider : ContentProvider() {
                         }
                         return try {
                             if (offset >= reader.length()) return 0
+                            readJob.ensureActive()
                             val count = reader.read(offset, data, 0, minOf(size.toLong(), reader.length() - offset).toInt()).coerceAtLeast(0)
+                            readJob.ensureActive()
                             if (repository.currentAccessEpoch() != epoch || value != null && value.expires <= SystemClock.elapsedRealtime()) throw ErrnoException("locked", OsConstants.EACCES)
                             count
                         } catch (failure: Exception) {
@@ -73,13 +93,15 @@ class EncryptedPreviewProvider : ContentProvider() {
                         }
                     }
                     override fun onRelease() {
-                        repository.closeReader(reader)
+                        readJob.cancel()
+                        runCatching { repository.closeReader(reader) }
                     }
                 },
                 Handler(threads[Math.floorMod(nextLane.getAndIncrement(), threads.size)].looper)
             )
         } catch (e: Exception) {
-            repository.closeReader(reader)
+            readJob.cancel()
+            runCatching { repository.closeReader(reader) }
             throw e
         }
     }
@@ -106,25 +128,30 @@ class EncryptedPreviewProvider : ContentProvider() {
             )
         }
     }
-    private fun openVaultFile(uri: Uri, mode: String): ParcelFileDescriptor {
+    private fun openVaultFile(uri: Uri, mode: String, readJob: Job): ParcelFileDescriptor {
         require(mode == "r" && uri.pathSegments.size == 2)
         val vault = privateVault()
         vault.validateUri(uri)
-        val (reader, epoch) = vault.reader(checkNotNull(uri.lastPathSegment))
+        val (reader, epoch) = vault.reader(checkNotNull(uri.lastPathSegment), readJob)
         try {
             return checkNotNull(context).getSystemService(StorageManager::class.java).openProxyFileDescriptor(
                 ParcelFileDescriptor.MODE_READ_ONLY,
                 object : ProxyFileDescriptorCallback() {
-                    override fun onGetSize(): Long {
+                    override fun onGetSize(): Long = try {
+                        readJob.ensureActive()
                         vault.validateUri(uri)
-                        if (!vault.valid(epoch)) throw ErrnoException("locked", OsConstants.EACCES)
-                        return reader.length()
+                        check(vault.valid(epoch))
+                        reader.length()
+                    } catch (_: Exception) {
+                        throw ErrnoException("vault unavailable", OsConstants.EACCES)
                     }
                     override fun onRead(offset: Long, size: Int, data: ByteArray): Int {
                         try {
+                            readJob.ensureActive()
                             vault.validateUri(uri)
                             if (!vault.valid(epoch)) throw java.io.IOException("Locked")
                             val count = reader.read(offset, data, 0, minOf(size.toLong(), reader.length() - offset).coerceAtLeast(0).toInt()).coerceAtLeast(0)
+                            readJob.ensureActive()
                             vault.validateUri(uri)
                             if (!vault.valid(epoch)) throw java.io.IOException("Locked")
                             return count
@@ -134,13 +161,15 @@ class EncryptedPreviewProvider : ContentProvider() {
                         }
                     }
                     override fun onRelease() {
-                        vault.close(reader)
+                        readJob.cancel()
+                        runCatching { vault.close(reader) }
                     }
                 },
                 Handler(threads[Math.floorMod(nextLane.getAndIncrement(), threads.size)].looper)
             )
         } catch (e: Exception) {
-            vault.close(reader)
+            readJob.cancel()
+            runCatching { vault.close(reader) }
             throw e
         }
     }

@@ -28,6 +28,7 @@ private val vaultArtworkReads = Semaphore(2)
 internal fun VaultGalleryArtwork(item: PrivateVaultItem, uri: Uri, contentScale: ContentScale = ContentScale.Crop) {
     val context = LocalContext.current
     val pixels = remember(item.id, uri) { vaultImageSlot() }
+    val reads = remember(item.id, uri) { app.televault.data.MediaReadSession.open(context, uri) }
     var image by remember(item.id, uri) { mutableStateOf<Bitmap?>(null) }
     LaunchedEffect(item.id, uri) {
         if (item.mime.startsWith("image/")) {
@@ -35,7 +36,7 @@ internal fun VaultGalleryArtwork(item: PrivateVaultItem, uri: Uri, contentScale:
             try {
                 withContext(Dispatchers.IO) {
                     vaultArtworkReads.withPermit {
-                        val bitmap = decodeVaultImage(context, uri, 160 * 160)
+                        val bitmap = decodeVaultImage(context, reads.uri, 160 * 160)
                         pixels.offer(bitmap)
                         currentCoroutineContext().ensureActive()
                     }
@@ -44,6 +45,8 @@ internal fun VaultGalleryArtwork(item: PrivateVaultItem, uri: Uri, contentScale:
                 delivered = true
             } catch (cancel: CancellationException) {
                 throw cancel
+            } catch (_: OutOfMemoryError) {
+                image = null
             } catch (_: Exception) {
                 image = null
             } finally {
@@ -55,6 +58,7 @@ internal fun VaultGalleryArtwork(item: PrivateVaultItem, uri: Uri, contentScale:
     }
     DisposableEffect(item.id, uri) {
         onDispose {
+            reads.close()
             image = null
             pixels.retire()
         }

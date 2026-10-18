@@ -231,7 +231,7 @@ internal class PrivateVaultCloudStore(private val context: Context, private val 
             phase(VaultImportStage.SERVER_VERIFICATION)
             progress(0, size)
             val provisional = PrivateVaultItem(objectId, name, mime, size, data.getLong("date"), hash, innerKey, PrivateVaultCloudObject(outerKey, refs, RemoteDocument(0, 0, 0)))
-            val (reader, close) = reader(provisional, vault, expected, valid)
+            val (reader, close) = reader(provisional, vault, expected, valid = valid)
             try {
                 val digest = java.security.MessageDigest.getInstance("SHA-256")
                 val buffer = ByteArray(65536)
@@ -292,7 +292,7 @@ internal class PrivateVaultCloudStore(private val context: Context, private val 
             }
         }
     }
-    fun reader(item: PrivateVaultItem, vault: UUID, expected: Pair<Long, String>, valid: () -> Unit): Pair<AuthenticatedRecords, AutoCloseable> {
+    fun reader(item: PrivateVaultItem, vault: UUID, expected: Pair<Long, String>, readJob: Job? = null, valid: () -> Unit): Pair<AuthenticatedRecords, AutoCloseable> {
         val cloud = checkNotNull(item.cloud)
         val cipherLength = VaultCrypto.encryptedLength(VaultCrypto.encryptedLength(item.size))
         val window = app.televault.crypto.TransientCipherWindow({ position, output, offset, length ->
@@ -313,7 +313,7 @@ internal class PrivateVaultCloudStore(private val context: Context, private val 
                 check(index >= 0)
                 val part = cloud.parts[index]
                 val n = minOf((length - copied).toLong(), part.bytes - (cursor - start)).toInt()
-                val bytes = runBlocking(Dispatchers.IO) {
+                val bytes = runBlocking((readJob ?: kotlin.coroutines.EmptyCoroutineContext) + Dispatchers.IO) {
                     checkBinding(expected, valid)
                     telegram.readPrivateVaultPart(part, cursor - start, n, partMarker(expected, vault, item.id, index)) {
                         valid()

@@ -33,6 +33,8 @@ import kotlinx.coroutines.*
 internal fun PrivateVaultPreview(item: PrivateVaultItem, uri: Uri, model: DriveViewModel, exportCopy: () -> Unit, close: () -> Unit) {
     val context = LocalContext.current
     val zoom = remember(item.id, uri) { MediaZoomState() }
+    val reads = remember(item.id, uri) { app.televault.data.MediaReadSession.open(context, uri) }
+    DisposableEffect(reads) { onDispose { reads.close() } }
     Dialog(close, DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false, securePolicy = androidx.compose.ui.window.SecureFlagPolicy.SecureOn)) {
         val view = androidx.compose.ui.platform.LocalView.current
         DisposableEffect(view) {
@@ -59,10 +61,12 @@ internal fun PrivateVaultPreview(item: PrivateVaultItem, uri: Uri, model: DriveV
                     var failed by remember(item.id) { mutableStateOf(false) }
                     LaunchedEffect(item.id, uri) {
                         try {
-                            withContext(Dispatchers.IO) { pixels.offer(decodeVaultImage(context, uri)) }
+                            withContext(Dispatchers.IO) { pixels.offer(decodeVaultImage(context, reads.uri)) }
                             bitmap = pixels.publish()
                         } catch (e: CancellationException) {
                             throw e
+                        } catch (_: OutOfMemoryError) {
+                            failed = true
                         } catch (_: Exception) {
                             failed = true
                         }
@@ -75,7 +79,7 @@ internal fun PrivateVaultPreview(item: PrivateVaultItem, uri: Uri, model: DriveV
                     }
                     Box(Modifier.weight(1f).fillMaxWidth().background(Color.Black).clipToBounds().mediaZoomInput(zoom), contentAlignment = Alignment.Center) {
                         bitmap?.let { Image(it.asImageBitmap(), item.name, Modifier.fillMaxSize().mediaZoomLayer(zoom), contentScale = ContentScale.Fit) }
-                        if (bitmap == null && !failed) VaultGalleryArtwork(item, uri, ContentScale.Fit)
+                        if (bitmap == null && !failed) VaultGalleryArtwork(item, reads.uri, ContentScale.Fit)
                         if (bitmap != null) Box(Modifier.align(Alignment.TopStart).padding(12.dp)) { VaultMediaVerification(loading = false, verified = true, doubleEncrypted = item.cloud != null) }
                         if (failed) Text(label("Cannot verify or decode this image safely", "এই ছবি নিরাপদে যাচাই বা ডিকোড করা যায়নি"), color = Color.White)
                     }
@@ -89,7 +93,7 @@ internal fun PrivateVaultPreview(item: PrivateVaultItem, uri: Uri, model: DriveV
                             .build().apply {
                                 setAudioAttributes(androidx.media3.common.AudioAttributes.DEFAULT, true)
                                 setHandleAudioBecomingNoisy(true)
-                                setMediaItem(MediaItem.fromUri(uri))
+                                setMediaItem(MediaItem.fromUri(reads.uri))
                                 prepare()
                                 playWhenReady = true
                             }
@@ -127,12 +131,14 @@ internal fun PrivateVaultPreview(item: PrivateVaultItem, uri: Uri, model: DriveV
                         authenticated = player.playbackState == androidx.media3.common.Player.STATE_READY
                         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
                             if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) {
+                                reads.close()
                                 player.pause()
                                 player.clearMediaItems()
                             }
                         }
                         owner.lifecycle.addObserver(observer)
                         onDispose {
+                            reads.close()
                             owner.lifecycle.removeObserver(observer)
                             player.removeListener(listener)
                             player.release()

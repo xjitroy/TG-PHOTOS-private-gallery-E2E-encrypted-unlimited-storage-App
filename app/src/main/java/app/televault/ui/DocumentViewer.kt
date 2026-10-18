@@ -30,8 +30,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /** Native seekable PDF pages; no plaintext temporary file, WebView, JavaScript or network viewer. */
-private class PdfSession(context: Context, uri: Uri) : Closeable {
-    private val descriptor = checkNotNull(context.contentResolver.openFileDescriptor(uri, "r"))
+private class PdfSession(context: Context, private val reads: app.televault.data.MediaReadSession) : Closeable {
+    private val descriptor = reads.descriptor(context)
     private val renderer = try {
         PdfRenderer(descriptor)
     } catch (e: Throwable) {
@@ -59,6 +59,7 @@ private class PdfSession(context: Context, uri: Uri) : Closeable {
         }
     }
     override fun close() {
+        reads.close()
         cleanup.launch {
             mutex.withLock {
                 if (!closed) {
@@ -95,16 +96,20 @@ private class PdfSession(context: Context, uri: Uri) : Closeable {
     var scale by remember(source) { mutableFloatStateOf(1f) }
     val context = LocalContext.current
     val current = session
+    val reads = remember(source, retry) { app.televault.data.MediaReadSession.open(context, source) }
+    DisposableEffect(reads) { onDispose { reads.close() } }
     LaunchedEffect(source, retry) {
         error = false
         var created: PdfSession? = null
         try {
-            withContext(Dispatchers.IO) { created = PdfSession(context, source) }
+            withContext(Dispatchers.IO) { created = PdfSession(context, reads) }
             ensureActive()
             session = created
             created = null
         } catch (e: CancellationException) {
             throw e
+        } catch (_: OutOfMemoryError) {
+            error = true
         } catch (_: Exception) {
             error = true
         } finally {
@@ -148,10 +153,12 @@ private class PdfSession(context: Context, uri: Uri) : Closeable {
                 bitmap = frame
                 frame = null
             } finally {
-                frame?.recycle()
+                frame?.let { abandoned -> app.televault.data.MediaReadSession.dispose { abandoned.recycle() } }
             }
         } catch (e: CancellationException) {
             throw e
+        } catch (_: OutOfMemoryError) {
+            error = true
         } catch (_: Exception) {
             error = true
         }
@@ -192,6 +199,8 @@ private class PdfSession(context: Context, uri: Uri) : Closeable {
             data = loaded
         } catch (e: CancellationException) {
             throw e
+        } catch (_: OutOfMemoryError) {
+            error = true
         } catch (_: Exception) {
             error = true
         }

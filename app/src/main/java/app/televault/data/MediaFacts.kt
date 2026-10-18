@@ -37,7 +37,9 @@ data class MediaFacts(
             val lon = json.optDouble("longitude", Double.NaN).takeIf { it.isFinite() && it in -180.0..180.0 }
             return MediaFacts(json.optInt("width").coerceIn(0, 100000), json.optInt("height").coerceIn(0, 100000), json.optString("make").take(120), json.optString("model").take(120), json.optLong("captured").coerceAtLeast(0), if (lon != null) lat else null, if (lat != null) lon else null, json.optLong("duration").coerceAtLeast(0))
         }
-        fun read(context: Context, uri: Uri, mime: String): MediaFacts = runCatching {
+        fun read(context: Context, uri: Uri, mime: String): MediaFacts = runCatching { MediaReadSession.open(context, uri).use { read(context, it, mime) } }.getOrDefault(MediaFacts())
+        internal fun read(context: Context, session: MediaReadSession, mime: String): MediaFacts = inspect(context, session.uri, mime)
+        private fun inspect(context: Context, uri: Uri, mime: String): MediaFacts = runCatching {
             val effectiveMime = app.televault.domain.MediaCategories.videoMime(uri.lastPathSegment, mime)
             if (effectiveMime.startsWith("image/")) {
                 val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }

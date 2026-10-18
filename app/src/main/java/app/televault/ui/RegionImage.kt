@@ -24,6 +24,7 @@ internal class RegionImageView(context: Context) : View(context) {
     private val tasks = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var decoder: BitmapRegionDecoder? = null
     private var descriptor: android.os.ParcelFileDescriptor? = null
+    private var reads: app.televault.data.MediaReadSession? = null
     private var image: Bitmap? = null
     private var overview: Bitmap? = null
     private var savedWidth = 0
@@ -169,13 +170,15 @@ internal class RegionImageView(context: Context) : View(context) {
             loadingChanged(false, false, true)
             invalidate()
         }
+        val readSession = app.televault.data.MediaReadSession.open(context, uri)
+        reads = readSession
         tasks.launch {
             var opened: Pair<android.os.ParcelFileDescriptor, BitmapRegionDecoder>? = null
             try {
                 // Keep handles reachable even if the view closes during native I/O.
                 withContext(Dispatchers.IO + NonCancellable) {
-                    if (savedWidth == 0) orientation = context.contentResolver.openInputStream(uri)?.use { runCatching { androidx.exifinterface.media.ExifInterface(it).getAttributeInt(androidx.exifinterface.media.ExifInterface.TAG_ORIENTATION, 1) }.getOrDefault(1) } ?: 1
-                    val fd = context.contentResolver.openFileDescriptor(uri, "r") ?: error("Cannot read image")
+                    if (savedWidth == 0) orientation = android.os.ParcelFileDescriptor.AutoCloseInputStream(readSession.descriptor(context)).use { runCatching { androidx.exifinterface.media.ExifInterface(it).getAttributeInt(androidx.exifinterface.media.ExifInterface.TAG_ORIENTATION, 1) }.getOrDefault(1) }
+                    val fd = readSession.descriptor(context)
                     try {
                         val next = checkNotNull(BitmapRegionDecoder.newInstance(fd.fileDescriptor, false))
                         opened = fd to next
@@ -198,14 +201,29 @@ internal class RegionImageView(context: Context) : View(context) {
                 requestRegion(immediate = true)
             } catch (e: CancellationException) {
                 throw e
+            } catch (_: OutOfMemoryError) {
+                readSession.close()
+                if (!closed) {
+                    loadingChanged(false, true, image != null)
+                    contentDescription = "Not enough memory to preview. Use Open with."
+                    invalidate()
+                }
             } catch (_: Exception) {
-                loadingChanged(false, true, image != null)
-                contentDescription = "Cannot preview. Use Open with."
-                invalidate()
+                readSession.close()
+                if (!closed) {
+                    loadingChanged(false, true, image != null)
+                    contentDescription = "Cannot preview. Use Open with."
+                    invalidate()
+                }
             } finally {
-                opened?.let {
-                    it.second.recycle()
-                    it.first.close()
+                opened?.let { abandoned ->
+                    app.televault.data.MediaReadSession.dispose {
+                        try {
+                            abandoned.second.recycle()
+                        } finally {
+                            abandoned.first.close()
+                        }
+                    }
                 }
             }
         }
@@ -293,7 +311,7 @@ internal class RegionImageView(context: Context) : View(context) {
                         }
                     }
                 } finally {
-                    bitmap?.recycle()
+                    bitmap?.let { abandoned -> app.televault.data.MediaReadSession.dispose { abandoned.recycle() } }
                 }
             }
         }
@@ -341,11 +359,17 @@ internal class RegionImageView(context: Context) : View(context) {
         return true
     }
     fun close() {
+        if (closed) return
         closed = true
+        reads?.close()
+        reads = null
         removeCallbacks(hold)
         removeCallbacks(decodeRequest)
         holdPolicy.cancel()
         longHeld = null
+        tapped = {}
+        swipeUp = null
+        loadingChanged = { _, _, _ -> }
         ++serial
         animation?.cancel()
         pending = null

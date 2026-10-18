@@ -1,4 +1,4 @@
-# Public Universal APK (0.19.9)
+# Public Universal APK (0.19.10)
 
 The public release is one signed Universal APK for ARM64, ARMv7, x86 and x86_64, Android8+. Build with `-PtgUniversalOnly=true` and use release/output-metadata.json for its exact filename. Standard compressed JNI packaging keeps the single file small; Android extracts only the device's matching ABI. Preserve the official signing identity for compatible public updates. Private/personal distributions are not included in this release.
 

@@ -603,12 +603,20 @@ private fun MediaInformation(item: MediaEntry, source: Uri?, close: () -> Unit) 
     var loading by remember(item.id) { mutableStateOf(false) }
     var reload by remember { mutableIntStateOf(0) }
     val locationAccess = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { if (it) reload++ }
-    LaunchedEffect(item.id, source, reload) {
-        if (source != null && source.scheme != "tgphotos") {
+    val storedCloudFacts = item.cloud?.facts?.takeIf { it != MediaFacts() }
+    val needsRead = source != null && source.scheme != "tgphotos" && (source.authority != "${context.packageName}.private-media" || storedCloudFacts == null)
+    val reads = remember(item.id, source, reload, needsRead) { if (needsRead) app.televault.data.MediaReadSession.open(context, checkNotNull(source)) else null }
+    DisposableEffect(reads) { onDispose { reads?.close() } }
+    LaunchedEffect(item.id, source, reload, reads) {
+        if (reads != null) {
             loading = true
-            val read = withContext(Dispatchers.IO) { MediaFacts.read(context, source, item.mime) }
-            facts = if (read.width > 0 || read.camera.isNotBlank() || read.durationMs > 0) read else facts
-            loading = false
+            try {
+                val read = withContext(Dispatchers.IO) { MediaFacts.read(context, reads, item.mime) }
+                ensureActive()
+                facts = if (read.width > 0 || read.camera.isNotBlank() || read.durationMs > 0) read else facts
+            } finally {
+                loading = false
+            }
         }
     }
     ModalBottomSheet(onDismissRequest = close, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = MaterialTheme.colorScheme.surface) {
