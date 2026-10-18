@@ -1,17 +1,17 @@
 {
-  "version": "0.19.8",
-  "code": 37,
+  "version": "0.19.9",
+  "code": 38,
   "checks": {
-    "distinctHostTests": 360,
+    "distinctHostTests": 381,
     "suites": {
       "domain": {
-        "tests": 232,
+        "tests": 246,
         "failures": 0,
         "errors": 0,
         "skipped": 0
       },
       "crypto": {
-        "tests": 56,
+        "tests": 60,
         "failures": 0,
         "errors": 0,
         "skipped": 0
@@ -23,30 +23,30 @@
         "skipped": 0
       },
       "app": {
-        "tests": 66,
+        "tests": 69,
         "failures": 0,
         "errors": 0,
         "skipped": 0
       }
     },
     "lintErrors": 0,
-    "lintWarnings": 96,
+    "lintWarnings": 95,
     "localChecks": 8,
-    "nativeAcceptance": "Unavailable: Android rendering/keyboard/gesture/background-worker/OEM/model behavior; prior affected-phone OTP report remains unverified",
+    "nativeAcceptance": "Unavailable: Android touch/RenderThread/FPS/Keystore/OEM/fingerprint re-entry; prior affected-phone OTP remains unverified",
     "otpRootCauseVerified": false,
     "runtimeModelPins": "Unchanged from public0.19.7; model/license checks rerun",
-    "ocrInference": "Unchanged from0.19.6; scheduling/search cache updated"
+    "ocrInference": "Unchanged; this release repairs zoom and fingerprint completion"
   },
   "artifact": {
-    "apk": "TG-Photos-0.19.8-universal.apk",
-    "bytes": 88070599,
-    "sha256": "8a34225fd576a0d7cedfa6e83789a4274c3d6eaa0a6ceee298162aa39dcb2a8f",
-    "versionCode": 37,
-    "versionName": "0.19.8",
+    "apk": "TG-Photos-0.19.9-universal.apk",
+    "bytes": 88075531,
+    "sha256": "011a3b418f8b39e89ea990ac01d99aea263240c096d46161aaeb1bcd2741c33c",
+    "versionCode": 38,
+    "versionName": "0.19.9",
     "package": "app.televault.photos",
     "distribution": "public",
-    "sourceCommit": "114c00d19912d5beca5b7ceccf90273d32ca86bc",
-    "sourceTree": "d6aa0b5124df5decf143e61cb43003f3fbdb9ca4",
+    "sourceCommit": "b8cbdf9fd22d5dc93eefa397eb1574d924d8e95c",
+    "sourceTree": "9ec6a7017520a23315dd31e38bf840ac6c8dface",
     "certificateSHA256": "3e7c1029cb5e2da80026758abd483b5bd7f0551b6a56bee6b21640b8ae774559",
     "debuggable": false,
     "productionVerified": false,

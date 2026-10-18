@@ -1,11 +1,11 @@
 {
-  "version": "0.19.8",
-  "code": 37,
-  "compiledSourceCommit": "114c00d19912d5beca5b7ceccf90273d32ca86bc",
+  "version": "0.19.9",
+  "code": 38,
+  "compiledSourceCommit": "b8cbdf9fd22d5dc93eefa397eb1574d924d8e95c",
   "files": [
     {
       "path": "app/build.gradle.kts",
-      "sha256": "2ce1ee8d5b382162a44180b436d9f71a6d64d835ecce8c9129f134cafc9d93cf"
+      "sha256": "fc9fd19dcb76d3d24b465f6ec9539511b258289f01a2b4f3fd78ee3d66de3c3a"
     },
     {
       "path": "app/libs/onnxruntime-android-1.22.0.aar",
@@ -361,7 +361,7 @@
     },
     {
       "path": "app/src/main/java/app/televault/data/VaultBiometricKey.kt",
-      "sha256": "c28634f2245740e17576466acfce76ed617f59754b8de3dfac30ac82903581d2"
+      "sha256": "65796782b1cc96e5f69fb484c2ba6669a3a68a2408424f2cbd0a35c40b223fd4"
     },
     {
       "path": "app/src/main/java/app/televault/data/VaultChoice.kt",
@@ -450,6 +450,10 @@
     {
       "path": "app/src/main/java/app/televault/ui/BackupStatusCard.kt",
       "sha256": "e265cb8154f212fc1c9bb4fe88a8b06208ee5f57f2f5899e9ebf64f882af18d1"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/BiometricCallbackGate.kt",
+      "sha256": "8b965515660455e9536ab8c359ca6cd7167ea717b46587cf80846cd5bfe4ba38"
     },
     {
       "path": "app/src/main/java/app/televault/ui/BrowseChrome.kt",
@@ -552,6 +556,10 @@
       "sha256": "9ecd9859e2ef2514bde4a98f4e206485207da02b4655e6fb7e6a978e11f4ce0e"
     },
     {
+      "path": "app/src/main/java/app/televault/ui/MediaZoom.kt",
+      "sha256": "69326e791f9febaef9e23993db40e1dea2250fbaec5708d2c5dd90f201c75241"
+    },
+    {
       "path": "app/src/main/java/app/televault/ui/OfflineDownloadsSheet.kt",
       "sha256": "e9b42039bf56052b8618cf59672a6ca9d1ab11c1cc7442eeb2bb8b1a998bb5a4"
     },
@@ -581,7 +589,7 @@
     },
     {
       "path": "app/src/main/java/app/televault/ui/PhotoComponents.kt",
-      "sha256": "13bc95cadcb403253020c2fad8fc1e517528aedc54fdebb18145920b7f015ebc"
+      "sha256": "ca7506637d987605af3585214fe44b9d5c4f32aff2a8dec660992e0dbdb16370"
     },
     {
       "path": "app/src/main/java/app/televault/ui/PhotoMemories.kt",
@@ -601,11 +609,11 @@
     },
     {
       "path": "app/src/main/java/app/televault/ui/PrivateVaultPreview.kt",
-      "sha256": "71db8c92511527b8213ee1fd558a83e30a0e460647cebdebe3af6fb069bc2fa3"
+      "sha256": "a07f8483d0650a4524c52f4816fd8b155a8bede34939401a284735b76844b0f5"
     },
     {
       "path": "app/src/main/java/app/televault/ui/PrivateVaultScreen.kt",
-      "sha256": "3d385f3e800e129644331d4d9aa9efab45cddcab3b199b45029759a1f772a7d9"
+      "sha256": "964023a424d5ead8609442ed8ee0746bcc43ef6305d33dd2e449859b23ee3e38"
     },
     {
       "path": "app/src/main/java/app/televault/ui/ProtectionScreen.kt",
@@ -613,7 +621,7 @@
     },
     {
       "path": "app/src/main/java/app/televault/ui/RegionImage.kt",
-      "sha256": "c77ab8879f4262263c6a1c8f3c97f72d5fde058a3bbcce5c20784861e4ad03ab"
+      "sha256": "51e62e8fdebd8490a4115b17f1ed8f497a67e7696d77845cbb7fe559b867a92f"
     },
     {
       "path": "app/src/main/java/app/televault/ui/SearchMediaFilter.kt",
@@ -673,7 +681,7 @@
     },
     {
       "path": "app/src/main/java/app/televault/ui/VaultBiometricPrompt.kt",
-      "sha256": "e89245c8de9162bdcd1fd3b4f540071f5ac70ce951636dfcde83757ce6e26535"
+      "sha256": "8b83cc0f3df84f7c71e897dda9b84dc41067be91de261f833b9d50edb4d9b013"
     },
     {
       "path": "app/src/main/java/app/televault/ui/VaultGalleryArtwork.kt",
@@ -693,7 +701,7 @@
     },
     {
       "path": "app/src/main/java/app/televault/ui/VideoPlayer.kt",
-      "sha256": "9e88cdddeb3bab1b9b3cb77f7cf0d4c05e13885f45241b829cec23a5b4e98eb7"
+      "sha256": "d3146618f59f6987c7bbab3f8f1b7cb7cf909f63c0e6b96e683db27242296ac9"
     },
     {
       "path": "app/src/main/java/app/televault/ui/ViewerOrientationLease.kt",
@@ -840,6 +848,10 @@
       "sha256": "9cf268660a19c946dd8890ae1769e892c5141b7e4702fb5ad00591913899d196"
     },
     {
+      "path": "app/src/test/java/app/televault/ui/BiometricCallbackGateTest.kt",
+      "sha256": "fc1915b49bd748f43a879cc45296e50ae160d1a8e85027ac538c2cd2b97b5a17"
+    },
+    {
       "path": "app/src/test/java/app/televault/ui/BrowseChromeStateTest.kt",
       "sha256": "94d12e7a2ed08289bebfee21847a351581a9b6e774acd3c92077a7761b816348"
     },
@@ -896,6 +908,10 @@
       "sha256": "2002c86c28eea70974130ba0c5c4b6c01c97360d844b97c3aec2cea28ae478be"
     },
     {
+      "path": "core/crypto/src/main/java/app/televault/crypto/BiometricOperation.java",
+      "sha256": "2d523f21f6c56197abbc4421cc9e6a5321f4df37116aa1829a86bd02115af14b"
+    },
+    {
       "path": "core/crypto/src/main/java/app/televault/crypto/CipherParts.java",
       "sha256": "611fd9b03c8e7d7821946f15203770342076e0ee4fa17fda07e01c8f648f2530"
     },
@@ -942,6 +958,10 @@
     {
       "path": "core/crypto/src/test/java/app/televault/crypto/AuthenticatedRecordsTest.java",
       "sha256": "d41128beec6f32cf0b38a465684812c1c7c771ed689eb6aae142aa023a7615ff"
+    },
+    {
+      "path": "core/crypto/src/test/java/app/televault/crypto/BiometricOperationTest.java",
+      "sha256": "bdbdf5a418bf14e71016a3754ec991b75e49526b89a72a996ce53b268dc2556e"
     },
     {
       "path": "core/crypto/src/test/java/app/televault/crypto/CipherPartsTest.java",
@@ -1200,6 +1220,10 @@
       "sha256": "ad7e5ebc9e6eec565fe67bba3399b99c3cb434e2fe0e65764c99adfa7cc6fece"
     },
     {
+      "path": "core/domain/src/main/java/app/televault/domain/RegionTilePlan.java",
+      "sha256": "eeba6e619b6336ad465645f103d5bceb91d5adbb4c84cfb8329e49a035ca724d"
+    },
+    {
       "path": "core/domain/src/main/java/app/televault/domain/ResumableZip.java",
       "sha256": "e0ae909cee7715cad24a71494385c564f95bb5aa3db2731786d90891ed5cf8c5"
     },
@@ -1218,6 +1242,10 @@
     {
       "path": "core/domain/src/main/java/app/televault/domain/TextTopics.java",
       "sha256": "96901e052fcf3eff2b6357de13d6b2aa1c68cefd95ef21e651d9139775fa7567"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/TimelinePinch.java",
+      "sha256": "dc7144b347cc62b8b76f32bf1bbe647b1e301824f74497c59b38f4c78363d588"
     },
     {
       "path": "core/domain/src/main/java/app/televault/domain/TimelineZoom.java",
@@ -1270,6 +1298,10 @@
     {
       "path": "core/domain/src/main/java/app/televault/domain/ViewerOrder.java",
       "sha256": "37eba94a039af22b2c8c601399842b7fe780f3ff34f624aeb95661130e40969e"
+    },
+    {
+      "path": "core/domain/src/main/java/app/televault/domain/ZoomTransform.java",
+      "sha256": "f58b0b2ac86fa3faa45235ab4109139e66bec6fea806c6d5f2454c9d4c2d0daf"
     },
     {
       "path": "core/domain/src/test/java/app/televault/domain/ActivityProgressTest.java",
@@ -1476,6 +1508,10 @@
       "sha256": "9e6bf861de0ff89b85a38404c493969dc5a13bce9128699815492b6fc3dc8a38"
     },
     {
+      "path": "core/domain/src/test/java/app/televault/domain/RegionTilePlanTest.java",
+      "sha256": "7f326faca7243900966b003ab39096ed6558d41046591ca4b58854a29df5b50a"
+    },
+    {
       "path": "core/domain/src/test/java/app/televault/domain/ResumableZipTest.java",
       "sha256": "58fb24a22f5176a6415665a9d1c8113fcd0aa83d317b224aa6ef83f35940def4"
     },
@@ -1494,6 +1530,10 @@
     {
       "path": "core/domain/src/test/java/app/televault/domain/TextTopicsTest.java",
       "sha256": "d33a2dad0c31632229a139b0833554bea7972d791174e05f09c9b5ce532b0f5e"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/TimelinePinchTest.java",
+      "sha256": "9614fdc30fbd32ea8ab730b4ecc9a28edebcb54b528d8400ec9f796cbd0299c9"
     },
     {
       "path": "core/domain/src/test/java/app/televault/domain/TimelineZoomTest.java",
@@ -1550,6 +1590,10 @@
     {
       "path": "core/domain/src/test/java/app/televault/domain/ViewerOrderTest.java",
       "sha256": "78147d0870ff5656102bc9f1b02b545a8e46e89bcf7ba4a760a0ec1d7d39334a"
+    },
+    {
+      "path": "core/domain/src/test/java/app/televault/domain/ZoomTransformTest.java",
+      "sha256": "7654b5bbfc3e1b13b25a36c0ab671101f5b23a04c56ba09c0a764b2cd67a3425"
     },
     {
       "path": "core/telegram/build.gradle.kts",

@@ -23,6 +23,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -133,6 +134,7 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
     }
     val suggestions = remember(videos, current.id) { videos.filter { it.id != current.id && (it.cloud?.trashedAt == 0L || it.local?.trashed == false) }.sortedByDescending { it.date }.distinctBy { "${originalMediaName(it.name)}|${it.size}|${it.date}" } }
     val isFavorite = current.cloud?.favorite == true || current.id in snapshot.localFavorites
+    val zoom = remember(identity) { MediaZoomState(4f) }
     var view by remember(uri) { mutableStateOf<PlayerView?>(null) }
     DisposableEffect(pipVisible, player, view) {
         if (!pipVisible && session.owns(identity)) {
@@ -300,7 +302,7 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
     BoxWithConstraints(modifier.fillMaxSize().windowInsetsPadding(insets)) {
         val compactHeight by animateDpAsState(VideoPresentation.compactHeight(maxWidth.value, maxHeight.value, frameRatio).dp, tween(220), label = "Compact video size")
         Column(Modifier.fillMaxSize()) {
-            Box(if (fullscreen || short) Modifier.weight(1f).fillMaxWidth() else Modifier.fillMaxWidth().height(if (video) compactHeight else 120.dp)) {
+            Box((if (fullscreen || short) Modifier.weight(1f).fillMaxWidth() else Modifier.fillMaxWidth().height(if (video) compactHeight else 120.dp)).clipToBounds()) {
                 key(uri) {
                     AndroidView(factory = {
                         (android.view.LayoutInflater.from(it).inflate(app.televault.R.layout.tgphotos_video_surface, null, false) as PlayerView).apply {
@@ -318,10 +320,10 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
                         if (it.resizeMode != resize) it.resizeMode = resize
                         if (it.keepScreenOn != playing) it.keepScreenOn = playing
                         if (it.player !== player) it.player = player
-                    }, modifier = Modifier.fillMaxSize())
+                    }, modifier = Modifier.fillMaxSize().mediaZoomLayer(zoom))
                 }
                 Box(
-                    Modifier.fillMaxSize().observeWrongSwipe(short && verticalPaging) { wrongSwipes++ }.pointerInput(player, short, identity) {
+                    Modifier.fillMaxSize().mediaZoomInput(zoom).observeWrongSwipe(short && verticalPaging) { wrongSwipes++ }.pointerInput(player, short, identity) {
                         detectTapGestures(onTap = {
                             controls = !controls
                             if (short) actionsVisible = true
@@ -515,6 +517,7 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
     if (settings) {
         AlertDialog(onDismissRequest = { settings = false }, title = { Text(label("Playback settings", "প্লেব্যাক সেটিংস")) }, text = {
             Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState())) {
+                TextButton({ zoom.reset() }) { Text(label("Reset zoom", "জুম রিসেট")) }
                 if (current.local != null && !current.local.trashed) {
                     TextButton({
                         settings = false
@@ -556,7 +559,10 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
                 if (video) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(label("Fill screen (crop)", "স্ক্রিন পূর্ণ (ক্রপ)"), Modifier.weight(1f))
-                        Switch(fit, { fit = it })
+                        Switch(fit, {
+                            fit = it
+                            zoom.reset()
+                        })
                     }
                 }
                 TextButton({ subtitlePicker.launch(arrayOf("text/*", "application/octet-stream", "application/x-subrip")) }) { Text(label("Choose subtitle file", "সাবটাইটেল ফাইল বাছুন")) }

@@ -25,9 +25,7 @@ internal class RegionImageView(context: Context) : View(context) {
     private var decoder: BitmapRegionDecoder? = null
     private var descriptor: android.os.ParcelFileDescriptor? = null
     private var image: Bitmap? = null
-    private var ownsImage = true
     private var overview: Bitmap? = null
-    private var ownsOverview = false
     private var savedWidth = 0
     private var savedHeight = 0
     private var orientation = 1
@@ -36,6 +34,11 @@ internal class RegionImageView(context: Context) : View(context) {
     private var previewEpoch = 0L
     private var region = Rect()
     private var renderedSample = Int.MAX_VALUE
+    private val tileBudget = minOf(app.televault.data.MediaMemory.budget(context, 8, 3).toLong(), Runtime.getRuntime().maxMemory() / 16)
+    private var multiTouchGesture = false
+    private var inverseCos = 1f
+    private var inverseSin = 0f
+    private val decodeRequest = Runnable { enqueueRegion() }
     private var downX = 0f
     private var downY = 0f
     private var rotation = 0f
@@ -50,6 +53,7 @@ internal class RegionImageView(context: Context) : View(context) {
     private data class Tile(val rect: Rect, val sample: Int, val version: Int)
     private var pending: Tile? = null
     private val drawBounds = RectF()
+    private val overviewBounds = RectF()
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     var loadingChanged: (Boolean, Boolean, Boolean) -> Unit = { _, _, _ -> }
     private companion object {
@@ -69,17 +73,14 @@ internal class RegionImageView(context: Context) : View(context) {
         isClickable = true
         contentDescription = "Photo. Pinch to zoom; double tap to zoom or fit; swipe up for details."
     }
-    private fun imageDelta(x: Float, y: Float): Pair<Float, Float> {
-        val angle = Math.toRadians(-rotation.toDouble())
-        var ix = (x * cos(angle) - y * sin(angle)).toFloat()
-        if (mirrored) ix = -ix
-        return ix to (x * sin(angle) + y * cos(angle)).toFloat()
-    }
+    private fun imageDeltaX(x: Float, y: Float): Float = (x * inverseCos - y * inverseSin) * if (mirrored) -1f else 1f
+    private fun imageDeltaY(x: Float, y: Float): Float = x * inverseSin + y * inverseCos
     private fun zoom(next: Float, x: Float, y: Float) {
         val old = displayScale()
         scale = next.coerceIn(1f, 20f)
         val factor = displayScale()
-        val (ix, iy) = imageDelta(x - width / 2f, y - height / 2f)
+        val ix = imageDeltaX(x - width / 2f, y - height / 2f)
+        val iy = imageDeltaY(x - width / 2f, y - height / 2f)
         cx += ix * (1f / old - 1f / factor)
         cy += iy * (1f / old - 1f / factor)
         requestRegion()
@@ -87,16 +88,27 @@ internal class RegionImageView(context: Context) : View(context) {
     private val pinch = ScaleGestureDetector(
         context,
         object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+            private var focusX = 0f
+            private var focusY = 0f
             override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
                 animation?.cancel()
+                focusX = detector.focusX
+                focusY = detector.focusY
                 return true
             }
             override fun onScale(detector: ScaleGestureDetector): Boolean {
+                val factor = displayScale()
+                val dx = detector.focusX - focusX
+                val dy = detector.focusY - focusY
+                cx -= imageDeltaX(dx, dy) / factor
+                cy -= imageDeltaY(dx, dy) / factor
+                focusX = detector.focusX
+                focusY = detector.focusY
                 zoom(scale * detector.scaleFactor, detector.focusX, detector.focusY)
                 return true
             }
         }
-    )
+    ).apply { isQuickScaleEnabled = false }
     private val gestures = GestureDetector(
         context,
         object : GestureDetector.SimpleOnGestureListener() {
@@ -115,6 +127,7 @@ internal class RegionImageView(context: Context) : View(context) {
                 return true
             }
             override fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
+                if (multiTouchGesture) return false
                 if (scale <= 1.05f && e1 != null && e1.y - e2.y > 72 * resources.displayMetrics.density && e1.y - e2.y > abs(e1.x - e2.x) * 1.5f) {
                     swipeUp?.invoke()
                     return swipeUp != null
@@ -122,8 +135,9 @@ internal class RegionImageView(context: Context) : View(context) {
                 return false
             }
             override fun onScroll(e1: MotionEvent?, e2: MotionEvent, dx: Float, dy: Float): Boolean {
-                if (scale <= 1f) return false
-                val (ix, iy) = imageDelta(dx, dy)
+                if (scale <= 1f || e2.pointerCount > 1 || pinch.isInProgress) return false
+                val ix = imageDeltaX(dx, dy)
+                val iy = imageDeltaY(dx, dy)
                 val factor = displayScale()
                 cx += ix / factor
                 cy += iy / factor
@@ -144,8 +158,6 @@ internal class RegionImageView(context: Context) : View(context) {
         cache?.get(cacheKey)?.let { frame ->
             image = frame.bitmap
             overview = frame.bitmap
-            ownsOverview = false
-            ownsImage = false
             savedWidth = frame.width
             savedHeight = frame.height
             orientation = frame.orientation
@@ -165,7 +177,10 @@ internal class RegionImageView(context: Context) : View(context) {
                     if (savedWidth == 0) orientation = context.contentResolver.openInputStream(uri)?.use { runCatching { androidx.exifinterface.media.ExifInterface(it).getAttributeInt(androidx.exifinterface.media.ExifInterface.TAG_ORIENTATION, 1) }.getOrDefault(1) } ?: 1
                     val fd = context.contentResolver.openFileDescriptor(uri, "r") ?: error("Cannot read image")
                     try {
-                        opened = fd to checkNotNull(BitmapRegionDecoder.newInstance(fd.fileDescriptor, false))
+                        val next = checkNotNull(BitmapRegionDecoder.newInstance(fd.fileDescriptor, false))
+                        opened = fd to next
+                        savedWidth = next.width
+                        savedHeight = next.height
                     } catch (error: Throwable) {
                         fd.close()
                         throw error
@@ -176,9 +191,11 @@ internal class RegionImageView(context: Context) : View(context) {
                 descriptor = opened!!.first
                 decoder = opened!!.second
                 opened = null
-                cx = decoder!!.width / 2f
-                cy = decoder!!.height / 2f
-                requestRegion()
+                if (image == null && overview == null) {
+                    cx = savedWidth / 2f
+                    cy = savedHeight / 2f
+                }
+                requestRegion(immediate = true)
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
@@ -201,38 +218,48 @@ internal class RegionImageView(context: Context) : View(context) {
             else -> 0f
         }
         mirrored = orientation in setOf(2, 4, 5, 7)
+        val angle = Math.toRadians(-rotation.toDouble())
+        inverseCos = cos(angle).toFloat()
+        inverseSin = sin(angle).toFloat()
     }
     private fun displayScale(): Float {
-        val w = decoder?.width ?: savedWidth
-        val h = decoder?.height ?: savedHeight
+        val w = savedWidth
+        val h = savedHeight
         if (w == 0 || h == 0) return 1f
         return min((if (rotation % 180 == 0f) width else height).toFloat() / w, (if (rotation % 180 == 0f) height else width).toFloat() / h).coerceAtLeast(.0001f) * scale
     }
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         requestRegion()
     }
-    private fun requestRegion() {
-        val d = decoder ?: return
-        if (width == 0 || height == 0 || closed) return
+    private fun requestRegion(immediate: Boolean = false) {
+        if (width == 0 || height == 0 || savedWidth == 0 || savedHeight == 0 || closed) return
         val factor = displayScale()
-        val halfW = min(d.width / 2f, (if (rotation % 180 == 0f) width else height) / factor / 2)
-        val halfH = min(d.height / 2f, (if (rotation % 180 == 0f) height else width) / factor / 2)
-        cx = cx.coerceIn(halfW, d.width - halfW)
-        cy = cy.coerceIn(halfH, d.height - halfH)
-        val wanted = Rect(floor(cx - halfW * 1.25f).toInt().coerceAtLeast(0), floor(cy - halfH * 1.25f).toInt().coerceAtLeast(0), ceil(cx + halfW * 1.25f).toInt().coerceAtMost(d.width), ceil(cy + halfH * 1.25f).toInt().coerceAtMost(d.height))
-        var sample = 1
-        val tileBudget = minOf(app.televault.data.MediaMemory.budget(context, 8, 3).toLong(), Runtime.getRuntime().maxMemory() / 16)
-        while (wanted.width() / sample > width * 2 || wanted.height() / sample > height * 2 || wanted.width().toLong() / sample * (wanted.height() / sample) * 4 > tileBudget) sample *= 2
-        invalidate() // Transform the existing tile immediately, without waiting for decoding.
-        if (image != null && region.contains(wanted) && renderedSample <= sample && pending == null) return
+        val halfW = min(savedWidth / 2f, (if (rotation % 180 == 0f) width else height) / factor / 2)
+        val halfH = min(savedHeight / 2f, (if (rotation % 180 == 0f) height else width) / factor / 2)
+        cx = cx.coerceIn(halfW, savedWidth - halfW)
+        cy = cy.coerceIn(halfH, savedHeight - halfH)
+        // Never touch a decoder, Binder memory budget or Compose state in a gesture frame.
+        postInvalidateOnAnimation()
+        if (decoder == null) return
+        removeCallbacks(decodeRequest)
+        if (immediate || image == null) post(decodeRequest) else postDelayed(decodeRequest, 90)
+    }
+    private fun enqueueRegion() {
+        val d = decoder ?: return
+        if (closed || width == 0 || height == 0 || savedWidth == 0 || savedHeight == 0) return
+        val plan = app.televault.domain.RegionTilePlan.create(savedWidth, savedHeight, width, height, rotation % 180 != 0f, scale, cx, cy, tileBudget)
+        val visible = Rect(plan.visibleLeft(), plan.visibleTop(), plan.visibleRight(), plan.visibleBottom())
+        val wanted = Rect(plan.left(), plan.top(), plan.right(), plan.bottom())
+        val sample = plan.sample()
+        if (image != null && region.contains(visible) && renderedSample <= sample && pending == null) return
         pending = Tile(wanted, sample, ++serial)
         if (job?.isActive == true) return
         job = tasks.launch {
             while (isActive && pending != null) {
                 val tile = pending!!
                 pending = null
-                val originalWidth = d.width
-                val originalHeight = d.height
+                val originalWidth = savedWidth
+                val originalHeight = savedHeight
                 var bitmap: Bitmap? = null
                 try {
                     withContext(Dispatchers.IO + NonCancellable) {
@@ -244,27 +271,22 @@ internal class RegionImageView(context: Context) : View(context) {
                     ensureActive()
                     if (tile.version != serial && overview == null && tile.rect == Rect(0, 0, originalWidth, originalHeight)) {
                         overview = bitmap
-                        ownsOverview = true
                         bitmap = null
                         invalidate()
                     }
                     if (tile.version == serial) {
                         if (bitmap != null) {
-                            val old = image.takeIf { ownsImage && it !== overview }
                             if (tile.rect == Rect(0, 0, originalWidth, originalHeight)) {
-                                val previousOverview = overview.takeIf { ownsOverview }
                                 overview = bitmap
-                                ownsOverview = true
-                                previousOverview?.recycle()
                             }
-                            ownsImage = true
                             image = bitmap
                             bitmap = null
                             region = tile.rect
                             renderedSample = tile.sample
                             loadingChanged(false, false, true)
                             invalidate()
-                            old?.recycle()
+                            // Published bitmaps may still belong to RenderThread display lists.
+                            // Drop references; Android reclaims them after the renderer releases them.
                         } else {
                             // Keep the last authenticated tile when a new region/read fails.
                             loadingChanged(false, true, image != null)
@@ -288,15 +310,16 @@ internal class RegionImageView(context: Context) : View(context) {
         canvas.rotate(rotation)
         if (mirrored) canvas.scale(-1f, 1f)
         overview?.takeUnless { it.isRecycled }?.let { base ->
-            val w = decoder?.width ?: savedWidth
-            val h = decoder?.height ?: savedHeight
-            canvas.drawBitmap(base, null, RectF(-cx * factor, -cy * factor, (w - cx) * factor, (h - cy) * factor), paint)
+            overviewBounds.set(-cx * factor, -cy * factor, (savedWidth - cx) * factor, (savedHeight - cy) * factor)
+            canvas.drawBitmap(base, null, overviewBounds, paint)
         }
-        if (image != null) canvas.drawBitmap(bitmap, null, drawBounds, paint)
+        if (image != null && image !== overview) canvas.drawBitmap(bitmap, null, drawBounds, paint)
         canvas.restore()
     }
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+            animation?.cancel()
+            multiTouchGesture = false
             downX = event.x
             downY = event.y
             removeCallbacks(hold)
@@ -305,16 +328,22 @@ internal class RegionImageView(context: Context) : View(context) {
         }
         if (event.pointerCount > 1 || (event.x - downX) * (event.x - downX) + (event.y - downY) * (event.y - downY) > ViewConfiguration.get(context).scaledTouchSlop.toFloat().let { it * it } || event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) removeCallbacks(hold)
         holdPolicy.update(event.x, event.y, event.pointerCount, event.actionMasked != MotionEvent.ACTION_UP && event.actionMasked != MotionEvent.ACTION_CANCEL)
-        val upward = swipeUp != null && downY - event.y > ViewConfiguration.get(context).scaledTouchSlop && downY - event.y > abs(event.x - downX) * 1.5f
+        if (event.pointerCount > 1) multiTouchGesture = true
+        val upward = !multiTouchGesture && swipeUp != null && downY - event.y > ViewConfiguration.get(context).scaledTouchSlop && downY - event.y > abs(event.x - downX) * 1.5f
         parent?.requestDisallowInterceptTouchEvent(event.pointerCount > 1 || scale > 1f || upward)
         pinch.onTouchEvent(event)
         gestures.onTouchEvent(event)
-        if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) parent?.requestDisallowInterceptTouchEvent(false)
+        if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
+            parent?.requestDisallowInterceptTouchEvent(false)
+            requestRegion(immediate = true)
+            multiTouchGesture = false
+        }
         return true
     }
     fun close() {
         closed = true
         removeCallbacks(hold)
+        removeCallbacks(decodeRequest)
         holdPolicy.cancel()
         longHeld = null
         ++serial
@@ -332,8 +361,7 @@ internal class RegionImageView(context: Context) : View(context) {
                 runCatching { fd?.close() }
             }
         }
-        if (ownsImage && image !== overview) image?.recycle()
-        if (ownsOverview) overview?.recycle()
+        // Published buffers are released by GC after the renderer drops its references.
         overview = null
         image = null
     }

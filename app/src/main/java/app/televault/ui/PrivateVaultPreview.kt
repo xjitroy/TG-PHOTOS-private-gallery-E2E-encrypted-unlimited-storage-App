@@ -11,6 +11,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -31,6 +32,7 @@ import kotlinx.coroutines.*
 @Composable
 internal fun PrivateVaultPreview(item: PrivateVaultItem, uri: Uri, model: DriveViewModel, exportCopy: () -> Unit, close: () -> Unit) {
     val context = LocalContext.current
+    val zoom = remember(item.id, uri) { MediaZoomState() }
     Dialog(close, DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false, securePolicy = androidx.compose.ui.window.SecureFlagPolicy.SecureOn)) {
         val view = androidx.compose.ui.platform.LocalView.current
         DisposableEffect(view) {
@@ -71,8 +73,8 @@ internal fun PrivateVaultPreview(item: PrivateVaultItem, uri: Uri, model: DriveV
                             bitmap = null
                         }
                     }
-                    Box(Modifier.weight(1f).fillMaxWidth().background(Color.Black), contentAlignment = Alignment.Center) {
-                        bitmap?.let { Image(it.asImageBitmap(), item.name, Modifier.fillMaxSize(), contentScale = ContentScale.Fit) }
+                    Box(Modifier.weight(1f).fillMaxWidth().background(Color.Black).clipToBounds().mediaZoomInput(zoom), contentAlignment = Alignment.Center) {
+                        bitmap?.let { Image(it.asImageBitmap(), item.name, Modifier.fillMaxSize().mediaZoomLayer(zoom), contentScale = ContentScale.Fit) }
                         if (bitmap == null && !failed) VaultGalleryArtwork(item, uri, ContentScale.Fit)
                         if (bitmap != null) Box(Modifier.align(Alignment.TopStart).padding(12.dp)) { VaultMediaVerification(loading = false, verified = true, doubleEncrypted = item.cloud != null) }
                         if (failed) Text(label("Cannot verify or decode this image safely", "এই ছবি নিরাপদে যাচাই বা ডিকোড করা যায়নি"), color = Color.White)

@@ -66,7 +66,9 @@ internal fun PrivateVaultScreen(model: DriveViewModel, modifier: Modifier = Modi
     var recoveryMode by remember { mutableStateOf(false) }
     var recoveryKey by remember { mutableStateOf<String?>(null) }
     var recoverySaved by remember { mutableStateOf(false) }
-    var busy by remember { mutableStateOf(false) }
+    var discovering by remember { mutableStateOf(false) }
+    var activeWork by remember { mutableIntStateOf(0) }
+    val busy = discovering || activeWork > 0 || biometricRequest != null
     var discoveryComplete by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
     var opening by remember { mutableStateOf<PrivateVaultItem?>(null) }
@@ -90,9 +92,9 @@ internal fun PrivateVaultScreen(model: DriveViewModel, modifier: Modifier = Modi
     var menu by remember { mutableStateOf(false) }
     var storageWarning by remember { mutableStateOf(false) }
     var legacyRestore by remember { mutableStateOf<Uri?>(null) }
-    fun work(block: suspend () -> Unit) {
-        if (busy) return
-        busy = true
+    fun work(biometricCompletion: Boolean = false, block: suspend () -> Unit) {
+        if (!biometricCompletion && (discovering || activeWork > 0 || biometricRequest != null)) return
+        activeWork++
         message = ""
         scope.launch {
             try {
@@ -101,19 +103,22 @@ internal fun PrivateVaultScreen(model: DriveViewModel, modifier: Modifier = Modi
                 throw cancel
             } catch (failure: Exception) {
                 message = when {
+                    failure is android.security.keystore.KeyPermanentlyInvalidatedException || failure is java.security.UnrecoverableKeyException -> "Fingerprint access needs to be enabled again with your Vault password. Your Vault data and password are unchanged."
+                    failure.message?.contains("Biometric request expired") == true -> "The Vault was locked or changed. Retry fingerprint, or use your Vault password."
                     failure is app.televault.data.PrivateVaultImportFailure -> "Vault upload interrupted at ${failure.stage.name.lowercase().replace('_', ' ')}. Check the connection and storage, unlock if needed, then select the file again. The failed file's original is retained; already confirmed actions are kept."
                     failure.message?.contains("older Vault") == true -> "This older Vault did not retain its recovery key. Use your original offline recovery copy."
                     else -> "Action incomplete. Check the Vault password, Telegram connection, permissions and available storage. Originals are kept unless deletion was already confirmed."
                 }
             } finally {
-                busy = false
+                activeWork--
                 exists = vault.exists
             }
         }
     }
     biometricRequest?.let { request ->
         VaultBiometricPrompt(request, verified = { cipher ->
-            work {
+            // A genuine success must be persisted even if another queued operation is busy.
+            work(biometricCompletion = true) {
                 try {
                     vault.completeBiometric(request, cipher)
                     biometricEnabled = vault.biometricAvailable()
@@ -171,7 +176,7 @@ internal fun PrivateVaultScreen(model: DriveViewModel, modifier: Modifier = Modi
     }
     val restore = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> legacyRestore = uri }
     LaunchedEffect(Unit) {
-        busy = true
+        discovering = true
         try {
             vault.selectAccount()
             exists = vault.exists
@@ -184,7 +189,7 @@ internal fun PrivateVaultScreen(model: DriveViewModel, modifier: Modifier = Modi
         } catch (_: Exception) {
             message = "Could not check Telegram for an existing Vault. Retry before creating a new Vault."
         } finally {
-            busy = false
+            discovering = false
         }
     }
 

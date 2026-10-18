@@ -20,12 +20,14 @@ internal class VaultBiometricKey(private val directory: File, val identity: Stri
     private val prefix = "tgphotos.private.biometric." + MessageDigest.getInstance("SHA-256").digest(identity.toByteArray()).joinToString("") { "%02x".format(it.toInt() and 255) } + "."
     private val aad = "TGPhotos/private-vault/biometric/v1/$identity".toByteArray()
     private fun store() = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-    private fun descriptor(): JSONObject {
-        check(file.baseFile.length() in 1..4096)
-        return JSONObject(file.openRead().use { it.readBytes().toString(Charsets.UTF_8) }).also {
-            check(it.getInt("version") == 1 && it.getString("alias").startsWith(prefix))
-            UUID.fromString(it.getString("alias").removePrefix(prefix))
+    private fun descriptor(): JSONObject = JSONObject(
+        file.openRead().use {
+            check(file.baseFile.length() in 1..4096)
+            it.readBytes().toString(Charsets.UTF_8)
         }
+    ).also {
+        check(it.getInt("version") == 1 && it.getString("alias").startsWith(prefix))
+        UUID.fromString(it.getString("alias").removePrefix(prefix))
     }
     fun available(): Boolean = runCatching { store().containsAlias(descriptor().getString("alias")) }.getOrDefault(false)
     fun erase() {
@@ -44,7 +46,6 @@ internal class VaultBiometricKey(private val directory: File, val identity: Stri
             val key = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore").apply { init(spec.build()) }.generateKey()
             val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply {
                 init(Cipher.ENCRYPT_MODE, key)
-                updateAAD(aad)
             }
             return Request(cipher, epoch, true, alias, master.clone())
         } catch (failure: Exception) {
@@ -60,7 +61,6 @@ internal class VaultBiometricKey(private val directory: File, val identity: Stri
             check(bytes.size == 60)
             val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply {
                 init(Cipher.DECRYPT_MODE, store().getKey(alias, null), GCMParameterSpec(128, bytes.copyOfRange(0, 12)))
-                updateAAD(aad)
             }
             return Request(cipher, epoch, false, alias, bytes.copyOfRange(12, bytes.size))
         } finally {
@@ -75,10 +75,10 @@ internal class VaultBiometricKey(private val directory: File, val identity: Stri
         @Synchronized fun finish(authenticated: Cipher): ByteArray? {
             check(!closed && !complete && authenticated === cipher)
             // The hardware-bound cipher itself authorizes the operation, not a success Boolean.
-            val result = cipher.doFinal(secret)
+            val result = app.televault.crypto.BiometricOperation.finish(cipher, aad, secret)
             try {
                 if (enrolling) {
-                    check(result.size == 48)
+                    check(result.size == 48 && cipher.iv.size == 12)
                     val previous = runCatching { descriptor().getString("alias") }.getOrNull()
                     val bytes = JSONObject().put("version", 1).put("alias", alias).put("wrapped", Base64.encodeToString(cipher.iv + result, Base64.NO_WRAP)).toString().toByteArray()
                     val output = file.startWrite()

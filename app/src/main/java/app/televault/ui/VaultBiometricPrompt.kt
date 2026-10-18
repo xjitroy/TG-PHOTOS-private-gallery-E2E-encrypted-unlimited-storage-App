@@ -8,6 +8,8 @@ import android.os.Handler
 import android.os.Looper
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.platform.LocalContext
 import app.televault.data.VaultBiometricKey
 import java.util.concurrent.Executor
@@ -18,15 +20,21 @@ import javax.crypto.Cipher
 @Composable
 internal fun VaultBiometricPrompt(request: VaultBiometricKey.Request, verified: (Cipher) -> Unit, cancelled: () -> Unit) {
     val context = LocalContext.current
+    val onVerified by rememberUpdatedState(verified)
+    val onCancelled by rememberUpdatedState(cancelled)
     DisposableEffect(request) {
         val signal = CancellationSignal()
-        var active = true
+        val gate = BiometricCallbackGate()
         val handler = Handler(Looper.getMainLooper())
         fun cancel() {
-            if (active) cancelled()
+            if (gate.terminal()) onCancelled()
         }
         fun success(cipher: Cipher?) {
-            if (active && cipher != null && cipher === request.cipher) verified(cipher) else cancel()
+            if (cipher != null && cipher === request.cipher) {
+                if (gate.terminal()) onVerified(cipher)
+            } else {
+                cancel()
+            }
         }
         try {
             if (Build.VERSION.SDK_INT >= 28) {
@@ -70,7 +78,7 @@ internal fun VaultBiometricPrompt(request: VaultBiometricKey.Request, verified: 
             handler.post { cancel() }
         }
         onDispose {
-            active = false
+            gate.dispose()
             signal.cancel()
             request.close()
         }

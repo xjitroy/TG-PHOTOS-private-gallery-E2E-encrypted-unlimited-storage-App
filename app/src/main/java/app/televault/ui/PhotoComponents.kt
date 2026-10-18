@@ -185,14 +185,14 @@ internal fun Modifier.timelinePinch(density: Float, changed: (Float) -> Unit, en
     return pointerInput(Unit) {
         awaitEachGesture {
             awaitFirstDown(requireUnconsumed = false)
-            var current = latestDensity
+            val pinch = app.televault.domain.TimelinePinch(latestDensity)
             do {
                 val event = awaitPointerEvent()
                 if (currentEnabled && event.changes.count { it.pressed } >= 2) {
                     val zoom = event.calculateZoom()
                     if (zoom != 1f && zoom.isFinite()) {
-                        current = TimelineZoom.pinch(current, zoom)
-                        latestChanged(current)
+                        val columns = pinch.update(zoom)
+                        if (columns != 0) latestChanged(columns.toFloat())
                         event.changes.forEach { it.consume() }
                     }
                 }
