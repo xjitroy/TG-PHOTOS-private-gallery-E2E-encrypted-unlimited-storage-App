@@ -2039,13 +2039,14 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
     }
     suspend fun openPreview(id: String): Uri = withContext(Dispatchers.IO) { privateMediaUri(id) }
     fun cachedThumbnail(id: String, pixels: Int): Bitmap? = synchronized(this) {
-        if (state.value.stage == VaultStage.READY) thumbnails.get("$id:$pixels") else null
+        if (state.value.stage != VaultStage.READY) return@synchronized null
+        thumbnails.get("$id:384") ?: if (pixels <= 96) thumbnails.get("$id:96") else null
     }
     fun canPrefetchPhotos() = runningTransfers.isEmpty() && !state.value.uploadSettings.dataSaver && !policy.cellular()
     suspend fun thumbnail(id: String, pixels: Int = 384): Bitmap? = withContext(Dispatchers.IO) {
         val epoch = accessEpoch.get()
         if (state.value.stage != VaultStage.READY) return@withContext null
-        synchronized(this@DriveRepository) { thumbnails.get("$id:$pixels") }?.let { return@withContext it }
+        cachedThumbnail(id, pixels)?.let { return@withContext it }
         if (state.value.files.none { it.id == id }) return@withContext null
         val key = unlockedKey()
         try {
@@ -2057,7 +2058,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
                 BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = if (pixels <= 96) 4 else 1 })?.let { bitmap ->
                     synchronized(this@DriveRepository) {
                         if (master != null && state.value.stage == VaultStage.READY && accessEpoch.get() == epoch) {
-                            thumbnails.put("$id:$pixels", bitmap)
+                            thumbnails.put("$id:${if (pixels <= 96) 96 else 384}", bitmap)
                             bitmap
                         } else {
                             bitmap.recycle()

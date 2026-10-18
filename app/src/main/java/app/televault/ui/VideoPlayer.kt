@@ -46,7 +46,7 @@ import kotlinx.coroutines.withContext
 
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
-internal fun VideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>, choose: (MediaEntry) -> Unit, model: DriveViewModel, current: MediaEntry, session: ViewerPlaybackSession, modifier: Modifier = Modifier, fullScreenChanged: (Boolean) -> Unit = {}, adjacent: (Int) -> Unit = {}, verticalPaging: Boolean = false, portraitChanged: (Boolean) -> Unit = {}, openWith: () -> Unit = {}, fullscreenExit: Int = 0, favorite: () -> Unit = {}, share: () -> Unit = {}, backup: (Boolean) -> Unit = {}, removeDevice: () -> Unit = {}, profile: () -> Unit = {}, closeViewer: () -> Unit = {}, movieDetails: @Composable () -> Unit = {}) {
+internal fun VideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>, choose: (MediaEntry) -> Unit, model: DriveViewModel, current: MediaEntry, session: ViewerPlaybackSession, modifier: Modifier = Modifier, fullScreenChanged: (Boolean) -> Unit = {}, adjacent: (Int) -> Unit = {}, verticalPaging: Boolean = false, portraitChanged: (Boolean) -> Unit = {}, openWith: () -> Unit = {}, fullscreenExit: Int = 0, favorite: () -> Unit = {}, share: () -> Unit = {}, backup: (Boolean) -> Unit = {}, removeDevice: () -> Unit = {}, profile: () -> Unit = {}, closeViewer: () -> Unit = {}, movieDetails: @Composable () -> Unit = {}, controlsChanged: (Boolean) -> Unit = {}) {
     val identity = remember(current.id, current.size, current.date) { "${current.id}|${current.size}|${current.date}" }
     val epoch = remember(identity) { model.playbackEpoch }
     var resume by remember(identity) { mutableStateOf<Long?>(if (session.owns(identity)) 0L else null) }
@@ -61,7 +61,7 @@ internal fun VideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>, cho
         }
     }
     if (resume != null) {
-        ReadyVideoPlayer(uri, video, videos, choose, model, current, modifier, session, fullScreenChanged, adjacent, verticalPaging, portraitChanged, openWith, fullscreenExit, favorite, share, backup, removeDevice, profile, identity, epoch, resume!!, closeViewer, movieDetails)
+        ReadyVideoPlayer(uri, video, videos, choose, model, current, modifier, session, fullScreenChanged, adjacent, verticalPaging, portraitChanged, openWith, fullscreenExit, favorite, share, backup, removeDevice, profile, identity, epoch, resume!!, closeViewer, movieDetails, controlsChanged)
     } else {
         Box(modifier.fillMaxSize().background(Color.Black)) { MediaThumbnail(current, model, Modifier.fillMaxSize(), 384, androidx.compose.ui.layout.ContentScale.Fit) }
     }
@@ -69,7 +69,7 @@ internal fun VideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>, cho
 
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
-private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>, choose: (MediaEntry) -> Unit, model: DriveViewModel, current: MediaEntry, modifier: Modifier, session: ViewerPlaybackSession, fullScreenChanged: (Boolean) -> Unit, adjacent: (Int) -> Unit, verticalPaging: Boolean, portraitChanged: (Boolean) -> Unit, openWith: () -> Unit, fullscreenExit: Int, favorite: () -> Unit, share: () -> Unit, backup: (Boolean) -> Unit, removeDevice: () -> Unit, profile: () -> Unit, identity: String, epoch: Long, resume: Long, closeViewer: () -> Unit, movieDetails: @Composable () -> Unit) {
+private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>, choose: (MediaEntry) -> Unit, model: DriveViewModel, current: MediaEntry, modifier: Modifier, session: ViewerPlaybackSession, fullScreenChanged: (Boolean) -> Unit, adjacent: (Int) -> Unit, verticalPaging: Boolean, portraitChanged: (Boolean) -> Unit, openWith: () -> Unit, fullscreenExit: Int, favorite: () -> Unit, share: () -> Unit, backup: (Boolean) -> Unit, removeDevice: () -> Unit, profile: () -> Unit, identity: String, epoch: Long, resume: Long, closeViewer: () -> Unit, movieDetails: @Composable () -> Unit, controlsChanged: (Boolean) -> Unit) {
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
     val activity = remember(context) { videoActivity(context) }
@@ -157,6 +157,8 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
     var badge by remember { mutableStateOf(true) }
     var badgeEpoch by remember { mutableIntStateOf(0) }
     var controls by remember { mutableStateOf(true) }
+    val onControlsChanged by rememberUpdatedState(controlsChanged)
+    LaunchedEffect(controls) { onControlsChanged(controls) }
     val actionsBottom by animateDpAsState(if (controls) 170.dp else 54.dp, tween(180), label = "Short action position")
     var playbackPosition by remember { mutableLongStateOf(0) }
     var duration by remember { mutableLongStateOf(0) }
@@ -372,14 +374,6 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
                 }
                 androidx.compose.animation.AnimatedVisibility(controls, modifier = Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom)), enter = fadeIn(tween(220)), exit = fadeOut(tween(220))) {
                     Column(Modifier.fillMaxWidth().background(androidx.compose.ui.graphics.Color.Black.copy(alpha = .55f)).padding(horizontal = 12.dp)) {
-                        if (short && suggestions.isNotEmpty()) {
-                            androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
-                                items(suggestions.size, key = { suggestions[it].id }) { index ->
-                                    val item = suggestions[index]
-                                    MediaThumbnail(item, model, Modifier.size(48.dp).clip(RoundedCornerShape(10.dp)).clickable { choose(item) }, 96)
-                                }
-                            }
-                        }
                         Slider(seekDraft ?: if (duration > 0) (playbackPosition.toDouble() / duration).toFloat().coerceIn(0f, 1f) else 0f, {
                             seekDraft = it
                             controlEpoch++

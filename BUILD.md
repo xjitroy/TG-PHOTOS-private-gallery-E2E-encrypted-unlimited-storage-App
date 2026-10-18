@@ -1,4 +1,4 @@
-# Public Universal APK (0.19.10)
+# Public Universal APK (0.19.11)
 
 The public release is one signed Universal APK for ARM64, ARMv7, x86 and x86_64, Android8+. Build with `-PtgUniversalOnly=true` and use release/output-metadata.json for its exact filename. Standard compressed JNI packaging keeps the single file small; Android extracts only the device's matching ABI. Preserve the official signing identity for compatible public updates. Private/personal distributions are not included in this release.
 
@@ -21,3 +21,5 @@ The sandbox package avoids replacing an installed official/personal app. An offi
 PUBLIC_SOURCE_MANIFEST.json lists executable source/native hashes and the source checkpoint embedded in the published APK. Public documentation is curated separately from the private development tree. Fresh local builds embed their own Git HEAD. Signing protects compatible official updates, not complete reverse-engineering resistance. Build/test reports are evidence of their stated scope, not Android hardware acceptance or an independent crypto audit.
 
 For the single public Universal APK: `./gradlew :app:assembleRelease -PtgUniversalOnly=true`. Standard compressed JNI packaging includes every supported ABI; Android extracts the matching native libraries at installation. Existing release signing configuration is still required.
+
+0.19.11 adds a centered draggable thumbnail filmstrip to the shared normal viewer. Main swipes and strip scrubbing stay synchronized in selection order, including first/last centering and the active video. Heavy new original/playback work waits for strip settlement while already open photos retain their sharp source. Exit retains a110ms fade/scale without a second platform-window animation. Gallery scrolling/selection no longer forces96px thumbnails; larger cached images are reused and never replaced by a smaller completion. Local fallback sampling preserves the requested detail. Host checks do not measure real Android FPS or gesture/native acceptance.

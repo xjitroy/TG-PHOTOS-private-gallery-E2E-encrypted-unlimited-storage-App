@@ -397,7 +397,8 @@ internal class RegionImageView(context: Context) : View(context) {
     var error by remember(uri, retry) { mutableStateOf(false) }
     var hasPixels by remember(uri, retry) { mutableStateOf(false) }
     val onPixelsReady by rememberUpdatedState(pixelsReady)
-    LaunchedEffect(hasPixels, error) { if (hasPixels || error) onPixelsReady() }
+    // A newly selected/settled caller may own a new priority token while these pixels stay ready.
+    LaunchedEffect(hasPixels, error, pixelsReady) { if (hasPixels || error) onPixelsReady() }
     val loadingDescription = label("Loading original photo", "মূল ছবি লোড হচ্ছে")
     Box(modifier.semantics { if (loading && !hasPixels) stateDescription = loadingDescription }, contentAlignment = Alignment.Center) {
         key(uri, retry) {

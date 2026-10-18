@@ -1,7 +1,6 @@
 package app.televault.ui
 
 import android.graphics.Bitmap
-import android.os.SystemClock
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -38,6 +37,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.televault.DriveViewModel
 import app.televault.data.DriveSnapshot
 import app.televault.domain.MosaicLayout
+import app.televault.domain.ThumbnailQuality
 import app.televault.domain.TimelineZoom
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -60,7 +60,8 @@ internal fun MediaThumbnail(entry: MediaEntry, model: DriveViewModel, modifier: 
                 null
             }
             if (loaded != null) {
-                bitmap = loaded
+                val previous = bitmap
+                if (previous == null || ThumbnailQuality.preferNew(previous.width, previous.height, loaded.width, loaded.height)) bitmap = loaded
                 return@LaunchedEffect
             }
             if (attempt < 2) delay(400L * (attempt + 1))
@@ -265,7 +266,6 @@ internal fun timeGroups(files: List<MediaEntry>, density: Float): Map<String, Li
 @Composable
 internal fun MediaGrid(files: List<MediaEntry>, selected: Set<String>, model: DriveViewModel, device: Boolean, click: (MediaEntry) -> Unit, hold: (MediaEntry) -> Unit, density: Float, densityChanged: (Float) -> Unit, grid: LazyGridState = rememberLazyGridState(), mosaic: Boolean = true, selectionChanged: (Set<String>) -> Unit = {}, leadingContent: (@Composable () -> Unit)? = null, showDateHeaders: Boolean = true) {
     val snapshot by model.contentState.collectAsStateWithLifecycle()
-    var high by remember { mutableStateOf(true) }
     var anchor by remember { mutableStateOf<String?>(null) }
     val columns = TimelineZoom.columns(density)
     val groups = remember(files, TimelineZoom.period(density)) { timeGroups(files, density) }
@@ -289,27 +289,6 @@ internal fun MediaGrid(files: List<MediaEntry>, selected: Set<String>, model: Dr
                     entries.forEach { put(it.id, position++) }
                 }
             }
-        }
-    }
-    LaunchedEffect(grid.isScrollInProgress) {
-        if (grid.isScrollInProgress) {
-            high = false
-        } else {
-            delay(180)
-            high = true
-        }
-    }
-    LaunchedEffect(grid) {
-        var previous = grid.firstVisibleItemScrollOffset
-        var index = grid.firstVisibleItemIndex
-        var last = SystemClock.elapsedRealtime()
-        snapshotFlow { grid.firstVisibleItemIndex to grid.firstVisibleItemScrollOffset }.collect { (nextIndex, offset) ->
-            val now = SystemClock.elapsedRealtime()
-            val pixels = kotlin.math.abs(offset - previous) + kotlin.math.abs(nextIndex - index) * 100
-            high = !grid.isScrollInProgress || pixels * 1000L / (now - last).coerceAtLeast(1) < 600
-            previous = offset
-            index = nextIndex
-            last = now
         }
     }
     val geometry = remember(grid) { intArrayOf(columns, if (useMosaic) 1 else 0) }
@@ -354,7 +333,7 @@ internal fun MediaGrid(files: List<MediaEntry>, selected: Set<String>, model: Dr
             }
             if (useMosaic) {
                 items(blocks.getValue(date), key = { group[it.cells().first().index()].id }, span = { GridItemSpan(maxLineSpan) }) { block ->
-                    MosaicPhotoBlock(group, block, selected, snapshot, model, high, click, guardedHold, drag, Modifier.animateItem(fadeInSpec = null, fadeOutSpec = null))
+                    MosaicPhotoBlock(group, block, selected, snapshot, model, click, guardedHold, drag, Modifier.animateItem(fadeInSpec = null, fadeOutSpec = null))
                 }
             } else {
                 items(group, key = { it.id }) { entry ->
@@ -363,13 +342,7 @@ internal fun MediaGrid(files: List<MediaEntry>, selected: Set<String>, model: Dr
                         selected,
                         snapshot,
                         model,
-                        if (!high || drag.active) {
-                            96
-                        } else if (columns <= 4) {
-                            384
-                        } else {
-                            192
-                        },
+                        ThumbnailQuality.gridPixels(columns, false),
                         click,
                         guardedHold,
                         Modifier.aspectRatio(1f).animateItem().dragSelectionTile(entry.id, drag)
@@ -382,7 +355,7 @@ internal fun MediaGrid(files: List<MediaEntry>, selected: Set<String>, model: Dr
 
 /** Measure only visible lazy blocks. Uniform virtual cells keep photo order and never overlap. */
 @Composable
-private fun MosaicPhotoBlock(files: List<MediaEntry>, block: MosaicLayout.Block, selected: Set<String>, snapshot: DriveSnapshot, model: DriveViewModel, high: Boolean, click: (MediaEntry) -> Unit, hold: (MediaEntry) -> Unit, drag: GridDragSelection, modifier: Modifier) {
+private fun MosaicPhotoBlock(files: List<MediaEntry>, block: MosaicLayout.Block, selected: Set<String>, snapshot: DriveSnapshot, model: DriveViewModel, click: (MediaEntry) -> Unit, hold: (MediaEntry) -> Unit, drag: GridDragSelection, modifier: Modifier) {
     Layout(content = {
         block.cells().forEach { cell ->
             val entry = files[cell.index()]
@@ -392,13 +365,7 @@ private fun MosaicPhotoBlock(files: List<MediaEntry>, block: MosaicLayout.Block,
                     selected,
                     snapshot,
                     model,
-                    if (!high || drag.active) {
-                        96
-                    } else if (cell.columns() > 1) {
-                        640
-                    } else {
-                        384
-                    },
+                    ThumbnailQuality.gridPixels(4, cell.columns() > 1),
                     click,
                     hold,
                     Modifier.dragSelectionTile(entry.id, drag)

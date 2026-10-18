@@ -333,11 +333,18 @@ class LocalMediaRepository(private val context: Context) {
         unique
     }
 
-    fun cachedThumbnail(item: LocalMedia, pixels: Int): Bitmap? = thumbnails.get("${item.fingerprint}:$pixels")
+    fun cachedThumbnail(item: LocalMedia, pixels: Int): Bitmap? {
+        thumbnails.get("${item.fingerprint}:$pixels")?.let { return it }
+        // Reuse an already sharp tile for the strip/smaller tile; never request a tiny replacement.
+        for (size in intArrayOf(192, 384, 640, 768, 960)) {
+            if (size > pixels) thumbnails.get("${item.fingerprint}:$size")?.let { return it }
+        }
+        return null
+    }
     suspend fun thumbnail(item: LocalMedia, pixels: Int): Bitmap? = withContext(Dispatchers.IO) {
         if (!item.mime.startsWith("image/") && !item.mime.startsWith("video/")) return@withContext null
         val key = "${item.fingerprint}:$pixels"
-        thumbnails.get(key)?.let { return@withContext it }
+        cachedThumbnail(item, pixels)?.let { return@withContext it }
         runCatching {
             val providerThumbnail = if (Build.VERSION.SDK_INT >= 29 && item.uri.scheme == "content") runCatching { context.contentResolver.loadThumbnail(item.uri, android.util.Size(pixels, pixels), null) }.getOrNull() else null
             if (providerThumbnail != null) {
@@ -355,8 +362,7 @@ class LocalMediaRepository(private val context: Context) {
                 val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 context.contentResolver.openInputStream(item.uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
                 if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching null
-                var sample = 1
-                while (bounds.outWidth / sample > pixels || bounds.outHeight / sample > pixels) sample *= 2
+                val sample = app.televault.domain.ThumbnailQuality.sample(bounds.outWidth, bounds.outHeight, pixels)
                 context.contentResolver.openInputStream(item.uri)?.use { BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample }) }?.let { MediaTools.orientThumbnail(context, item.uri, it) }
             }
         }.getOrNull()?.also { thumbnails.put(key, it) }

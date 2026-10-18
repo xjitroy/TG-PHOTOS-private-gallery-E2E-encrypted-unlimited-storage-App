@@ -13,9 +13,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.*
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -46,20 +43,19 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.UUID
 import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.first
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: DriveViewModel, close: () -> Unit, choose: (MediaEntry) -> Unit, save: (MediaEntry) -> Unit, trash: (MediaEntry) -> Unit, restore: (MediaEntry) -> Unit, purge: (MediaEntry) -> Unit, favorite: (MediaEntry) -> Unit, backup: (MediaEntry, Boolean) -> Unit = { _, _ -> }, removeDevice: (MediaEntry) -> Unit = {}, profile: () -> Unit = {}, personProfile: (String) -> Unit = {}) {
-    var presented by remember { mutableStateOf(false) }
     var closing by remember { mutableStateOf(false) }
     val finishClose by rememberUpdatedState(close)
-    val entrance by animateFloatAsState(if (presented && !closing) 1f else 0f, tween(260), label = "Media entrance / exit")
-    LaunchedEffect(Unit) { presented = true }
+    val entrance = remember { androidx.compose.animation.core.Animatable(0f) }
     LaunchedEffect(closing) {
         if (closing) {
-            snapshotFlow { entrance }.first { it == 0f }
+            if (entrance.value > 0f) entrance.animateTo(0f, tween(110))
             finishClose()
+        } else {
+            entrance.animateTo(1f, tween(180))
         }
     }
     val requestClose = { closing = true }
@@ -83,7 +79,7 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
     val editedById = editedAudio.toMap()
     val media = remember(latest, cloudById, editedById) { stableIds.mapNotNull { id -> editedById[id] ?: (latest[id] ?: initialById[id])?.let { value -> value.copy(cloud = cloudById[id] ?: value.cloud) } }.ifEmpty { listOf(entry) } }
     val videos = remember(media) { media.filter { it.mime.startsWith("video/") } }
-    val filmstrip = rememberLazyListState()
+    var scrubbing by remember { mutableStateOf(false) }
     var navigation by remember { mutableStateOf<Job?>(null) }
     val pager = rememberPagerState(initialPage = media.indexOfFirst { it.id == entry.id }.coerceAtLeast(0)) { media.size }
     var videoFullscreen by remember { mutableStateOf(false) }
@@ -100,6 +96,10 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
     var prepared by remember { mutableStateOf<Uri?>(null) }
     var preparedId by remember { mutableStateOf<String?>(null) }
     val current = media.getOrElse(pager.settledPage) { entry }
+    // Keep the action panel's geometry stable under the finger while crossing mixed media/tags.
+    var settledChrome by remember { mutableStateOf(current) }
+    SideEffect { if (!scrubbing) settledChrome = current }
+    val chrome = if (scrubbing) settledChrome else current
     val currentLive by rememberUpdatedState(current)
     var lensConfirm by remember { mutableStateOf<MediaEntry?>(null) }
     var textReading by remember { mutableStateOf(false) }
@@ -195,7 +195,7 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
             }) { Text(label("Continue", "চালিয়ে যান")) }
         }, dismissButton = { TextButton({ lensConfirm = null }) { Text(label("Cancel", "বাতিল")) } })
     }
-    val photoLoadToken = remember(current.id) { if (current.mime.startsWith("image/")) model.beginPhotoLoad(current.id) else 0L }
+    val photoLoadToken = remember(current.id, scrubbing) { if (!scrubbing && current.mime.startsWith("image/")) model.beginPhotoLoad(current.id) else 0L }
     DisposableEffect(photoLoadToken) {
         onDispose { if (photoLoadToken != 0L) model.finishPhotoLoad(photoLoadToken) }
     }
@@ -205,21 +205,17 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
     LaunchedEffect(entry.id) {
         val index = media.indexOfFirst { it.id == entry.id }
         if (index >= 0 && index != pager.currentPage) {
-            pager.animateScrollToPage(index, animationSpec = androidx.compose.animation.core.tween(320))
+            pager.animateScrollToPage(index, animationSpec = androidx.compose.animation.core.tween(150))
         }
     }
-    LaunchedEffect(pager.settledPage) {
-        videoSession.visible(if (current.mime.startsWith("video/")) "${current.id}|${current.size}|${current.date}" else null)
-        videoFullscreen = current.mime.startsWith("video/") && app.televault.domain.VideoPresentation.shortLayout(current.cloud?.facts?.width ?: current.local?.width ?: 0, current.cloud?.facts?.height ?: current.local?.height ?: 0, 1f)
+    LaunchedEffect(pager.settledPage, scrubbing) {
+        videoSession.visible(if (!scrubbing && current.mime.startsWith("video/")) "${current.id}|${current.size}|${current.date}" else null)
+        if (!scrubbing) videoFullscreen = current.mime.startsWith("video/") && app.televault.domain.VideoPresentation.shortLayout(current.cloud?.facts?.width ?: current.local?.width ?: 0, current.cloud?.facts?.height ?: current.local?.height ?: 0, 1f)
         menu = false
         details = false
-        if (current.mime.startsWith("image/")) {
-            val visible = filmstrip.layoutInfo.visibleItemsInfo
-            if (visible.none { it.index == pager.settledPage }) filmstrip.scrollToItem((pager.settledPage - 2).coerceAtLeast(0))
-        }
     }
-    LaunchedEffect(pager.settledPage, pager.isScrollInProgress, portraitPage, photoVertical) {
-        if (pager.isScrollInProgress) return@LaunchedEffect
+    LaunchedEffect(pager.settledPage, pager.isScrollInProgress, portraitPage, photoVertical, scrubbing, closing) {
+        if (pager.isScrollInProgress || scrubbing || closing) return@LaunchedEffect
         vertical = if (current.mime.startsWith("video/")) {
             portraitPage?.takeIf { it.first == current.id }?.second ?: app.televault.domain.VideoPresentation.shortLayout(current.cloud?.facts?.width ?: current.local?.width ?: 0, current.cloud?.facts?.height ?: current.local?.height ?: 0, 1f)
         } else {
@@ -248,10 +244,12 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
             }
         }
     }
-    fun navigate(index: Int) {
-        if (index !in media.indices || pager.isScrollInProgress) return
+    fun navigate(index: Int, animate: Boolean = true) {
+        if (index !in media.indices || closing) return
         navigation?.cancel()
-        navigation = scope.launch { pager.animateScrollToPage(index, animationSpec = tween(320)) }
+        navigation = scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            if (animate && kotlin.math.abs(index - pager.currentPage) <= 2) pager.animateScrollToPage(index, animationSpec = tween(150)) else pager.scrollToPage(index)
+        }
     }
     fun select(item: MediaEntry) {
         navigate(media.indexOfFirst { it.id == item.id })
@@ -369,6 +367,11 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
         Box(Modifier.fillMaxSize().background(Color.Black)) {
             val dialogView = androidx.compose.ui.platform.LocalView.current
             val window = (dialogView.parent as? DialogWindowProvider)?.window
+            // This dialog owns its fade/scale; a second platform exit animation adds latency.
+            DisposableEffect(window) {
+                window?.setWindowAnimations(0)
+                onDispose { }
+            }
             val photoLayout = current.mime.startsWith("image/")
             val videoLayout = current.mime.startsWith("video/")
             DisposableEffect(window, pipVisible) {
@@ -407,21 +410,21 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
             val renderMedia: @Composable (Modifier) -> Unit = { area ->
                 Box(area.background(Color.Black)) {
                     val page: @Composable (Int) -> Unit = { index ->
-                        MediaPage(media[index], index == pager.settledPage, !snapshot.uploadSettings.dataSaver && !pager.isScrollInProgress && model.canPrefetchPhotos(), model, { if (index == pager.settledPage && photoLoadToken != 0L) model.finishPhotoLoad(photoLoadToken) }, {
+                        MediaPage(media[index], index == pager.settledPage && !scrubbing, !scrubbing && !closing && !snapshot.uploadSettings.dataSaver && !pager.isScrollInProgress && model.canPrefetchPhotos(), model, { if (index == pager.settledPage && photoLoadToken != 0L) model.finishPhotoLoad(photoLoadToken) }, {
                             resolvedSources[media[index].id] = it
                             if (media[index].id == current.id) {
                                 prepared = it
                                 preparedId = media[index].id
                             }
-                        }, videos, ::select, { direction -> app.televault.domain.ViewerOrder.adjacent(media, index, direction)?.let(::select) }, vertical, { portrait -> if (index == pager.settledPage) portraitPage = media[index].id to portrait }, videoSession, fullscreenExit, { if (index == pager.settledPage) videoFullscreen = it }, { controls = !controls }, if (vertical) null else ({ details = true }), { favorite(media[index]) }, { send(Intent.ACTION_SEND) }, { send(Intent.ACTION_VIEW) }, { cleanup -> backup(media[index], cleanup) }, { removeDevice(media[index]) }, snapshot.backedDeviceFiles, { copy -> editedAudio[stableIds[index]] = copy }, profile, resolvedSources[media[index].id], requestClose, movieDetails, { if (index == pager.settledPage) readText(true) })
+                        }, videos, ::select, { direction -> app.televault.domain.ViewerOrder.adjacent(media, index, direction)?.let(::select) }, vertical, { portrait -> if (index == pager.settledPage) portraitPage = media[index].id to portrait }, videoSession, fullscreenExit, { if (index == pager.settledPage) videoFullscreen = it }, { controls = !controls }, if (vertical) null else ({ details = true }), { favorite(media[index]) }, { send(Intent.ACTION_SEND) }, { send(Intent.ACTION_VIEW) }, { cleanup -> backup(media[index], cleanup) }, { removeDevice(media[index]) }, snapshot.backedDeviceFiles, { copy -> editedAudio[stableIds[index]] = copy }, profile, resolvedSources[media[index].id], requestClose, movieDetails, { if (index == pager.settledPage) readText(true) }, scrubbing, { visible -> if (index == pager.settledPage && !scrubbing) controls = visible })
                     }
-                    if (vertical) VerticalPager(pager, key = { media[it].id }, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = 1, userScrollEnabled = !busy) { page(it) } else HorizontalPager(pager, key = { media[it].id }, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = 1, userScrollEnabled = !busy) { page(it) }
+                    if (vertical) VerticalPager(pager, key = { media[it].id }, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = 1, userScrollEnabled = !busy && !scrubbing && !closing) { page(it) } else HorizontalPager(pager, key = { media[it].id }, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = 1, userScrollEnabled = !busy && !scrubbing && !closing) { page(it) }
                 }
             }
             Surface(
                 Modifier.fillMaxSize().graphicsLayer {
-                    alpha = entrance
-                    scaleX = .96f + .04f * entrance
+                    alpha = entrance.value
+                    scaleX = .98f + .02f * entrance.value
                     scaleY = scaleX
                 },
                 color = if (photoLayout) Color.Black else MaterialTheme.colorScheme.background
@@ -450,47 +453,41 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
                         if (busy && !current.mime.startsWith("image/") && !current.mime.startsWith("video/")) LinearProgressIndicator(Modifier.fillMaxWidth())
                         if (!videoLayout && message.isNotBlank()) Text(message, Modifier.padding(horizontal = 20.dp, vertical = 6.dp), style = MaterialTheme.typography.bodySmall)
                         Spacer(Modifier.weight(1f))
-                        AnimatedVisibility(controls && !videoLayout && !pager.isScrollInProgress, enter = fadeIn(), exit = fadeOut()) {
+                        AnimatedVisibility(controls, enter = fadeIn(tween(100)), exit = fadeOut(tween(100))) {
                             Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                if (media.size > 1 && current.mime.startsWith("image/")) {
-                                    LazyRow(state = filmstrip, horizontalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(horizontal = 4.dp)) {
-                                        itemsIndexed(media, key = { _, item -> item.id }) { index, item ->
-                                            Box(
-                                                Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)).border(if (index == pager.currentPage) 2.dp else 0.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp)).clickable {
-                                                    navigation?.cancel()
-                                                    navigation = scope.launch {
-                                                        if (kotlin.math.abs(index - pager.currentPage) <= 2) pager.animateScrollToPage(index) else pager.scrollToPage(index)
+                                if (media.size > 1) {
+                                    ViewerFilmstrip(media, pager, model, !busy && !closing, { dragging ->
+                                        if (dragging) navigation?.cancel()
+                                        scrubbing = dragging
+                                    }, ::navigate, Modifier.fillMaxWidth())
+                                }
+                                if (chrome.mime.startsWith("video/")) {
+                                    Spacer(Modifier.height(104.dp).then(if (videoFullscreen) Modifier.navigationBarsPadding() else Modifier))
+                                } else {
+                                    Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = .9f), border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = .35f)), tonalElevation = 1.dp) {
+                                        Column(Modifier.padding(horizontal = 4.dp, vertical = 6.dp)) {
+                                            val tags = people.people.filter { chrome.id in it.members }
+                                            if (tags.isNotEmpty()) {
+                                                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                    tags.forEach { person ->
+                                                        InputChip(false, { personProfile(person.id) }, label = { Text(person.name.ifBlank { label("Add name", "নাম দিন") }) }, avatar = { PersonPortrait(person, Modifier.size(28.dp)) }, trailingIcon = { IconButton({ faceTag = person.id }, Modifier.size(28.dp)) { Icon(Icons.Outlined.MoreVert, label("Edit face tag", "ফেস-ট্যাগ বদলান"), Modifier.size(18.dp)) } })
                                                     }
                                                 }
-                                            ) {
-                                                MediaThumbnail(item, model, Modifier.fillMaxSize(), 96)
                                             }
-                                        }
-                                    }
-                                }
-                                Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = .9f), border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = .35f)), tonalElevation = 1.dp) {
-                                    Column(Modifier.padding(horizontal = 4.dp, vertical = 6.dp)) {
-                                        val tags = people.people.filter { current.id in it.members }
-                                        if (tags.isNotEmpty()) {
-                                            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                tags.forEach { person ->
-                                                    InputChip(false, { personProfile(person.id) }, label = { Text(person.name.ifBlank { label("Add name", "নাম দিন") }) }, avatar = { PersonPortrait(person, Modifier.size(28.dp)) }, trailingIcon = { IconButton({ faceTag = person.id }, Modifier.size(28.dp)) { Icon(Icons.Outlined.MoreVert, label("Edit face tag", "ফেস-ট্যাগ বদলান"), Modifier.size(18.dp)) } })
-                                                }
+                                            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.SpaceEvenly) {
+                                                ViewerAction(Icons.Outlined.Share, label("Share", "শেয়ার"), !busy && !scrubbing && !closing) { send(Intent.ACTION_SEND) }
+                                                if (chrome.mime.startsWith("image/")) ViewerAction(Icons.Outlined.Edit, label("Edit", "এডিট"), preparedSource != null && !busy && !scrubbing && !closing) { editing = true }
+                                                ViewerAction(Icons.Outlined.OpenInNew, label("Open with", "অন্য অ্যাপে"), !busy && !scrubbing && !closing) { send(Intent.ACTION_VIEW) }
+                                                if (chrome.cloud != null) ViewerAction(Icons.Outlined.Download, label("Download", "ডাউনলোড"), !busy && !scrubbing && !closing) { save(chrome) }
+                                                val loved = chrome.cloud?.favorite ?: (chrome.id in snapshot.localFavorites)
+                                                ViewerAction(if (loved) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder, label("Favorite", "প্রিয়"), !busy && !scrubbing && !closing, if (loved) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurface) { favorite(chrome) }
                                             }
-                                        }
-                                        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.SpaceEvenly) {
-                                            ViewerAction(Icons.Outlined.Share, label("Share", "শেয়ার"), !busy) { send(Intent.ACTION_SEND) }
-                                            if (current.mime.startsWith("image/")) ViewerAction(Icons.Outlined.Edit, label("Edit", "এডিট"), preparedSource != null && !busy) { editing = true }
-                                            ViewerAction(Icons.Outlined.OpenInNew, label("Open with", "অন্য অ্যাপে"), !busy) { send(Intent.ACTION_VIEW) }
-                                            if (current.cloud != null) ViewerAction(Icons.Outlined.Download, label("Download", "ডাউনলোড"), !busy) { save(current) }
-                                            val loved = current.cloud?.favorite ?: (current.id in snapshot.localFavorites)
-                                            ViewerAction(if (loved) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder, label("Favorite", "প্রিয়"), !busy, if (loved) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurface) { favorite(current) }
-                                        }
-                                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                                            Icon(if (current.cloud != null) Icons.Outlined.CloudDone else Icons.Outlined.PhoneAndroid, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
-                                            Text(if (current.cloud != null) label(" Encrypted cloud", " এনক্রিপ্টেড ক্লাউড") else label(" On device", " ফোনে"), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                            TextButton({ details = true }, enabled = !busy) { Text(label("Details", "বিস্তারিত")) }
-                                            IconButton({ if (trashed) restore(current) else trash(current) }, enabled = !busy) { Icon(if (trashed) Icons.Outlined.Restore else Icons.Outlined.DeleteOutline, if (trashed) label("Restore", "ফিরিয়ে আনুন") else label("Move to Trash", "ট্র্যাশে রাখুন"), tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+                                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(if (chrome.cloud != null) Icons.Outlined.CloudDone else Icons.Outlined.PhoneAndroid, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
+                                                Text(if (chrome.cloud != null) label(" Encrypted cloud", " এনক্রিপ্টেড ক্লাউড") else label(" On device", " ফোনে"), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                TextButton({ details = true }, enabled = !busy && !scrubbing && !closing) { Text(label("Details", "বিস্তারিত")) }
+                                                IconButton({ if (trashed) restore(chrome) else trash(chrome) }, enabled = !busy && !scrubbing && !closing) { Icon(if (trashed) Icons.Outlined.Restore else Icons.Outlined.DeleteOutline, if (trashed) label("Restore", "ফিরিয়ে আনুন") else label("Move to Trash", "ট্র্যাশে রাখুন"), tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+                                            }
                                         }
                                     }
                                 }
@@ -527,7 +524,7 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
     }
 }
 
-@Composable private fun MediaPage(item: MediaEntry, active: Boolean, preload: Boolean, model: DriveViewModel, pixelsReady: () -> Unit, ready: (Uri) -> Unit, videos: List<MediaEntry>, choose: (MediaEntry) -> Unit, adjacent: (Int) -> Unit, verticalPaging: Boolean, portraitChanged: (Boolean) -> Unit, videoSession: ViewerPlaybackSession, fullscreenExit: Int, fullScreenChanged: (Boolean) -> Unit, tap: () -> Unit, info: (() -> Unit)?, favorite: () -> Unit, share: () -> Unit, openWith: () -> Unit, backup: (Boolean) -> Unit, removeDevice: () -> Unit, backedDeviceFiles: Map<String, String>, editedCopy: (MediaEntry) -> Unit, profile: () -> Unit, cachedSource: Uri?, closeViewer: () -> Unit, movieDetails: @Composable () -> Unit, longHold: () -> Unit) {
+@Composable private fun MediaPage(item: MediaEntry, active: Boolean, preload: Boolean, model: DriveViewModel, pixelsReady: () -> Unit, ready: (Uri) -> Unit, videos: List<MediaEntry>, choose: (MediaEntry) -> Unit, adjacent: (Int) -> Unit, verticalPaging: Boolean, portraitChanged: (Boolean) -> Unit, videoSession: ViewerPlaybackSession, fullscreenExit: Int, fullScreenChanged: (Boolean) -> Unit, tap: () -> Unit, info: (() -> Unit)?, favorite: () -> Unit, share: () -> Unit, openWith: () -> Unit, backup: (Boolean) -> Unit, removeDevice: () -> Unit, backedDeviceFiles: Map<String, String>, editedCopy: (MediaEntry) -> Unit, profile: () -> Unit, cachedSource: Uri?, closeViewer: () -> Unit, movieDetails: @Composable () -> Unit, longHold: () -> Unit, previewOnly: Boolean, controlsChanged: (Boolean) -> Unit) {
     val context = LocalContext.current
     var uri by remember(item.id) { mutableStateOf(cachedSource) }
     var deviceSource by remember(item.id) { mutableStateOf(false) }
@@ -548,8 +545,8 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
     var retry by remember(item.id) { mutableIntStateOf(0) }
     var error by remember(item.id) { mutableStateOf(false) }
     val warmImage = item.mime.startsWith("image/") && (item.local != null || preload && item.size <= 16L * 1024 * 1024)
-    LaunchedEffect(item.id, active, warmImage, retry, deviceCandidates) {
-        if (active || warmImage) {
+    LaunchedEffect(item.id, active, warmImage, retry, deviceCandidates, previewOnly) {
+        if (!previewOnly && (active || warmImage)) {
             error = false
             try {
                 if (!active) model.awaitPhotoLoad(item.id)
@@ -573,6 +570,7 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
     Box(Modifier.fillMaxSize().clipToBounds().background(Color.Black).then(if (!item.mime.startsWith("image/") && !item.mime.startsWith("video/")) Modifier.safeDrawingPadding().padding(top = 76.dp, bottom = 176.dp) else Modifier), contentAlignment = Alignment.Center) {
         val source = uri
         when {
+            previewOnly && (source == null || !item.mime.startsWith("image/")) -> MediaThumbnail(item, model, Modifier.fillMaxSize(), 768, ContentScale.Fit)
             error -> Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(label("Could not open. Check connection, space and file integrity.", "খোলা যায়নি। সংযোগ, জায়গা ও ফাইলের অখণ্ডতা পরীক্ষা করুন।"))
                 TextButton({ retry++ }) { Text(label("Retry", "আবার চেষ্টা করুন")) }
@@ -589,7 +587,7 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
             }
             item.mime.startsWith("image/") -> key(item.id, source, item.local?.fingerprint) { RegionImage(source, Modifier.fillMaxSize(), tap = tap, swipeUp = info, placeholder = { MediaThumbnail(item, model, Modifier.fillMaxSize(), 384, ContentScale.Fit) }, pixelsReady = pixelsReady, cache = model.photoPreviews, cacheKey = item.id + ":" + (item.local?.fingerprint ?: item.cloud?.hash.orEmpty()), longHold = if (active) longHold else null) }
             item.mime.startsWith("audio/") -> AudioPlayer(source, item, model, editedCopy, share)
-            item.mime.startsWith("video/") -> VideoPlayer(source, true, videos, choose, model = model, current = item, session = videoSession, adjacent = adjacent, verticalPaging = verticalPaging, portraitChanged = portraitChanged, openWith = openWith, fullScreenChanged = fullScreenChanged, fullscreenExit = fullscreenExit, favorite = favorite, share = share, backup = backup, removeDevice = removeDevice, profile = profile, closeViewer = closeViewer, movieDetails = movieDetails)
+            item.mime.startsWith("video/") -> VideoPlayer(source, true, videos, choose, model = model, current = item, session = videoSession, adjacent = adjacent, verticalPaging = verticalPaging, portraitChanged = portraitChanged, openWith = openWith, fullScreenChanged = fullScreenChanged, fullscreenExit = fullscreenExit, favorite = favorite, share = share, backup = backup, removeDevice = removeDevice, profile = profile, closeViewer = closeViewer, movieDetails = movieDetails, controlsChanged = controlsChanged)
             else -> DocumentViewer(source, item, model, openWith)
         }
     }
