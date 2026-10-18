@@ -127,12 +127,16 @@ class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
         }
     }
     private var peopleIndex: Job? = null
+    internal fun setPeopleEnabled(value: Boolean) {
+        if (!value) peopleIndex?.cancel()
+        peopleAction { people.enable(value) }
+    }
     internal fun indexPeople(cloud: List<app.televault.data.DriveFile>, local: List<app.televault.data.LocalMedia>, restart: Boolean = true) {
         if (!intelligenceActive || !restart && peopleIndex?.isActive == true)return
         peopleIndex?.cancel()
         peopleIndex = viewModelScope.launch(Dispatchers.IO) {
             try {
-                if (!people.state.value.enabled || !ocr.models.backgroundAllowed(false)) return@launch
+                if (!people.state.value.enabled || !ocr.models.backgroundAllowed(false) || !people.prepareAnalysis()) return@launch
                 val epoch = playbackEpoch
                 val byCloud = state.value.backedDeviceFiles
                 val allowCloud = ocr.models.backgroundAllowed()

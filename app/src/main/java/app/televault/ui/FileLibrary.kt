@@ -15,6 +15,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -116,7 +117,7 @@ internal suspend fun projectLibrary(input: LibraryProjectionInput, scope: Librar
 
 /** Browsing never enables a backup subscription. Backup callbacks are explicit user actions. */
 @Composable
-internal fun FileLibrary(files: List<MediaEntry>, cloud: Boolean, chooseCloud: (Boolean) -> Unit, selected: Set<String>, selection: (Set<String>) -> Unit, open: (MediaEntry, List<MediaEntry>) -> Unit, backup: ((MediaEntry) -> Unit)?, search: String, changeSearch: (String) -> Unit, model: DriveViewModel? = null, backedSources: Set<String> = emptySet(), access: (() -> Unit)? = null, chooseFolder: (() -> Unit)? = null, refresh: (() -> Unit)? = null, utilities: ((String) -> Unit)? = null, fileAction: ((MediaEntry, String) -> Unit)? = null, cloudFolders: List<String> = emptyList(), cloudAvailable: Boolean = true, loading: Boolean = false, scanFailed: Boolean = false, modifier: Modifier = Modifier, shownFilesChanged: (Set<String>) -> Unit = {}) {
+internal fun FileLibrary(files: List<MediaEntry>, cloud: Boolean, chooseCloud: (Boolean) -> Unit, selected: Set<String>, selection: (Set<String>) -> Unit, open: (MediaEntry, List<MediaEntry>) -> Unit, backup: ((MediaEntry) -> Unit)?, search: String, changeSearch: (String) -> Unit, model: DriveViewModel? = null, backedSources: Set<String> = emptySet(), access: (() -> Unit)? = null, chooseFolder: (() -> Unit)? = null, refresh: (() -> Unit)? = null, utilities: ((String) -> Unit)? = null, fileAction: ((MediaEntry, String) -> Unit)? = null, cloudFolders: List<String> = emptyList(), cloudAvailable: Boolean = true, loading: Boolean = false, scanFailed: Boolean = false, modifier: Modifier = Modifier, shownFilesChanged: (Set<String>) -> Unit = {}, scroll: androidx.compose.foundation.lazy.LazyListState = rememberLazyListState(), leadingContent: (@Composable () -> Unit)? = null) {
     val offlineIds by (model?.offlineIds ?: kotlinx.coroutines.flow.MutableStateFlow(emptySet<String>())).collectAsStateWithLifecycle()
     var folder by rememberSaveable(cloud) { mutableStateOf("") }
     var category by rememberSaveable(cloud) { mutableStateOf("All files") }
@@ -132,7 +133,6 @@ internal fun FileLibrary(files: List<MediaEntry>, cloud: Boolean, chooseCloud: (
     var folderBackupMenu by remember { mutableStateOf<Map.Entry<String, List<MediaEntry>>?>(null) }
     var recent by rememberSaveable(cloud) { mutableStateOf(false) }
     var menu by remember { mutableStateOf<String?>(null) }
-    val scroll = rememberLazyListState()
     LaunchedEffect(cloud, folder, category, recent, search, sort, mediaFilter) { scroll.scrollToItem(0) }
     val projectionScope = LibraryProjectionScope(model?.playbackEpoch ?: 0L, cloud, folder, category, recent, search, sort, mediaFilter)
     val projection = rememberBackgroundProjection(projectionScope, LibraryProjectionInput(files, cloudFolders), LibraryProjection()) { input -> projectLibrary(input, projectionScope) }
@@ -219,122 +219,128 @@ internal fun FileLibrary(files: List<MediaEntry>, cloud: Boolean, chooseCloud: (
             }) { Text(label("Choose & enable backup", "বেছে ব্যাকআপ চালু করুন")) }
         }, dismissButton = { TextButton({ folderBackupMenu = null }) { Text(label("Cancel", "বাতিল")) } })
     }
-    Column(modifier.fillMaxSize()) {
-        Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(!cloud, {
-                chooseCloud(false)
-                selection(emptySet())
-            }, label = { Text(label("On device", "ফোনে")) }, leadingIcon = { Icon(Icons.Outlined.PhoneAndroid, null, Modifier.size(16.dp)) })
-            FilterChip(cloud, {
-                chooseCloud(true)
-                selection(emptySet())
-            }, enabled = cloudAvailable, label = { Text(label("Cloud E2EE", "ক্লাউড E2EE")) }, leadingIcon = { Icon(Icons.Outlined.CloudDone, null, Modifier.size(16.dp)) })
-            if (refresh != null) IconButton(refresh) { Icon(Icons.Outlined.Refresh, label("Refresh files", "ফাইল রিফ্রেশ")) }
-        }
-        MediaFilterBar(mediaFilters)
-        if (folder.isNotBlank()) Text(label("Filters apply only inside this folder", "ফিল্টার শুধু এই ফোল্ডারের মধ্যে কাজ করে"), Modifier.padding(horizontal = 20.dp), style = MaterialTheme.typography.bodySmall)
-        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-            OutlinedTextField(search, changeSearch, Modifier.fillMaxWidth().padding(vertical = 4.dp), singleLine = true, shape = RoundedCornerShape(24.dp), placeholder = { Text(label("Search files and folders", "ফাইল ও ফোল্ডার খুঁজুন")) }, leadingIcon = { Icon(Icons.Outlined.Search, null) }, trailingIcon = { if (search.isNotEmpty()) IconButton({ changeSearch("") }) { Icon(Icons.Outlined.Close, label("Clear search", "সার্চ মুছুন")) } })
-            if (folder.isBlank() && search.isBlank() && category == "All files" && !recent) {
-                FileCategoryCards(projection.value.filteredFiles, counts = projection.value.counts) { type ->
-                    category = type
-                    selection(emptySet())
-                    recent = type == "Recent"
-                    if (type == "Recent") category = "All files"
-                }
-            } else {
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("All files", "Documents", "Audio", "Photos", "Videos", "Movies", "Apps", "Archives", "Other files").forEach { type ->
-                        FilterChip(category == type, {
-                            category = type
+    val managerChrome = rememberFileChrome(scroll, cloud, folder, category, search)
+    Box(modifier.fillMaxSize().nestedScroll(managerChrome.connection)) {
+        LazyColumn(Modifier.fillMaxSize().clipToBounds(), state = scroll, contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 140.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            item(key = "browse-introduction") {
+                Column(Modifier.fillMaxWidth()) {
+                    leadingContent?.invoke()
+                    Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(!cloud, {
+                            chooseCloud(false)
                             selection(emptySet())
-                            recent = folder.isEmpty() && type != "All files"
-                        }, label = { Text(sectionLabel(type)) })
+                        }, label = { Text(label("On device", "ফোনে")) }, leadingIcon = { Icon(Icons.Outlined.PhoneAndroid, null, Modifier.size(16.dp)) })
+                        FilterChip(cloud, {
+                            chooseCloud(true)
+                            selection(emptySet())
+                        }, enabled = cloudAvailable, label = { Text(label("Cloud E2EE", "ক্লাউড E2EE")) }, leadingIcon = { Icon(Icons.Outlined.CloudDone, null, Modifier.size(16.dp)) })
+                        if (refresh != null) IconButton(refresh) { Icon(Icons.Outlined.Refresh, label("Refresh files", "ফাইল রিফ্রেশ")) }
                     }
-                }
-            }
-            Row(Modifier.padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (folder.isNotEmpty()) {
-                    IconButton({
-                        folder = LibraryPath.parent(folder)
-                        selection(emptySet())
-                    }) { Icon(Icons.Outlined.ArrowBack, label("Parent folder", "আগের ফোল্ডার")) }
-                }
-                Text(if (flat && folder.isBlank()) label("Recent files", "সম্প্রতি যোগ হওয়া ফাইল") else folder.ifBlank { if (cloud) label("Backed-up categories", "ব্যাকআপের ক্যাটাগরি") else label("Device storage", "ফোনের স্টোরেজ") }, Modifier.weight(1f).padding(8.dp), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (category == "All files" && search.isBlank()) {
-                    TextButton({
-                        recent = !recent
-                        selection(emptySet())
-                    }) { Text(if (recent) label("Folders", "ফোল্ডার") else label("Recent", "সাম্প্রতিক")) }
-                }
-                if (utilities != null) {
-                    var options by remember { mutableStateOf(false) }
-                    Box {
-                        IconButton({ options = true }) { Icon(Icons.Outlined.MoreVert, label("Library options", "লাইব্রেরির অপশন")) }
-                        DropdownMenu(options, { options = false }) {
-                            listOf("Newest", "Oldest", "Name", "Name descending", "Size", "Smallest", "Type").forEach { key ->
-                                DropdownMenuItem(text = {
-                                    Text(
-                                        (if (sort == key) "✓ " else "") + when (key) {
-                                            "Newest" -> label("Newest first", "নতুন আগে")
-                                            "Oldest" -> label("Oldest first", "পুরোনো আগে")
-                                            "Name" -> label("Name A–Z", "নাম A–Z")
-                                            "Name descending" -> label("Name Z–A", "নাম Z–A")
-                                            "Smallest" -> label("Smallest first", "ছোট ফাইল আগে")
-                                            "Type" -> label("By file type", "ফাইলের ধরন অনুযায়ী")
-                                            else -> label("Largest first", "বড় ফাইল আগে")
-                                        }
-                                    )
-                                }, onClick = {
-                                    temporarySort = key
-                                    model?.let { source -> sortScope.launch { runCatching { source.preferences.setFileSort(cloud, key) } } }
-                                    options = false
-                                })
+                    MediaFilterBar(mediaFilters)
+                    if (folder.isNotBlank()) Text(label("Filters apply only inside this folder", "ফিল্টার শুধু এই ফোল্ডারের মধ্যে কাজ করে"), Modifier.padding(horizontal = 20.dp), style = MaterialTheme.typography.bodySmall)
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                        OutlinedTextField(search, changeSearch, Modifier.fillMaxWidth().padding(vertical = 4.dp), singleLine = true, shape = RoundedCornerShape(24.dp), placeholder = { Text(label("Search files and folders", "ফাইল ও ফোল্ডার খুঁজুন")) }, leadingIcon = { Icon(Icons.Outlined.Search, null) }, trailingIcon = { if (search.isNotEmpty()) IconButton({ changeSearch("") }) { Icon(Icons.Outlined.Close, label("Clear search", "সার্চ মুছুন")) } })
+                        if (folder.isBlank() && search.isBlank() && category == "All files" && !recent) {
+                            FileCategoryCards(projection.value.filteredFiles, counts = projection.value.counts) { type ->
+                                category = type
+                                selection(emptySet())
+                                recent = type == "Recent"
+                                if (type == "Recent") category = "All files"
                             }
-                            DropdownMenuItem(text = { Text(label("Create folder", "ফোল্ডার তৈরি")) }, leadingIcon = { Icon(Icons.Outlined.CreateNewFolder, null) }, onClick = {
-                                options = false
-                                utilities("Create folder")
-                            })
-                            if (!cloud && cloudAvailable) {
-                                if (folder.isNotBlank() && !flat) {
-                                    DropdownMenuItem(text = { Text(label("This folder’s automatic backup", "এই ফোল্ডারের স্বয়ংক্রিয় ব্যাকআপ")) }, onClick = {
-                                        options = false
-                                        folderBackupMenu = java.util.AbstractMap.SimpleEntry(folder, projection.value.filteredFiles)
-                                    })
+                        } else {
+                            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                listOf("All files", "Documents", "Audio", "Photos", "Videos", "Movies", "Apps", "Archives", "Other files").forEach { type ->
+                                    FilterChip(category == type, {
+                                        category = type
+                                        selection(emptySet())
+                                        recent = folder.isEmpty() && type != "All files"
+                                    }, label = { Text(sectionLabel(type)) })
                                 }
-                                DropdownMenuItem(text = { Text(label("Choose automatic backup folder", "স্বয়ংক্রিয় ব্যাকআপের ফোল্ডার বাছুন")) }, leadingIcon = { Icon(Icons.Outlined.CloudUpload, null) }, onClick = {
-                                    options = false
-                                    utilities("Automatic backup folder")
-                                })
                             }
-                            listOf("Transfers").forEach { key ->
-                                DropdownMenuItem(text = { Text(sectionLabel(key)) }, onClick = {
-                                    options = false
-                                    utilities(key)
-                                })
+                        }
+                        Row(Modifier.padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            if (folder.isNotEmpty()) {
+                                IconButton({
+                                    folder = LibraryPath.parent(folder)
+                                    selection(emptySet())
+                                }) { Icon(Icons.Outlined.ArrowBack, label("Parent folder", "আগের ফোল্ডার")) }
                             }
-                            DropdownMenuItem(text = { Text(label("Select all shown", "দেখানো সব নির্বাচন")) }, onClick = {
-                                options = false
-                                selectCurrent(direct.map { it.file.id }.toSet())
-                            })
-                            if (!cloud && chooseFolder != null) {
-                                DropdownMenuItem(text = { Text(label("Add folder access", "ফোল্ডারের অনুমতি দিন")) }, onClick = {
-                                    options = false
-                                    chooseFolder()
-                                })
+                            Text(if (flat && folder.isBlank()) label("Recent files", "সম্প্রতি যোগ হওয়া ফাইল") else folder.ifBlank { if (cloud) label("Backed-up categories", "ব্যাকআপের ক্যাটাগরি") else label("Device storage", "ফোনের স্টোরেজ") }, Modifier.weight(1f).padding(8.dp), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            if (category == "All files" && search.isBlank()) {
+                                TextButton({
+                                    recent = !recent
+                                    selection(emptySet())
+                                }) { Text(if (recent) label("Folders", "ফোল্ডার") else label("Recent", "সাম্প্রতিক")) }
+                            }
+                            if (utilities != null) {
+                                var options by remember { mutableStateOf(false) }
+                                Box {
+                                    IconButton({ options = true }) { Icon(Icons.Outlined.MoreVert, label("Library options", "লাইব্রেরির অপশন")) }
+                                    DropdownMenu(options, { options = false }) {
+                                        listOf("Newest", "Oldest", "Name", "Name descending", "Size", "Smallest", "Type").forEach { key ->
+                                            DropdownMenuItem(text = {
+                                                Text(
+                                                    (if (sort == key) "✓ " else "") + when (key) {
+                                                        "Newest" -> label("Newest first", "নতুন আগে")
+                                                        "Oldest" -> label("Oldest first", "পুরোনো আগে")
+                                                        "Name" -> label("Name A–Z", "নাম A–Z")
+                                                        "Name descending" -> label("Name Z–A", "নাম Z–A")
+                                                        "Smallest" -> label("Smallest first", "ছোট ফাইল আগে")
+                                                        "Type" -> label("By file type", "ফাইলের ধরন অনুযায়ী")
+                                                        else -> label("Largest first", "বড় ফাইল আগে")
+                                                    }
+                                                )
+                                            }, onClick = {
+                                                temporarySort = key
+                                                model?.let { source -> sortScope.launch { runCatching { source.preferences.setFileSort(cloud, key) } } }
+                                                options = false
+                                            })
+                                        }
+                                        DropdownMenuItem(text = { Text(label("Create folder", "ফোল্ডার তৈরি")) }, leadingIcon = { Icon(Icons.Outlined.CreateNewFolder, null) }, onClick = {
+                                            options = false
+                                            utilities("Create folder")
+                                        })
+                                        if (!cloud && cloudAvailable) {
+                                            if (folder.isNotBlank() && !flat) {
+                                                DropdownMenuItem(text = { Text(label("This folder’s automatic backup", "এই ফোল্ডারের স্বয়ংক্রিয় ব্যাকআপ")) }, onClick = {
+                                                    options = false
+                                                    folderBackupMenu = java.util.AbstractMap.SimpleEntry(folder, projection.value.filteredFiles)
+                                                })
+                                            }
+                                            DropdownMenuItem(text = { Text(label("Choose automatic backup folder", "স্বয়ংক্রিয় ব্যাকআপের ফোল্ডার বাছুন")) }, leadingIcon = { Icon(Icons.Outlined.CloudUpload, null) }, onClick = {
+                                                options = false
+                                                utilities("Automatic backup folder")
+                                            })
+                                        }
+                                        listOf("Transfers").forEach { key ->
+                                            DropdownMenuItem(text = { Text(sectionLabel(key)) }, onClick = {
+                                                options = false
+                                                utilities(key)
+                                            })
+                                        }
+                                        DropdownMenuItem(text = { Text(label("Select all shown", "দেখানো সব নির্বাচন")) }, onClick = {
+                                            options = false
+                                            selectCurrent(direct.map { it.file.id }.toSet())
+                                        })
+                                        if (!cloud && chooseFolder != null) {
+                                            DropdownMenuItem(text = { Text(label("Add folder access", "ফোল্ডারের অনুমতি দিন")) }, onClick = {
+                                                options = false
+                                                chooseFolder()
+                                            })
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if (!cloud && access != null) {
+                            TextButton(access, Modifier.padding(horizontal = 12.dp)) {
+                                Icon(Icons.Outlined.FolderOpen, null, Modifier.size(18.dp))
+                                Text(label("Device file access", "ফোনের ফাইলের অনুমতি"))
                             }
                         }
                     }
                 }
             }
-            if (!cloud && access != null) {
-                TextButton(access, Modifier.padding(horizontal = 12.dp)) {
-                    Icon(Icons.Outlined.FolderOpen, null, Modifier.size(18.dp))
-                    Text(label("Device file access", "ফোনের ফাইলের অনুমতি"))
-                }
-            }
-        }
-        LazyColumn(Modifier.weight(1f).clipToBounds(), state = scroll, contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 110.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             if (directories.isEmpty() && direct.isEmpty()) {
                 item {
                     Text(
@@ -448,6 +454,20 @@ internal fun FileLibrary(files: List<MediaEntry>, cloud: Boolean, chooseCloud: (
                     }, colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent))
                 }
             }
+        }
+        BrowseCompactBar(managerChrome.mode == app.televault.domain.PhotoChromePolicy.Mode.COMPACT && selected.isEmpty(), Modifier.align(Alignment.TopCenter)) {
+            Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(!cloud, {
+                    chooseCloud(false)
+                    selection(emptySet())
+                }, label = { Text(label("On device", "ফোনে")) }, leadingIcon = { Icon(Icons.Outlined.PhoneAndroid, null, Modifier.size(16.dp)) })
+                FilterChip(cloud, {
+                    chooseCloud(true)
+                    selection(emptySet())
+                }, enabled = cloudAvailable, label = { Text(label("Cloud E2EE", "ক্লাউড E2EE")) }, leadingIcon = { Icon(Icons.Outlined.CloudDone, null, Modifier.size(16.dp)) })
+                if (refresh != null) IconButton(refresh) { Icon(Icons.Outlined.Refresh, label("Refresh files", "ফাইল রিফ্রেশ")) }
+            }
+            MediaFilterBar(mediaFilters)
         }
     }
 }

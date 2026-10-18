@@ -9,6 +9,10 @@ import app.televault.telegram.TelegramGateway
 
 @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class, androidx.compose.ui.InternalComposeUiApi::class)
 class TeleVaultApplication : Application() {
+    override fun attachBaseContext(base: android.content.Context) {
+        super.attachBaseContext(AppLanguage.context(base))
+    }
+    internal val faceModels by lazy { app.televault.people.FaceModels(this) }
     internal val ocrModels by lazy { app.televault.ocr.OcrModels(this) }
     val motion by lazy { AppMotion(this) }
     internal val privateVault by lazy { app.televault.data.PrivateVaultRepository(this) }

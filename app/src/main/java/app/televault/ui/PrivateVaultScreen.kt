@@ -25,6 +25,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -43,7 +44,7 @@ private enum class VaultAction { DOWNLOAD, REMOVE, DELETE, KEY, DELETE_ALL, MIGR
 /** Vault secrets stay in foreground memory and are excluded from saved navigation state. */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-internal fun PrivateVaultScreen(model: DriveViewModel, modifier: Modifier = Modifier, pendingCopies: List<Uri> = emptyList(), copiesImported: () -> Unit = {}) {
+internal fun PrivateVaultScreen(model: DriveViewModel, modifier: Modifier = Modifier, pendingCopies: List<Uri> = emptyList(), leadingContent: (@Composable () -> Unit)? = null, copiesImported: () -> Unit = {}) {
     val context = LocalContext.current
     val vault = remember { (context.applicationContext as TeleVaultApplication).privateVault }
     val unlocked by vault.unlocked.collectAsStateWithLifecycle()
@@ -282,12 +283,13 @@ internal fun PrivateVaultScreen(model: DriveViewModel, modifier: Modifier = Modi
     val colors = MaterialTheme.colorScheme
     Column(modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         if (message.isNotBlank()) {
-            Surface(color = colors.secondaryContainer, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+            Surface(color = colors.secondaryContainer, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp).then(if (leadingContent != null) Modifier.statusBarsPadding() else Modifier)) {
                 Text(message, Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall, color = colors.onSecondaryContainer)
             }
         }
         if (!unlocked) {
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(vertical = 16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                leadingContent?.invoke()
                 ForgottenVaultManager()
                 Box(Modifier.size(112.dp).background(Brush.radialGradient(listOf(colors.tertiaryContainer, colors.background)), CircleShape), contentAlignment = Alignment.Center) { Icon(Icons.Outlined.Lock, null, Modifier.size(52.dp), tint = colors.tertiary) }
                 Text(label("Your private space", "আপনার ব্যক্তিগত জায়গা"), style = MaterialTheme.typography.headlineSmall)
@@ -416,72 +418,76 @@ internal fun PrivateVaultScreen(model: DriveViewModel, modifier: Modifier = Modi
                 Spacer(Modifier.height(16.dp))
             }
         } else {
-            Surface(color = colors.tertiaryContainer, shape = RoundedCornerShape(24.dp), modifier = Modifier.fillMaxWidth()) {
-                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Outlined.EnhancedEncryption, null, tint = colors.onTertiaryContainer)
-                    Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                        Text(vaultName.ifBlank { label("Private Vault", "প্রাইভেট ভল্ট") }, style = MaterialTheme.typography.titleMedium, color = colors.onTertiaryContainer, maxLines = 2)
-                        Text("${entries.size} " + label("protected files", "সুরক্ষিত ফাইল"), style = MaterialTheme.typography.bodySmall, color = colors.onTertiaryContainer)
-                    }
-                    Box {
-                        IconButton({ menu = true }) { Icon(Icons.Outlined.MoreVert, label("Vault settings", "Vault সেটিংস"), tint = colors.onTertiaryContainer) }
-                        DropdownMenu(menu, { menu = false }) {
-                            DropdownMenuItem({ Text(label("Keep Telegram backup files", "Telegram-এর ব্যাকআপ ফাইল রাখুন")) }, {
-                                menu = false
-                                storageWarning = true
-                            }, leadingIcon = { Icon(Icons.Outlined.WarningAmber, null) })
-                            DropdownMenuItem({ Text(label("Add folder", "ফোল্ডার যোগ করুন")) }, {
-                                menu = false
-                                importFolder.launch(null)
-                            }, leadingIcon = { Icon(Icons.Outlined.CreateNewFolder, null) })
-                            if (entries.any { it.cloud == null }) {
-                                DropdownMenuItem({ Text(label("Protect legacy files in cloud", "পুরোনো Vault ফাইল cloud-এ সুরক্ষিত করুন")) }, {
+            val vaultControls: @Composable () -> Unit = {
+                Surface(color = colors.tertiaryContainer, shape = RoundedCornerShape(24.dp), modifier = Modifier.fillMaxWidth()) {
+                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Outlined.EnhancedEncryption, null, tint = colors.onTertiaryContainer)
+                        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                            Text(vaultName.ifBlank { label("Private Vault", "প্রাইভেট ভল্ট") }, style = MaterialTheme.typography.titleMedium, color = colors.onTertiaryContainer, maxLines = 2)
+                            Text("${entries.size} " + label("protected files", "সুরক্ষিত ফাইল"), style = MaterialTheme.typography.bodySmall, color = colors.onTertiaryContainer)
+                        }
+                        Box {
+                            IconButton({ menu = true }) { Icon(Icons.Outlined.MoreVert, label("Vault settings", "Vault সেটিংস"), tint = colors.onTertiaryContainer) }
+                            DropdownMenu(menu, { menu = false }) {
+                                DropdownMenuItem({ Text(label("Keep Telegram backup files", "Telegram-এর ব্যাকআপ ফাইল রাখুন")) }, {
                                     menu = false
-                                    chooseAction(VaultAction.MIGRATE, emptySet())
-                                }, leadingIcon = { Icon(Icons.Outlined.CloudUpload, null) })
+                                    storageWarning = true
+                                }, leadingIcon = { Icon(Icons.Outlined.WarningAmber, null) })
+                                DropdownMenuItem({ Text(label("Add folder", "ফোল্ডার যোগ করুন")) }, {
+                                    menu = false
+                                    importFolder.launch(null)
+                                }, leadingIcon = { Icon(Icons.Outlined.CreateNewFolder, null) })
+                                if (entries.any { it.cloud == null }) {
+                                    DropdownMenuItem({ Text(label("Protect legacy files in cloud", "পুরোনো Vault ফাইল cloud-এ সুরক্ষিত করুন")) }, {
+                                        menu = false
+                                        chooseAction(VaultAction.MIGRATE, emptySet())
+                                    }, leadingIcon = { Icon(Icons.Outlined.CloudUpload, null) })
+                                }
+                                DropdownMenuItem({ Text(label("Refresh cloud Vault", "Cloud Vault রিফ্রেশ")) }, {
+                                    menu = false
+                                    work { vault.refreshCloud() }
+                                }, leadingIcon = { Icon(Icons.Outlined.Refresh, null) })
+                                DropdownMenuItem({ Text(if (biometricEnabled) label("Disable fingerprint access", "ফিঙ্গারপ্রিন্ট বন্ধ করুন") else label("Enable fingerprint access", "ফিঙ্গারপ্রিন্ট চালু করুন")) }, {
+                                    menu = false
+                                    chooseAction(if (biometricEnabled) VaultAction.BIOMETRIC_DISABLE else VaultAction.BIOMETRIC_ENABLE, emptySet())
+                                }, leadingIcon = { Icon(Icons.Outlined.Fingerprint, null) })
+                                DropdownMenuItem({ Text(label("View private key", "প্রাইভেট কী দেখুন")) }, {
+                                    menu = false
+                                    chooseAction(VaultAction.KEY, emptySet())
+                                }, leadingIcon = { Icon(Icons.Outlined.Key, null) })
+                                DropdownMenuItem({ Text(label("Delete entire Vault", "সম্পূর্ণ Vault মুছুন")) }, {
+                                    menu = false
+                                    chooseAction(VaultAction.DELETE_ALL, emptySet())
+                                }, leadingIcon = { Icon(Icons.Outlined.DeleteForever, null, tint = colors.error) })
+                                DropdownMenuItem({ Text(label("Lock Vault", "Vault লক")) }, {
+                                    menu = false
+                                    vault.lock()
+                                }, leadingIcon = { Icon(Icons.Outlined.Lock, null) })
                             }
-                            DropdownMenuItem({ Text(label("Refresh cloud Vault", "Cloud Vault রিফ্রেশ")) }, {
-                                menu = false
-                                work { vault.refreshCloud() }
-                            }, leadingIcon = { Icon(Icons.Outlined.Refresh, null) })
-                            DropdownMenuItem({ Text(if (biometricEnabled) label("Disable fingerprint access", "ফিঙ্গারপ্রিন্ট বন্ধ করুন") else label("Enable fingerprint access", "ফিঙ্গারপ্রিন্ট চালু করুন")) }, {
-                                menu = false
-                                chooseAction(if (biometricEnabled) VaultAction.BIOMETRIC_DISABLE else VaultAction.BIOMETRIC_ENABLE, emptySet())
-                            }, leadingIcon = { Icon(Icons.Outlined.Fingerprint, null) })
-                            DropdownMenuItem({ Text(label("View private key", "প্রাইভেট কী দেখুন")) }, {
-                                menu = false
-                                chooseAction(VaultAction.KEY, emptySet())
-                            }, leadingIcon = { Icon(Icons.Outlined.Key, null) })
-                            DropdownMenuItem({ Text(label("Delete entire Vault", "সম্পূর্ণ Vault মুছুন")) }, {
-                                menu = false
-                                chooseAction(VaultAction.DELETE_ALL, emptySet())
-                            }, leadingIcon = { Icon(Icons.Outlined.DeleteForever, null, tint = colors.error) })
-                            DropdownMenuItem({ Text(label("Lock Vault", "Vault লক")) }, {
-                                menu = false
-                                vault.lock()
-                            }, leadingIcon = { Icon(Icons.Outlined.Lock, null) })
                         }
                     }
                 }
-            }
-            VaultTransferStatus()
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilledTonalButton({ importMedia.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)) }, Modifier.weight(1f), enabled = !busy) {
-                    Icon(Icons.Outlined.AddPhotoAlternate, null)
-                    Spacer(Modifier.width(6.dp))
-                    Text(label("Photos & videos", "ছবি ও ভিডিও"))
+                VaultTransferStatus()
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilledTonalButton({ importMedia.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)) }, Modifier.weight(1f), enabled = !busy) {
+                        Icon(Icons.Outlined.AddPhotoAlternate, null)
+                        Spacer(Modifier.width(6.dp))
+                        Text(label("Photos & videos", "ছবি ও ভিডিও"))
+                    }
+                    OutlinedButton({ importFiles.launch(arrayOf("*/*")) }, enabled = !busy) {
+                        Icon(Icons.Outlined.FolderOpen, null)
+                        Spacer(Modifier.width(6.dp))
+                        Text(label("Files", "ফাইল"))
+                    }
                 }
-                OutlinedButton({ importFiles.launch(arrayOf("*/*")) }, enabled = !busy) {
-                    Icon(Icons.Outlined.FolderOpen, null)
-                    Spacer(Modifier.width(6.dp))
-                    Text(label("Files", "ফাইল"))
+                Row(Modifier.horizontalScroll(rememberScrollState()).padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("All", "Photos", "Videos", "Audio", "Files").forEach { name -> FilterChip(category == name, { category = name }, label = { Text(name) }) }
                 }
             }
-            Row(Modifier.horizontalScroll(rememberScrollState()).padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("All", "Photos", "Videos", "Audio", "Files").forEach { name -> FilterChip(category == name, { category = name }, label = { Text(name) }) }
-            }
+            val grid = remember(unlocked, category, vault.selectedId) { androidx.compose.foundation.lazy.grid.LazyGridState() }
+            val chrome = rememberGridChrome(grid, category)
             if (selected.isNotEmpty()) {
-                Surface(color = colors.primaryContainer, shape = RoundedCornerShape(20.dp)) {
+                Surface(modifier = if (leadingContent != null) Modifier.statusBarsPadding() else Modifier, color = colors.primaryContainer, shape = RoundedCornerShape(20.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         IconButton({ selected = emptySet() }) { Icon(Icons.Outlined.Close, label("Clear selection", "নির্বাচন বাতিল")) }
                         Text("${selected.size}", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
@@ -500,55 +506,68 @@ internal fun PrivateVaultScreen(model: DriveViewModel, modifier: Modifier = Modi
                     else -> true
                 }
             }
-            LazyVerticalGrid(columns = GridCells.Adaptive(148.dp), modifier = Modifier.weight(1f), contentPadding = PaddingValues(top = 8.dp, bottom = 20.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (filtered.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) { Text(label("Add photos, videos or files to your protected space. Originals are removed only after the encrypted cloud copy is verified.", "সুরক্ষিত জায়গায় ছবি, ভিডিও বা ফাইল যোগ করুন। Encrypted cloud copy যাচাই হওয়ার পরেই মূল ফাইল মুছবে।"), Modifier.padding(vertical = 20.dp), style = MaterialTheme.typography.bodyMedium) }
-                items(filtered, key = { it.id }) { item ->
-                    var itemMenu by remember { mutableStateOf(false) }
-                    Surface(
-                        Modifier.fillMaxWidth().combinedClickable(onClick = {
-                            if (selected.isNotEmpty()) {
-                                selected = if (item.id in selected) selected - item.id else selected + item.id
-                            } else if (item.mime.startsWith("image/") || item.mime.startsWith("video/") || item.mime.startsWith("audio/")) {
-                                opening = item
-                            } else {
-                                chooseAction(VaultAction.DOWNLOAD, setOf(item.id))
-                            }
-                        }, onLongClick = { selected = selected + item.id }),
-                        shape = RoundedCornerShape(20.dp),
-                        color = if (item.id in selected) colors.primaryContainer else colors.surfaceContainerLow
-                    ) {
+            Box(Modifier.weight(1f)) {
+                LazyVerticalGrid(columns = GridCells.Adaptive(148.dp), state = grid, modifier = Modifier.fillMaxSize().nestedScroll(chrome.connection), contentPadding = PaddingValues(top = 8.dp, bottom = 140.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    item(key = "vault-introduction", span = { GridItemSpan(maxLineSpan) }) {
                         Column {
-                            Box(Modifier.fillMaxWidth().aspectRatio(1.15f)) {
-                                val artworkUri = remember(item.id, unlocked) { runCatching { vault.uri(item.id) }.getOrNull() }
-                                if (artworkUri != null) VaultGalleryArtwork(item, artworkUri)
-                                if (item.id in selected) Icon(Icons.Outlined.CheckCircle, label("Selected", "নির্বাচিত"), Modifier.align(Alignment.TopStart).padding(10.dp), tint = colors.primary)
-                                Box(Modifier.align(Alignment.TopEnd)) {
-                                    IconButton({ itemMenu = true }) { Icon(Icons.Outlined.MoreVert, label("File actions", "ফাইলের অপশন")) }
-                                    DropdownMenu(itemMenu, { itemMenu = false }) {
-                                        DropdownMenuItem({ Text(label("Download encrypted ZIP", "এনক্রিপ্টেড ZIP ডাউনলোড")) }, {
-                                            itemMenu = false
-                                            chooseAction(VaultAction.DOWNLOAD, setOf(item.id))
-                                        })
-                                        DropdownMenuItem({ Text(label("Export & remove", "ZIP নিয়ে Vault থেকে সরান")) }, {
-                                            itemMenu = false
-                                            chooseAction(VaultAction.REMOVE, setOf(item.id))
-                                        })
-                                        DropdownMenuItem({ Text(label("Permanently delete", "স্থায়ীভাবে মুছুন")) }, {
-                                            itemMenu = false
-                                            chooseAction(VaultAction.DELETE, setOf(item.id))
-                                        })
+                            leadingContent?.invoke()
+                            vaultControls()
+                        }
+                    }
+                    if (filtered.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) { Text(label("Add photos, videos or files to your protected space. Originals are removed only after the encrypted cloud copy is verified.", "সুরক্ষিত জায়গায় ছবি, ভিডিও বা ফাইল যোগ করুন। Encrypted cloud copy যাচাই হওয়ার পরেই মূল ফাইল মুছবে।"), Modifier.padding(vertical = 20.dp), style = MaterialTheme.typography.bodyMedium) }
+                    items(filtered, key = { it.id }) { item ->
+                        var itemMenu by remember { mutableStateOf(false) }
+                        Surface(
+                            Modifier.fillMaxWidth().combinedClickable(onClick = {
+                                if (selected.isNotEmpty()) {
+                                    selected = if (item.id in selected) selected - item.id else selected + item.id
+                                } else if (item.mime.startsWith("image/") || item.mime.startsWith("video/") || item.mime.startsWith("audio/")) {
+                                    opening = item
+                                } else {
+                                    chooseAction(VaultAction.DOWNLOAD, setOf(item.id))
+                                }
+                            }, onLongClick = { selected = selected + item.id }),
+                            shape = RoundedCornerShape(20.dp),
+                            color = if (item.id in selected) colors.primaryContainer else colors.surfaceContainerLow
+                        ) {
+                            Column {
+                                Box(Modifier.fillMaxWidth().aspectRatio(1.15f)) {
+                                    val artworkUri = remember(item.id, unlocked) { runCatching { vault.uri(item.id) }.getOrNull() }
+                                    if (artworkUri != null) VaultGalleryArtwork(item, artworkUri)
+                                    if (item.id in selected) Icon(Icons.Outlined.CheckCircle, label("Selected", "নির্বাচিত"), Modifier.align(Alignment.TopStart).padding(10.dp), tint = colors.primary)
+                                    Box(Modifier.align(Alignment.TopEnd)) {
+                                        IconButton({ itemMenu = true }) { Icon(Icons.Outlined.MoreVert, label("File actions", "ফাইলের অপশন")) }
+                                        DropdownMenu(itemMenu, { itemMenu = false }) {
+                                            DropdownMenuItem({ Text(label("Download encrypted ZIP", "এনক্রিপ্টেড ZIP ডাউনলোড")) }, {
+                                                itemMenu = false
+                                                chooseAction(VaultAction.DOWNLOAD, setOf(item.id))
+                                            })
+                                            DropdownMenuItem({ Text(label("Export & remove", "ZIP নিয়ে Vault থেকে সরান")) }, {
+                                                itemMenu = false
+                                                chooseAction(VaultAction.REMOVE, setOf(item.id))
+                                            })
+                                            DropdownMenuItem({ Text(label("Permanently delete", "স্থায়ীভাবে মুছুন")) }, {
+                                                itemMenu = false
+                                                chooseAction(VaultAction.DELETE, setOf(item.id))
+                                            })
+                                        }
+                                    }
+                                }
+                                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Text(item.name, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                    Text(sizeLabel(item.size), style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Icon(Icons.Outlined.Lock, null, Modifier.size(12.dp), tint = colors.primary)
+                                        Text(if (item.cloud == null) label("Encrypted", "এনক্রিপ্টেড") else label("Double encrypted", "ডবল এনক্রিপ্টেড"), style = MaterialTheme.typography.labelSmall, color = colors.primary)
                                     }
                                 }
                             }
-                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text(item.name, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                                Text(sizeLabel(item.size), style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Icon(Icons.Outlined.Lock, null, Modifier.size(12.dp), tint = colors.primary)
-                                    Text(if (item.cloud == null) label("Encrypted", "এনক্রিপ্টেড") else label("Double encrypted", "ডবল এনক্রিপ্টেড"), style = MaterialTheme.typography.labelSmall, color = colors.primary)
-                                }
-                            }
                         }
+                    }
+                }
+                BrowseCompactBar(chrome.mode == app.televault.domain.PhotoChromePolicy.Mode.COMPACT && selected.isEmpty(), Modifier.align(Alignment.TopCenter)) {
+                    Row(Modifier.horizontalScroll(rememberScrollState()).padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf("All", "Photos", "Videos", "Audio", "Files").forEach { name -> FilterChip(category == name, { category = name }, label = { Text(name) }) }
                     }
                 }
             }

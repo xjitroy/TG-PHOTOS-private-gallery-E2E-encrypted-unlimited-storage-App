@@ -17,7 +17,7 @@ internal fun mediaStorageSnapshot(files: File, noBackup: File, cache: File, limi
     noBackup.listFiles().orEmpty().forEach { child ->
         when {
             child.name in setOf("people", "ocr-index", "intelligence-private") -> derived = storageSum(derived, storageTreeBytes(child))
-            child.name == "ocr-models" -> models = storageSum(models, storageTreeBytes(child))
+            child.name in setOf("ocr-models", "face-models-v2") -> models = storageSum(models, storageTreeBytes(child))
             child.name in setOf("stream-cipher-cache", "photo-cipher-cache") -> temporary = storageSum(temporary, storageTreeBytes(child))
             child.name == "offline-cipher" -> offline = storageSum(offline, storageTreeBytes(child))
             child.name == "drive-cache" -> staging = storageSum(staging, storageTreeBytes(child))

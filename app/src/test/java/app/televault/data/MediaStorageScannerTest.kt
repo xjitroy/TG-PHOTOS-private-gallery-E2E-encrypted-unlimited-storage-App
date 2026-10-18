@@ -82,9 +82,10 @@ class MediaStorageScannerTest {
             sized("noBackup/people/7/vault/catalog.bin", 3)
             sized("noBackup/ocr-index/7/vault/word.bin", 5)
             sized("noBackup/ocr-models/tessdata/ben.traineddata", 7)
+            sized("noBackup/face-models-v2/sface.onnx", 11)
             val result = mediaStorageSnapshot(File(root, "files"), File(root, "noBackup"), File(root, "cache"), 4096)
             assertEquals(8L, result.derived)
-            assertEquals(7L, result.models)
+            assertEquals(18L, result.models)
             assertEquals(0L, result.other)
             assertEquals(0L, result.temporary)
         } finally {

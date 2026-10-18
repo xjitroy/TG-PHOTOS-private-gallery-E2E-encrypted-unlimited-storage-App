@@ -51,6 +51,10 @@ import kotlinx.coroutines.launch
 
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class MainActivity : ComponentActivity() {
+    override fun attachBaseContext(base: android.content.Context) {
+        super.attachBaseContext(AppLanguage.context(base))
+    }
+
     // Notification navigation waits behind the normal authentication and Drive-readiness gates.
     private var exportRequestToken by mutableStateOf(0)
     private var exportRequestSequence = 0

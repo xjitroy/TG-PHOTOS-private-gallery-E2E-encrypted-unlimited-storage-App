@@ -1,13 +1,15 @@
 package app.televault.people
 
+import ai.onnxruntime.OnnxTensor
+import ai.onnxruntime.OrtEnvironment
+import ai.onnxruntime.OrtSession
 import android.content.Context
 import android.graphics.*
+import app.televault.domain.FaceAlignment
 import app.televault.domain.FaceSimilarity
 import java.io.ByteArrayOutputStream
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
+import java.nio.FloatBuffer
 import kotlin.math.*
-import org.tensorflow.lite.Interpreter
 
 internal data class FaceSample(val embedding: FloatArray, val jpeg: ByteArray, val source: String = "", val contentHash: String = "") {
     fun wipe() {
@@ -16,34 +18,27 @@ internal data class FaceSample(val embedding: FloatArray, val jpeg: ByteArray, v
     }
 }
 
-/** CPU-only bundled models; caller serializes access and owns all transient output. */
-internal class FaceEngine(private val context: Context) : AutoCloseable {
-    private fun model(name: String): ByteBuffer = context.assets.open("models/$name.tflite").use { stream ->
-        val bytes = stream.readBytes()
-        try {
-            ByteBuffer.allocateDirect(bytes.size).order(ByteOrder.nativeOrder()).apply {
-                put(bytes)
-                rewind()
-            }
-        } finally {
-            bytes.fill(0)
-        }
-    }
-    private val detector: Interpreter
-    private val recognizer: Interpreter
+/** YuNet detection + five-point SFace recognition, CPU only, using verified downloaded models. */
+internal class FaceEngine(context: Context) : AutoCloseable {
+    private val environment = OrtEnvironment.getEnvironment()
+    private val detector: OrtSession
+    private val recognizer: OrtSession
     private data class Detection(val box: RectF, val points: FloatArray, val score: Float)
     init {
-        val first = Interpreter(model("blazeface_short_range"), Interpreter.Options().setNumThreads(2))
-        var second: Interpreter? = null
+        val models = (context.applicationContext as app.televault.TeleVaultApplication).faceModels
+        fun session(name: String) = OrtSession.SessionOptions().use { options ->
+            options.setIntraOpNumThreads(2)
+            options.setInterOpNumThreads(1)
+            options.setCPUArenaAllocator(false)
+            options.setMemoryPatternOptimization(false)
+            options.setSessionLogLevel(ai.onnxruntime.OrtLoggingLevel.ORT_LOGGING_LEVEL_ERROR)
+            environment.createSession(java.io.File(models.directory, name).absolutePath, options)
+        }
+        val first = session("face_detection_yunet_2023mar.onnx")
         try {
-            second = Interpreter(model("mobile_facenet"), Interpreter.Options().setNumThreads(2))
-            check(first.getInputTensor(0).shape().contentEquals(intArrayOf(1, 128, 128, 3)))
-            check(second.getInputTensor(0).shape().contentEquals(intArrayOf(1, 3, 112, 112)))
-            check(second.getOutputTensor(0).shape().contentEquals(intArrayOf(2, 128)))
+            recognizer = session("face_recognition_sface_2021dec.onnx")
             detector = first
-            recognizer = second
         } catch (error: Throwable) {
-            second?.close()
             first.close()
             throw error
         }
@@ -60,82 +55,84 @@ internal class FaceEngine(private val context: Context) : AutoCloseable {
         }
     }
     private fun detect(source: Bitmap): List<FaceSample> {
-        val image = Bitmap.createBitmap(128, 128, Bitmap.Config.ARGB_8888)
-        val pixels = IntArray(128 * 128)
-        val input = ByteBuffer.allocateDirect(128 * 128 * 3 * 4).order(ByteOrder.nativeOrder())
-        val boxes = Array(1) { Array(896) { FloatArray(16) } }
-        val scores = Array(1) { Array(896) { FloatArray(1) } }
+        val candidates = mutableListOf<Detection>()
+        val image = Bitmap.createBitmap(640, 640, Bitmap.Config.ARGB_8888)
+        val pixels = IntArray(640 * 640)
+        val input = FloatArray(3 * 640 * 640)
         val samples = mutableListOf<FaceSample>()
+        val paint = Paint(Paint.FILTER_BITMAP_FLAG)
         try {
-            val candidates = mutableListOf<Detection>()
-            val paint = Paint(Paint.FILTER_BITMAP_FLAG)
-            for (window in app.televault.domain.FaceScanWindows.forImage(source.width, source.height)) {
-                val scale = 128f / max(window.width(), window.height())
-                val dx = (128 - window.width() * scale) / 2
-                val dy = (128 - window.height() * scale) / 2
-                image.eraseColor(Color.BLACK)
-                Canvas(image).drawBitmap(source, Rect(window.left(), window.top(), window.left() + window.width(), window.top() + window.height()), RectF(dx, dy, dx + window.width() * scale, dy + window.height() * scale), paint)
-                image.getPixels(pixels, 0, 128, 0, 0, 128, 128)
-                input.clear()
-                for (p in pixels) {
-                    input.putFloat(((p shr 16) and 255) / 127.5f - 1)
-                    input.putFloat(((p shr 8) and 255) / 127.5f - 1)
-                    input.putFloat((p and 255) / 127.5f - 1)
+            val windows = mutableListOf(Rect(0, 0, source.width, source.height))
+            // Five overlapping views cover the full original without dozens of high-resolution passes.
+            if (max(source.width, source.height) > 1280) {
+                val width = max(1, (source.width * .6f).roundToInt())
+                val height = max(1, (source.height * .6f).roundToInt())
+                for (y in listOf(0, source.height - height).distinct()) for (x in listOf(0, source.width - width).distinct()) windows += Rect(x, y, x + width, y + height)
+            }
+            for (window in windows) {
+                val scale = 640f / max(window.width(), window.height())
+                val dx = (640 - window.width() * scale) / 2
+                val dy = (640 - window.height() * scale) / 2
+                Canvas(image).apply {
+                    drawColor(Color.BLACK)
+                    drawBitmap(source, window, RectF(dx, dy, dx + window.width() * scale, dy + window.height() * scale), paint)
                 }
-                input.rewind()
-                detector.runForMultipleInputsOutputs(arrayOf(input), mutableMapOf<Int, Any>(0 to boxes, 1 to scores))
-                val tile = mutableListOf<Detection>()
-                var index = 0
-                for (grid in intArrayOf(16, 8)) {
-                    for (y in 0 until grid) {
-                        for (x in 0 until grid) {
-                            repeat(if (grid == 16) 2 else 6) {
-                                val row = boxes[0][index]
-                                val score = 1f / (1f + exp(-scores[0][index][0].coerceIn(-80f, 80f)))
-                                index++
-                                if (score >= .75f && row.all { it.isFinite() }) {
-                                    val ax = (x + .5f) * 128 / grid
-                                    val ay = (y + .5f) * 128 / grid
-                                    val cx = row[0] + ax
-                                    val cy = row[1] + ay
-                                    val box = RectF((cx - row[2] / 2 - dx) / scale + window.left(), (cy - row[3] / 2 - dy) / scale + window.top(), (cx + row[2] / 2 - dx) / scale + window.left(), (cy + row[3] / 2 - dy) / scale + window.top())
-                                    if (box.width() >= 24 && box.height() >= 24 && box.centerX() in window.left().toFloat()..(window.left() + window.width()).toFloat() && box.centerY() in window.top().toFloat()..(window.top() + window.height()).toFloat()) {
-                                        val points = FloatArray(12) { k -> (row[4 + k] + (if (k % 2 == 0) ax - dx else ay - dy)) / scale + if (k % 2 == 0) window.left() else window.top() }
-                                        tile += Detection(box, points, score)
-                                    }
-                                }
+                image.getPixels(pixels, 0, 640, 0, 0, 640, 640)
+                // YuNet/OpenCV blobFromImage uses BGR, scale 1 and zero mean.
+                for (channel in 0..2) for (i in pixels.indices) input[channel * pixels.size + i] = ((pixels[i] shr (channel * 8)) and 255).toFloat()
+                OnnxTensor.createTensor(environment, FloatBuffer.wrap(input), longArrayOf(1, 3, 640, 640)).use { tensor ->
+                    detector.run(mapOf("input" to tensor)).use { output ->
+                        for (stride in intArrayOf(8, 16, 32)) {
+                            val cls = rows(output, "cls_$stride")
+                            val obj = rows(output, "obj_$stride")
+                            val boxes = rows(output, "bbox_$stride")
+                            val points = rows(output, "kps_$stride")
+                            val columns = 640 / stride
+                            for (i in cls.indices) {
+                                val score = sqrt(cls[i][0].coerceIn(0f, 1f) * obj[i][0].coerceIn(0f, 1f))
+                                if (score < .9f) continue
+                                val col = i % columns
+                                val row = i / columns
+                                val cx = (col + boxes[i][0]) * stride
+                                val cy = (row + boxes[i][1]) * stride
+                                val width = exp(boxes[i][2]) * stride
+                                val height = exp(boxes[i][3]) * stride
+                                val box = RectF((cx - width / 2 - dx) / scale + window.left, (cy - height / 2 - dy) / scale + window.top, (cx + width / 2 - dx) / scale + window.left, (cy + height / 2 - dy) / scale + window.top)
+                                if (box.width() < 32 || box.height() < 32 || box.centerX() !in window.left.toFloat()..window.right.toFloat() || box.centerY() !in window.top.toFloat()..window.bottom.toFloat()) continue
+                                val keypoints = FloatArray(10) { j -> ((points[i][j] + if (j % 2 == 0) col else row) * stride - if (j % 2 == 0) dx else dy) / scale + if (j % 2 == 0) window.left else window.top }
+                                candidates += Detection(box, keypoints, score)
                             }
+                            cls.forEach { it.fill(0f) }
+                            obj.forEach { it.fill(0f) }
+                            boxes.forEach { it.fill(0f) }
+                            points.forEach { it.fill(0f) }
                         }
                     }
                 }
-                val retained = mutableListOf<Detection>()
-                for (candidate in tile.sortedByDescending { it.score }) {
-                    if (retained.none { overlap(it.box, candidate.box) > .3f }) retained += candidate
-                    if (retained.size == 32)break
-                }
-                candidates += retained
             }
             val kept = mutableListOf<Detection>()
-            for (candidate in candidates.sortedByDescending { it.score }) {
-                if (kept.none { overlap(it.box, candidate.box) > .3f }) kept += candidate
+            for (face in candidates.sortedByDescending { it.score }) {
+                if (kept.none { overlap(it.box, face.box) > .35f }) kept += face
                 if (kept.size == 32) break
             }
             for (face in kept) {
+                val transform = try {
+                    FaceAlignment.matrix(face.points)
+                } catch (_: IllegalArgumentException) {
+                    continue
+                }
                 val crop = Bitmap.createBitmap(112, 112, Bitmap.Config.ARGB_8888)
                 try {
-                    val from = floatArrayOf(face.points[0], face.points[1], face.points[2], face.points[3], face.points[4], face.points[5])
-                    val align = Matrix()
-                    if (!align.setPolyToPoly(from, 0, floatArrayOf(38f, 52f, 74f, 52f, 56f, 72f), 0, 3)) continue
-                    Canvas(crop).drawBitmap(source, align, Paint(Paint.FILTER_BITMAP_FLAG))
-                    val embedding = embedding(crop)
+                    Canvas(crop).drawBitmap(source, Matrix().apply { setValues(transform) }, paint)
+                    val vector = embedding(crop)
                     val jpeg = ByteArrayOutputStream().use {
-                        crop.compress(Bitmap.CompressFormat.JPEG, 85, it)
+                        crop.compress(Bitmap.CompressFormat.JPEG, 90, it)
                         it.toByteArray()
                     }
                     if (jpeg.size <= 24000) {
-                        samples += FaceSample(embedding, jpeg)
+                        samples += FaceSample(vector, jpeg)
                     } else {
-                        embedding.fill(0f)
+                        vector.fill(0f)
                         jpeg.fill(0)
                     }
                 } finally {
@@ -151,34 +148,62 @@ internal class FaceEngine(private val context: Context) : AutoCloseable {
             image.eraseColor(0)
             image.recycle()
             pixels.fill(0)
-            input.clear()
-            while (input.remaining() >= 4) input.putInt(0)
-            boxes[0].forEach { it.fill(0f) }
-            scores[0].forEach { it.fill(0f) }
+            input.fill(0f)
+            candidates.forEach { it.points.fill(0f) }
         }
     }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun rows(result: OrtSession.Result, name: String): Array<FloatArray> = (result.get(name).get().value as Array<Array<FloatArray>>)[0]
     private fun embedding(crop: Bitmap): FloatArray {
         val pixels = IntArray(112 * 112)
+        val input = FloatArray(3 * pixels.size)
         crop.getPixels(pixels, 0, 112, 0, 0, 112, 112)
-        val input = ByteBuffer.allocateDirect(3 * 112 * 112 * 4).order(ByteOrder.nativeOrder())
-        val output = Array(2) { FloatArray(128) }
         try {
-            for (shift in intArrayOf(16, 8, 0)) for (pixel in pixels) input.putFloat(((pixel shr shift) and 255) / 255f)
-            input.rewind()
-            val second = input.duplicate().order(ByteOrder.nativeOrder())
-            second.rewind()
-            recognizer.runForMultipleInputsOutputs(arrayOf(input, second), mutableMapOf<Int, Any>(0 to output))
-            return FaceSimilarity.normalized(output[0])
+            // SFace's graph contains its own (x - 127.5) / 128 normalization. Supply RGB 0..255.
+            for (channel in 0..2) for (i in pixels.indices) input[channel * pixels.size + i] = ((pixels[i] shr (16 - channel * 8)) and 255).toFloat()
+            OnnxTensor.createTensor(environment, FloatBuffer.wrap(input), longArrayOf(1, 3, 112, 112)).use { tensor ->
+                recognizer.run(mapOf("data" to tensor)).use { result ->
+                    @Suppress("UNCHECKED_CAST")
+                    val output = (result.get("fc1").get().value as Array<FloatArray>)[0]
+                    return try {
+                        FaceSimilarity.normalized(output)
+                    } finally {
+                        output.fill(0f)
+                    }
+                }
+            }
         } finally {
             pixels.fill(0)
-            output.forEach { it.fill(0f) }
-            input.clear()
-            while (input.remaining() >= 4) input.putInt(0)
+            input.fill(0f)
+        }
+    }
+    fun upgrade(sample: FaceSample): FaceSample {
+        val image = BitmapFactory.decodeByteArray(sample.jpeg, 0, sample.jpeg.size, BitmapFactory.Options().apply { inMutable = true }) ?: error("Face reference could not be decoded")
+        try {
+            val detected = faces(image)
+            if (detected.isNotEmpty()) {
+                val best = detected.first()
+                detected.drop(1).forEach { it.wipe() }
+                return FaceSample(best.embedding, best.jpeg, sample.source, sample.contentHash)
+            }
+            val resized = Bitmap.createScaledBitmap(image, 112, 112, true)
+            return try {
+                FaceSample(embedding(resized), sample.jpeg.clone(), sample.source, sample.contentHash)
+            } finally {
+                if (resized !== image) {
+                    resized.eraseColor(0)
+                    resized.recycle()
+                }
+            }
+        } finally {
+            image.eraseColor(0)
+            image.recycle()
         }
     }
     private fun overlap(a: RectF, b: RectF): Float {
-        val intersect = max(0f, min(a.right, b.right) - max(a.left, b.left)) * max(0f, min(a.bottom, b.bottom) - max(a.top, b.top))
-        return intersect / (a.width() * a.height() + b.width() * b.height() - intersect).coerceAtLeast(1f)
+        val intersection = max(0f, min(a.right, b.right) - max(a.left, b.left)) * max(0f, min(a.bottom, b.bottom) - max(a.top, b.top))
+        return intersection / (a.width() * a.height() + b.width() * b.height() - intersection).coerceAtLeast(1f)
     }
     override fun close() {
         detector.close()

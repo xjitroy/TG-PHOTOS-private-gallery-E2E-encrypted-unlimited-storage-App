@@ -80,6 +80,19 @@ with zipfile.ZipFile(apk) as z:
         for abi in abis:
             assert z.read(f'lib/{abi}/libtgocrscript.so')==(root/f'app/src/main/jniLibs/{abi}/libtgocrscript.so').read_bytes()
         assert 'assets/ocr-models.json' in z.namelist()
+    if args.version_code >= 36:
+        assert 'assets/models/mobile_facenet.tflite' not in z.namelist()
+        assert 'assets/models/blazeface_short_range.tflite' not in z.namelist()
+        assert not any('tensorflowlite' in n.lower() or 'litert.so' in n.lower() for n in z.namelist() if n.startswith('lib/'))
+        import zipfile as zf
+        with zf.ZipFile(root/'app/libs/onnxruntime-android-1.22.0.aar') as runtime:
+            for abi in abis:
+                for lib in ['libonnxruntime.so','libonnxruntime4j_jni.so']:
+                    assert z.read(f'lib/{abi}/{lib}') == runtime.read(f'jni/{abi}/{lib}')
+        assert b'Lai/onnxruntime/OrtSession;' in dex and b'Lapp/televault/people/FaceModelsWorker;' in dex
+        assert 'assets/people-models.json' in z.namelist()
+        for notice in ['SFace-Apache-2.0.txt','YuNet-MIT.txt','ONNXRuntime-MIT.txt','ONNXRuntime-ThirdPartyNotices.txt']:
+            assert f'assets/third-party/{notice}' in z.namelist()
     for notice in (['Zip4j-Apache-2.0.txt'] if args.version_code >= 19 else []) + (['MobileFaceNet-Apache-2.0.txt','MediaPipe-Apache-2.0.txt','Qualcomm-BSD-3-Clause.txt','LiteRT-Apache-2.0.txt','Tesseract4Android-Apache-2.0.txt','Tesseract-Apache-2.0.txt','Leptonica-BSD.txt','Libpng-License.txt','Libjpeg-IJG.txt'] if args.version_code >= 32 else []) + ['TDLib-Boost-1.0.txt', 'OpenSSL-Apache-2.0.txt', 'AndroidX-Apache-2.0.txt', 'BouncyCastle-0.txt']:
         assert f'assets/third-party/{notice}' in z.namelist()
 subprocess.run([str(tools / 'zipalign'), '-c', '-P', '16', '-v', '4', str(apk)], check=True, stdout=subprocess.DEVNULL)

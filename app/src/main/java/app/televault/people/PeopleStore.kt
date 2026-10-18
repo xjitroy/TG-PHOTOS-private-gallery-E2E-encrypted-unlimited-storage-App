@@ -18,9 +18,9 @@ import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
 
-internal data class PersonCard(val id: String, val name: String, val cover: ByteArray, val members: Set<String>, val suggestion: String? = null)
+internal data class PersonCard(val id: String, val name: String, val cover: ByteArray, val members: Set<String>, val suggestion: String? = null, val provisional: Boolean = false, val model: String = PeopleStore.MODEL)
 internal data class PeopleState(val enabled: Boolean = false, val people: List<PersonCard> = emptyList(), val scanned: Int = 0, val busy: Boolean = false, val pendingSync: Boolean = false, val notice: String = "", val faceCounts: Map<String, Int> = emptyMap(), val selfId: String? = null)
-private class Person(val id: String, var name: String = "", val references: MutableList<FaceSample> = mutableListOf(), val members: MutableSet<String> = linkedSetOf(), var suggestion: String? = null, var deleted: Boolean = false, var remote: Long = 0, var dirty: Boolean = false, val different: MutableSet<String> = linkedSetOf(), var reviewed: Boolean = false, val excludedMembers: MutableSet<String> = linkedSetOf(), var pendingName: Boolean = false, val photoHashes: MutableSet<String> = linkedSetOf(), val excludedHashes: MutableSet<String> = linkedSetOf(), var selfSelected: Boolean = false, var selfChangedAt: Long = 0) {
+private class Person(val id: String, var name: String = "", val references: MutableList<FaceSample> = mutableListOf(), val members: MutableSet<String> = linkedSetOf(), var suggestion: String? = null, var deleted: Boolean = false, var remote: Long = 0, var dirty: Boolean = false, val different: MutableSet<String> = linkedSetOf(), var reviewed: Boolean = false, val excludedMembers: MutableSet<String> = linkedSetOf(), var pendingName: Boolean = false, val photoHashes: MutableSet<String> = linkedSetOf(), val excludedHashes: MutableSet<String> = linkedSetOf(), var selfSelected: Boolean = false, var selfChangedAt: Long = 0, var embeddingModel: String = PeopleStore.MODEL, var rescanAutomatic: Boolean = false) {
     fun wipe() {
         references.forEach { it.wipe() }
         references.clear()
@@ -52,6 +52,8 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
 
     private val generation = java.util.concurrent.atomic.AtomicLong()
     private var engine: FaceEngine? = null
+    val models = (context.applicationContext as app.televault.TeleVaultApplication).faceModels
+    private var scanModel = MODEL
     private fun prefix(scope: Pair<Long, String>) = "TGDRIVE_V1_PEOPLE:${scope.second}:"
     private fun file(scope: Pair<Long, String>) = AtomicFile(File(context.noBackupFilesDir, "people/${scope.first}/${scope.second}/catalog.bin"))
     private fun access(scope: Pair<Long, String>, token: Long) {
@@ -69,17 +71,18 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
             .put("deleted", person.deleted).put("reviewed", person.reviewed).put("different", JSONArray(person.different.sorted()))
             .put("excludedMembers", JSONArray(person.excludedMembers.sorted()))
             .put("faceCounts", JSONObject(faceCounts.filterKeys { it in person.members && (!remote || ForgottenVaultPolicy.validId(it)) }))
-            .put("suggestion", if (remote) JSONObject.NULL else person.suggestion ?: JSONObject.NULL).put("model", MODEL)
+            .put("suggestion", if (remote) JSONObject.NULL else person.suggestion ?: JSONObject.NULL).put("model", person.embeddingModel).put("rescanAutomatic", person.rescanAutomatic)
             .put("remote", person.remote).put("dirty", person.dirty).put("members", JSONArray(person.members.filter { !remote || ForgottenVaultPolicy.validId(it) }))
             .put("references", JSONArray(base.map(::sampleJson))).put("reviewReferences", JSONArray(extra.map(::sampleJson)))
     }
     private fun decode(data: JSONObject): Person {
         val id = data.getString("id")
         check(ForgottenVaultPolicy.validId(id))
-        check(data.getString("model") == MODEL)
+        val model = data.getString("model")
+        check(model == MODEL || model == LEGACY_MODEL)
         val name = data.getString("name")
         check(name.length <= 80)
-        val person = Person(id, name, deleted = data.optBoolean("deleted"), remote = data.optLong("remote"), dirty = data.optBoolean("dirty"))
+        val person = Person(id, name, deleted = data.optBoolean("deleted"), remote = data.optLong("remote"), dirty = data.optBoolean("dirty"), embeddingModel = model, rescanAutomatic = data.optBoolean("rescanAutomatic", model == LEGACY_MODEL))
         try {
             val refs = data.getJSONArray("references")
             val extra = data.optJSONArray("reviewReferences")
@@ -109,10 +112,10 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
             }
             val content = data.optJSONObject("contentCounts")
             check((content?.length() ?: 0) <= 50000)
-            content?.keys()?.forEach { hash -> content.optInt(hash, -1).takeIf { hash in person.photoHashes && it in 0..32 }?.let { hashCounts[hash] = it } }
+            content?.takeIf { model == MODEL }?.keys()?.forEach { hash -> content.optInt(hash, -1).takeIf { hash in person.photoHashes && it in 0..32 }?.let { hashCounts[hash] = it } }
             val counts = data.optJSONObject("faceCounts")
             check((counts?.length() ?: 0) <= 50000)
-            counts?.keys()?.forEach { source -> counts.optInt(source, -1).takeIf { it in 0..32 }?.let { faceCounts[source] = it } }
+            counts?.takeIf { model == MODEL }?.keys()?.forEach { source -> counts.optInt(source, -1).takeIf { it in 0..32 }?.let { faceCounts[source] = it } }
             val excluded = data.optJSONArray("excludedMembers")
             if (excluded != null) {
                 check(excluded.length() <= 50000)
@@ -137,22 +140,23 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
     private fun publish(scope: Pair<Long, String>, token: Long, notice: String = "", busy: Boolean = false) {
         access(scope, token)
         persons.values.forEach(::sanitize)
+        val ownId = selectedSelf()?.id
         val previous = mutable.value.people.associateBy { it.id }
         val reused = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<ByteArray, Boolean>())
-        val cards = persons.values.filter { !it.deleted && it.members.isNotEmpty() }.map { PersonCard(it.id, it.name, it.references.firstOrNull()?.jpeg?.let { jpeg -> previous[it.id]?.cover?.takeIf { cover -> cover.contentEquals(jpeg) }?.also { cover -> reused.add(cover) } ?: jpeg.clone() } ?: byteArrayOf(), it.members.toSet(), it.suggestion) }.sortedWith(compareBy<PersonCard> { it.name.isBlank() }.thenBy { it.name }.thenBy { it.id })
+        val cards = persons.values.filter { !it.deleted && it.members.isNotEmpty() }.map { PersonCard(it.id, it.name, it.references.firstOrNull()?.jpeg?.let { jpeg -> previous[it.id]?.cover?.takeIf { cover -> cover.contentEquals(jpeg) }?.also { cover -> reused.add(cover) } ?: jpeg.clone() } ?: byteArrayOf(), it.members.toSet(), it.suggestion, app.televault.domain.FaceGrouping.provisional(it.name, it.reviewed || it.id == ownId, if (it.photoHashes.isNotEmpty()) it.photoHashes.size else it.members.size), it.embeddingModel) }.sortedWith(compareBy<PersonCard> { it.name.isBlank() }.thenBy { it.name }.thenBy { it.id })
         synchronized(publicationGuard) {
             if (generation.get() != token) {
                 cards.forEach { it.cover.fill(0) }
                 error("People session changed")
             }
             val old = mutable.value
-            mutable.value = PeopleState(enabled, cards, scanned.size, busy, persons.values.any { it.dirty }, notice, faceCounts.filterKeys { !drive.privateAi.excluded(it) }.toMap(), selectedSelf()?.id)
+            mutable.value = PeopleState(enabled, cards, scanned.size, busy, persons.values.any { it.dirty }, notice, faceCounts.filterKeys { !drive.privateAi.excluded(it) }.toMap(), ownId)
             old.people.filter { it.cover !in reused }.forEach { it.cover.fill(0) }
         }
     }
     private fun save(scope: Pair<Long, String>, token: Long) {
         access(scope, token)
-        val body = JSONObject().put("version", 1).put("enabled", enabled).put("people", JSONArray(persons.values.map { encode(it, false) })).put("scanned", JSONObject(scanned.toMap())).put("scanQuality", JSONObject(scanQuality.toMap())).put("faceCounts", JSONObject(faceCounts.toMap())).put("sourceHashes", JSONObject(sourceHashes.toMap())).put("hashCounts", JSONObject(hashCounts.toMap())).toString().toByteArray()
+        val body = JSONObject().put("version", 1).put("scanModel", scanModel).put("enabled", enabled).put("people", JSONArray(persons.values.map { encode(it, false) })).put("scanned", JSONObject(scanned.toMap())).put("scanQuality", JSONObject(scanQuality.toMap())).put("faceCounts", JSONObject(faceCounts.toMap())).put("sourceHashes", JSONObject(sourceHashes.toMap())).put("hashCounts", JSONObject(hashCounts.toMap())).toString().toByteArray()
         try {
             check(body.size <= 12 * 1024 * 1024) { "People index is full; remove unused groups to continue" }
             val sealed = drive.peopleEnvelope(body, "catalog", scope, false)
@@ -194,6 +198,7 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
                     }
                     try {
                         val body = JSONObject(bytes.toString(Charsets.UTF_8))
+                        scanModel = body.optString("scanModel", LEGACY_MODEL)
                         check(body.getInt("version") == 1)
                         enabled = body.getBoolean("enabled")
                         val rows = body.getJSONArray("people")
@@ -368,6 +373,15 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
             val old = persons[id]
             if (old != null && old.remote >= ref.messageId)continue
             val incoming = decode(authenticatedBody(ref, scope, token).getJSONObject("person"))
+            if (old != null && old.embeddingModel == MODEL && incoming.embeddingModel != MODEL) {
+                incoming.references.forEach { it.wipe() }
+                incoming.references.clear()
+                old.references.forEach { incoming.references += FaceSample(it.embedding.clone(), it.jpeg.clone(), it.source, it.contentHash) }
+                incoming.embeddingModel = MODEL
+                incoming.members += old.members
+                incoming.photoHashes += old.photoHashes
+                incoming.dirty = true
+            }
             if (old != null && old.selfChangedAt > incoming.selfChangedAt) {
                 incoming.selfChangedAt = old.selfChangedAt
                 incoming.selfSelected = old.selfSelected
@@ -385,7 +399,7 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
                     incoming.name = old.name
                     incoming.pendingName = old.pendingName
                 }
-                if (old.reviewed) {
+                if (old.reviewed && old.embeddingModel == incoming.embeddingModel) {
                     incoming.references.forEach { it.wipe() }
                     incoming.references.clear()
                     old.references.forEach { incoming.references += FaceSample(it.embedding.clone(), it.jpeg.clone(), it.source, it.contentHash) }
@@ -442,11 +456,66 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
         }
         publish(scope, token)
     }
+    suspend fun prepareAnalysis(): Boolean {
+        if (!models.prepareInstalled()) return false
+        return withContext(Dispatchers.IO) {
+            mutex.withLock {
+                val scope = drive.privateVaultBinding()
+                val token = generation.get()
+                if (!enabled || binding != scope) return@withLock false
+                if (scanModel != MODEL) {
+                    scanned.clear()
+                    scanQuality.clear()
+                    faceCounts.clear()
+                    hashCounts.clear()
+                    scanModel = MODEL
+                }
+                for (person in persons.values.filter { !it.deleted && it.embeddingModel != MODEL }) {
+                    currentCoroutineContext().ensureActive()
+                    access(scope, token)
+                    val converted = mutableListOf<FaceSample>()
+                    try {
+                        for (sample in person.references) converted += app.televault.OnDeviceAnalysis.run { (engine ?: FaceEngine(context).also { engine = it }).upgrade(sample) }
+                    } catch (error: Throwable) {
+                        converted.forEach { it.wipe() }
+                        throw error
+                    }
+                    person.references.forEach { it.wipe() }
+                    person.references.clear()
+                    person.references += converted
+                    person.embeddingModel = MODEL
+                    person.dirty = true
+                    save(scope, token)
+                    publish(scope, token, "Upgrading face references on your phone…", busy = true)
+                    delay(20)
+                }
+                consolidateAutomaticGroups()
+                save(scope, token)
+                publish(scope, token)
+                true
+            }
+        }
+    }
+    private fun consolidateAutomaticGroups() {
+        val ownId = selectedSelf()?.id
+        val sources = persons.values.filter { !it.deleted && app.televault.domain.FaceGrouping.automatic(it.name, it.reviewed, it.id == ownId) && it.embeddingModel == MODEL }
+        for (source in sources) {
+            if (source.deleted || source.references.isEmpty()) continue
+            val ranked = persons.values.asSequence().filter { target ->
+                !target.deleted && target.id != source.id && target.embeddingModel == MODEL && target.references.isNotEmpty() && target.id !in source.different && source.id !in target.different && !app.televault.domain.FaceGrouping.cooccur(source.members, target.members, source.photoHashes, target.photoHashes) && !app.televault.domain.FaceGrouping.conflictingTags(source.excludedHashes, target.photoHashes, target.excludedHashes, source.photoHashes) &&
+                    (target.name.isNotBlank() || target.reviewed || target.id == ownId || target.members.size > source.members.size || target.members.size == source.members.size && target.id < source.id)
+            }.map { target -> target to source.references.maxOf { a -> target.references.maxOf { b -> FaceSimilarity.cosine(a.embedding, b.embedding) } } }.sortedByDescending { it.second }.toList()
+            val best = ranked.firstOrNull() ?: continue
+            if (best.second < .66f) continue
+            val namedRival = ranked.drop(1).any { it.first.name.isNotBlank() && it.second > best.second - .08f }
+            if (app.televault.domain.FaceGrouping.canCombine(best.second, app.televault.domain.FaceGrouping.cooccur(source.members, best.first.members, source.photoHashes, best.first.photoHashes), best.first.id in source.different || source.id in best.first.different, namedRival)) mergeLocked(source, best.first, confirmed = false)
+        }
+    }
     suspend fun analyze(id: String, stamp: String, ownedSource: Boolean = false, load: suspend () -> Bitmap?): Boolean = withContext(Dispatchers.IO) {
         mutex.withLock {
             val scope = drive.privateVaultBinding()
             val token = generation.get()
-            if (!enabled || binding != scope) return@withLock false
+            if (!enabled || binding != scope || scanModel != MODEL) return@withLock false
             val knownFaces = faceCounts[id]?.takeIf { it > 0 } ?: if (persons.values.any { !it.deleted && id in it.members }) 1 else 0
             if (!app.televault.domain.FaceScanCache.shouldScan(scanned[id], stamp, ForgottenVaultPolicy.validId(id), knownFaces, scanQuality[id] ?: 0, ownedSource)) {
                 if (id !in sourceHashes) {
@@ -463,6 +532,8 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
             }
             if (ForgottenVaultPolicy.validId(id) && id in faceCounts && persons.values.any { !it.deleted && it.references.isNotEmpty() && id in it.members }) {
                 scanned[id] = stamp
+                changedSinceSave++
+                if (changedSinceSave % 10 == 0) save(scope, token)
                 return@withLock false
             }
             check(scanned.size < 50000) { "People index limit reached. Remove unused groups to continue." }
@@ -496,6 +567,11 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
             }
             try {
                 access(scope, token)
+                for (person in persons.values.filter { !it.deleted && it.rescanAutomatic && it.name.isBlank() && !it.reviewed && it.id != selectedSelf()?.id && id in it.members }) {
+                    person.members.remove(id)
+                    if (contentHash.isNotEmpty() && person.members.none { mediaHash(it) == contentHash }) person.photoHashes.remove(contentHash)
+                    person.dirty = true
+                }
                 val awaiting = persons.values.filter { !it.deleted && it.references.isEmpty() && id in it.members }
                 if (samples.size == 1 && awaiting.size == 1) {
                     val sample = samples.first()
@@ -504,16 +580,21 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
                 }
                 val assigned = hashSetOf<String>()
                 for (sample in samples) {
-                    val ranked = persons.values.filter { !it.deleted && it.references.isNotEmpty() && it.id !in assigned && drive.privateAi.identity(id) !in it.excludedMembers && contentHash !in it.excludedHashes }.map { person -> person to person.references.maxOf { FaceSimilarity.cosine(it.embedding, sample.embedding) } }.sortedByDescending { it.second }
+                    val ranked = persons.values.filter { !it.deleted && it.embeddingModel == MODEL && it.references.isNotEmpty() && it.id !in assigned && drive.privateAi.identity(id) !in it.excludedMembers && contentHash !in it.excludedHashes }.map { person -> person to person.references.maxOf { FaceSimilarity.cosine(it.embedding, sample.embedding) } }.sortedByDescending { it.second }
                     val best = ranked.firstOrNull()
                     val second = ranked.getOrNull(1)?.second ?: -1f
                     if (best != null && FaceSimilarity.confident(best.second, second, best.first.references.size) && (ranked.getOrNull(1)?.first?.id !in best.first.different || best.second - second >= .20f)) {
                         if (best.first.members.add(id)) best.first.dirty = true
                         if (contentHash.isNotEmpty()) best.first.photoHashes += contentHash
+                        if (best.second >= .72f && best.second - second >= .10f && best.first.references.none { FaceSimilarity.cosine(it.embedding, sample.embedding) > .96f }) {
+                            if (best.first.references.size == 4) best.first.references.removeAt(1).wipe()
+                            best.first.references += FaceSample(sample.embedding.clone(), sample.jpeg.clone(), drive.privateAi.identity(id), contentHash)
+                            best.first.dirty = true
+                        }
                         assigned += best.first.id
                     } else {
                         check(persons.size < 1000 && persons.count { !it.value.deleted } < 512) { "People group limit reached" }
-                        val person = Person(UUID.randomUUID().toString(), references = mutableListOf(FaceSample(sample.embedding.clone(), sample.jpeg.clone(), drive.privateAi.identity(id), contentHash)), members = linkedSetOf(id), dirty = true, suggestion = best?.takeIf { it.second >= .50f }?.first?.id ?: awaiting.singleOrNull()?.id)
+                        val person = Person(UUID.randomUUID().toString(), references = mutableListOf(FaceSample(sample.embedding.clone(), sample.jpeg.clone(), drive.privateAi.identity(id), contentHash)), members = linkedSetOf(id), dirty = true, suggestion = best?.takeIf { it.second >= .40f }?.first?.id ?: awaiting.singleOrNull()?.id)
                         if (contentHash.isNotEmpty()) person.photoHashes += contentHash
                         persons[person.id] = person
                         assigned += person.id
@@ -525,6 +606,7 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
                 scanQuality[id] = 2
                 changedSinceSave++
                 if (changedSinceSave % 10 == 0) save(scope, token)
+                if (changedSinceSave % 20 == 0) consolidateAutomaticGroups()
                 if (changedSinceSave % 10 == 0) publish(scope, token)
                 true
             } finally {
@@ -554,12 +636,14 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
         // One encrypted last-writer choice; no identity is inferred without the user's choice.
         person.selfChangedAt = maxOf(System.currentTimeMillis(), Math.addExact(persons.values.maxOfOrNull { it.selfChangedAt } ?: 0, 1))
         person.selfSelected = selected
+        if (selected) person.reviewed = true
         person.dirty = true
     }
     suspend fun rename(id: String, name: String) = mutate(localFirst = true) {
         val person = persons.getValue(id)
         check(!person.deleted)
         person.name = name.trim().take(80)
+        person.reviewed = true
         person.pendingName = true
         person.suggestion = null
         person.dirty = true
@@ -567,6 +651,7 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
     suspend fun tag(id: String, media: Set<String>) = mutate(localFirst = true) {
         val person = persons.getValue(id)
         check(!person.deleted)
+        person.reviewed = true
         person.members += media
         media.map(::mediaHash).filter { it.isNotEmpty() }.forEach {
             person.photoHashes += it
@@ -593,7 +678,7 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
         val into = persons.getValue(target)
         check(!from.deleted && !into.deleted && from.id != into.id && media in from.members)
         val refs = from.references.filter { it.source == drive.privateAi.identity(media) }
-        for (sample in refs) {
+        for (sample in refs.filter { from.embeddingModel == into.embeddingModel }) {
             if (into.references.size == 4) into.references.removeAt(1).wipe()
             into.references += FaceSample(sample.embedding.clone(), sample.jpeg.clone(), sample.source, sample.contentHash)
         }
@@ -611,6 +696,8 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
         into.excludedMembers.remove(drive.privateAi.identity(media))
         into.members += media
         into.reviewed = true
+        from.different += into.id
+        into.different += from.id
         into.dirty = true
         from.dirty = true
     }
@@ -618,7 +705,7 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
         val from = persons.getValue(source)
         check(!from.deleted && media in from.members)
         val refs = from.references.filter { it.source == drive.privateAi.identity(media) }
-        val group = Person(UUID.randomUUID().toString(), members = linkedSetOf(media), dirty = true, reviewed = true)
+        val group = Person(UUID.randomUUID().toString(), members = linkedSetOf(media), dirty = true, reviewed = true, embeddingModel = from.embeddingModel)
         refs.forEach { group.references += FaceSample(it.embedding.clone(), it.jpeg.clone(), it.source, it.contentHash) }
         from.references.removeAll(refs.toSet())
         refs.forEach { it.wipe() }
@@ -638,16 +725,16 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
         scanned.keys.filter { id -> (faceCounts[id] ?: 0) == 0 && persons.values.none { !it.deleted && id in it.members } }.toList().forEach { scanned.remove(it) }
     }
     private fun refreshSuggestions() {
-        val active = persons.values.filter { !it.deleted && it.references.isNotEmpty() }
+        val active = persons.values.filter { !it.deleted && it.embeddingModel == MODEL && it.references.isNotEmpty() }
         for (person in active) {
             if (person.reviewed && person.suggestion == null) continue
             person.suggestion = active.asSequence().filter { other ->
-                other.id != person.id && other.id !in person.different && person.id !in other.different && person.members.none { it in other.members }
+                other.id != person.id && other.id !in person.different && person.id !in other.different && !app.televault.domain.FaceGrouping.cooccur(person.members, other.members, person.photoHashes, other.photoHashes) && !app.televault.domain.FaceGrouping.conflictingTags(person.excludedHashes, other.photoHashes, other.excludedHashes, person.photoHashes)
             }.map { other -> other to person.references.maxOf { a -> other.references.maxOf { b -> FaceSimilarity.cosine(a.embedding, b.embedding) } } }
-                .filter { it.second >= .50f }.maxByOrNull { it.second }?.first?.id
+                .filter { it.second >= .40f }.maxByOrNull { it.second }?.first?.id
         }
     }
-    private fun mergeLocked(source: Person, target: Person) {
+    private fun mergeLocked(source: Person, target: Person, confirmed: Boolean = true) {
         check(source.id != target.id && !source.deleted && !target.deleted)
         if (selectedSelf()?.id == source.id) {
             target.selfSelected = true
@@ -665,8 +752,14 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
             target.name = source.name
             target.pendingName = true
         }
+        // Never mix embeddings from different model spaces during a manual merge or restore.
+        if (target.embeddingModel != source.embeddingModel && source.embeddingModel == MODEL) {
+            target.references.forEach { it.wipe() }
+            target.references.clear()
+            target.embeddingModel = MODEL
+        }
         // Keep the anchor and diverse confirmed examples; positive reviews update future matching.
-        for (sample in source.references) {
+        for (sample in source.references.filter { app.televault.domain.FaceGrouping.compatible(source.embeddingModel, target.embeddingModel) }) {
             if (target.references.none { FaceSimilarity.cosine(it.embedding, sample.embedding) > .995f }) {
                 if (target.references.size == 4) target.references.removeAt(1).wipe()
                 target.references += FaceSample(sample.embedding.clone(), sample.jpeg.clone(), sample.source, sample.contentHash)
@@ -679,7 +772,7 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
             }
             if (person.suggestion == source.id) person.suggestion = target.id.takeIf { it != person.id }
         }
-        target.reviewed = true
+        target.reviewed = target.reviewed || confirmed
         target.suggestion = null
         target.dirty = true
         source.wipe()
@@ -762,6 +855,7 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
         persons.clear()
         scanned.clear()
         scanQuality.clear()
+        scanModel = MODEL
         faceCounts.clear()
         sourceHashes.clear()
         hashCounts.clear()
@@ -802,7 +896,8 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
         File(context.noBackupFilesDir, "people/$owner/$vault").deleteRecursively()
     }
     companion object {
-        const val MODEL = "mobile-facenet-2046ab77-v1"
+        const val MODEL = "opencv-yunet-sface-0ba9fbfa-v2"
+        const val LEGACY_MODEL = "mobile-facenet-2046ab77-v1"
         private const val MAX_REMOTE = 2L * 1024 * 1024
     }
 }

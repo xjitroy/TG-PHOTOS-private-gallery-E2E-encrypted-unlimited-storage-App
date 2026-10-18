@@ -31,8 +31,8 @@ android {
         applicationId = providers.gradleProperty("televault.applicationId").getOrElse("app.televault")
         minSdk = 26
         targetSdk = 36
-        versionCode = 35
-        versionName = "0.19.6"
+        versionCode = 36
+        versionName = "0.19.7"
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64") }
         javaCompileOptions {
             annotationProcessorOptions {
@@ -131,7 +131,7 @@ tasks.configureEach {
     if (name in setOf("preReleaseBuild", "validateSigningRelease", "assembleRelease", "bundleRelease", "packageRelease")) dependsOn(validateReleaseInputs)
 }
 dependencies {
-    implementation(files("libs/litert-1.4.1.aar", "libs/litert-api-1.4.1.aar", "libs/tesseract4android-4.9.0.aar"))
+    implementation(files("libs/onnxruntime-android-1.22.0.aar", "libs/tesseract4android-4.9.0.aar"))
     implementation(files("libs/zip4j-2.11.5.jar"))
     implementation(project(":core:domain"))
     implementation(project(":core:telegram"))

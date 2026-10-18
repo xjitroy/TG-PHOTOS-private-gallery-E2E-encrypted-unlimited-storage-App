@@ -24,3 +24,9 @@
 -keep,allowoptimization class app.televault.ocr.OcrModelsWorker {
     public <init>(android.content.Context, androidx.work.WorkerParameters);
 }
+
+# ONNX JNI names and persistent model-download worker identity.
+-keep class ai.onnxruntime.** { *; }
+-keep,allowoptimization class app.televault.people.FaceModelsWorker {
+    public <init>(android.content.Context, androidx.work.WorkerParameters);
+}

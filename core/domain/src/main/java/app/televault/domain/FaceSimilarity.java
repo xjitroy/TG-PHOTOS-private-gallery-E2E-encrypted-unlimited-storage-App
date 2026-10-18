@@ -25,6 +25,6 @@ public final class FaceSimilarity {
         return (float)Math.max(-1, Math.min(1, dot / (Math.sqrt(normLeft) * Math.sqrt(normRight))));
     }
     public static boolean confident(float best, float second, int references) {
-        return Float.isFinite(best) && Float.isFinite(second) && references > 0 && best >= .80f && best-second >= .12f;
+        return Float.isFinite(best) && Float.isFinite(second) && references > 0 && best >= (references >= 2 ? .50f : .55f) && best-second >= .06f;
     }
 }

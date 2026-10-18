@@ -329,7 +329,7 @@ fun DriveScreen(model: DriveViewModel, dynamicColor: Boolean, changeDynamicColor
                                 Text(words("Use system colors", "সিস্টেমের রং ব্যবহার"), Modifier.weight(1f))
                                 Switch(dynamicColor, { enabled -> scope.launch { changeDynamicColor(enabled) } })
                             }
-                            Text(words("Language follows Android settings. Vault locks after 2 minutes in the background. Recovery passphrase is required on a new phone.", "ভাষা অ্যান্ড্রয়েড সেটিংস অনুসরণ করে। ব্যাকগ্রাউন্ডে ২ মিনিট পর ভল্ট লক হবে। নতুন ফোনে রিকভারি পাসফ্রেজ লাগবে।"))
+                            Text(words("English is the default app language. Vault locks after 2 minutes in the background. Recovery passphrase is required on a new phone.", "ভাষা অ্যান্ড্রয়েড সেটিংস অনুসরণ করে। ব্যাকগ্রাউন্ডে ২ মিনিট পর ভল্ট লক হবে। নতুন ফোনে রিকভারি পাসফ্রেজ লাগবে।"))
                             Text(words("Experimental APK: keep originals and record your recovery passphrase offline. Telegram limits and availability apply. No permanent storage guarantee.", "পরীক্ষামূলক APK: মূল ফাইল ও রিকভারি পাসফ্রেজ অফলাইনে রাখুন। টেলিগ্রামের সীমা ও প্রাপ্যতা প্রযোজ্য। স্থায়ী সংরক্ষণের নিশ্চয়তা নেই।"), style = MaterialTheme.typography.bodySmall)
                             OutlinedButton({ logoutWarning = true }) { Text(words("Log out of Telegram", "টেলিগ্রাম লগআউট")) }
                         }

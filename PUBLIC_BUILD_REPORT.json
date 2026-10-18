@@ -1,11 +1,11 @@
 {
-  "version": "0.19.6",
-  "code": 35,
+  "version": "0.19.7",
+  "code": 36,
   "checks": {
-    "distinctHostTests": 343,
+    "distinctHostTests": 355,
     "suites": {
       "domain": {
-        "tests": 222,
+        "tests": 231,
         "failures": 0,
         "errors": 0,
         "skipped": 0
@@ -23,115 +23,49 @@
         "skipped": 0
       },
       "app": {
-        "tests": 59,
+        "tests": 62,
         "failures": 0,
         "errors": 0,
         "skipped": 0
       }
     },
     "lintErrors": 0,
-    "lintWarnings": 93,
+    "lintWarnings": 96,
     "localChecks": 8,
     "nativeAcceptance": "Unavailable: affected-phone repeated OTP and native force-stop/gesture/JNI behavior not reproduced",
     "otpRootCauseVerified": false,
+    "finalFocusedChecks": "Domain/app tests and all ktlint rerun after shared-photo alias and manual-tag correction guards; other suite/lint evidence from preceding full check",
     "hostSmoke": {
       "people": {
-        "test": "original-size synthetic small-face collage, actual production Java windows + host pinned model",
-        "baselineFullFrameFaces": 0,
-        "tiledFaces": 3,
-        "matchedKnownPlacements": 3,
-        "windows": 16,
-        "seconds": 2.361,
-        "fixture": "three placements of existing NASA public-domain astronaut photo; no owner images or identity benchmark",
-        "androidJniAcceptance": false
+        "model": "OpenCV YuNet + SFace, pinned upstream ONNX files",
+        "runtime": "ONNX Runtime CPU 1.22.0",
+        "javaProductionFivePointAlignment": true,
+        "positiveSameIdentityAcrossTwoDifferentPhotos": 0.7549259066581726,
+        "negativeDifferentIdentities": 0.13957127928733826,
+        "detectedFaces": {
+          "obama.jpg": 1,
+          "obama2.jpg": 1,
+          "biden.jpg": 1
+        },
+        "legacyReferenceReembeddingCosine": 0.7114347219467163,
+        "legacyReferenceDetected": false,
+        "seconds": 2.26,
+        "fixtureSource": "Public figure examples from github.com/ageitgey/face_recognition; host-only, not redistributed, no owner photos",
+        "scope": "Limited host smoke, not a recognition accuracy benchmark or Android/JNI/device acceptance"
       },
-      "ocr": {
-        "test": "synthetic mixed Bengali/English package label, separated small text/brand/date",
-        "runs": [
-          {
-            "layout": "old",
-            "edge": 1600,
-            "mode": 1,
-            "words": [
-              "MAYA",
-              "FOODS",
-              "\u09aa\u09c1\u09b7\u09cd\u099f\u09bf",
-              "\u09a4\u09a5\u09cd\u09af",
-              "PROTEIN",
-              "20g",
-              "BEST",
-              "BEFORE",
-              "2027"
-            ]
-          },
-          {
-            "layout": "auto",
-            "edge": 2309,
-            "mode": 1,
-            "words": [
-              "MAYA",
-              "FOODS",
-              "\u09aa\u09c1\u09b7\u09cd\u099f\u09bf",
-              "\u09a4\u09a5\u09cd\u09af",
-              "PROTEIN",
-              "20g",
-              "BEST",
-              "BEFORE",
-              "2027"
-            ]
-          },
-          {
-            "layout": "sparse",
-            "edge": 2309,
-            "mode": 11,
-            "words": [
-              "MAYA",
-              "FOODS",
-              "\u09aa\u09c1\u09b7\u09cd\u099f\u09bf",
-              "\u09a4\u09a5\u09cd\u09af",
-              "PROTEIN",
-              "20g",
-              "200g",
-              "BEST",
-              "BEFORE",
-              "2027"
-            ]
-          },
-          {
-            "layout": "latin",
-            "edge": 2309,
-            "mode": 11,
-            "words": [
-              "MAYA",
-              "FOODS",
-              "aff",
-              "25",
-              "PROTEIN",
-              "20g",
-              "200g",
-              "BEST",
-              "BEFORE",
-              "2027"
-            ]
-          }
-        ],
-        "newRequiredBrandWeightDateBengaliFound": true,
-        "seconds": 7.4,
-        "scope": "Linux pinned-language smoke; not Android JNI/real package accuracy guarantee",
-        "ownerImagesUsed": false
-      }
+      "ocrRuntimeUnchangedFrom": "0.19.6"
     }
   },
   "artifact": {
-    "apk": "TG-Photos-0.19.6-universal.apk",
-    "bytes": 71756967,
-    "sha256": "5cdd44b0d0d3a47e0e398e1327b2fe5df811868597a0ecfbf3683e17e1429852",
-    "versionCode": 35,
-    "versionName": "0.19.6",
+    "apk": "TG-Photos-0.19.7-universal.apk",
+    "bytes": 88063863,
+    "sha256": "1115a0ae7c6b5a2a765cd078afbd4174ba8b828e7ec305085e2475021006027c",
+    "versionCode": 36,
+    "versionName": "0.19.7",
     "package": "app.televault.photos",
     "distribution": "public",
-    "sourceCommit": "cc2253b834401957f6d593c4f1d2188685d9dfdf",
-    "sourceTree": "bc9a269f9b7438e5fa05f3ce81f8a130beba7fb3",
+    "sourceCommit": "1bc7e5e8daaeb66f7f8d0b6a3be8f7fcdb6d964d",
+    "sourceTree": "ae1f4436422c8f45d8bc052f7a81ff9d7783806b",
     "certificateSHA256": "3e7c1029cb5e2da80026758abd483b5bd7f0551b6a56bee6b21640b8ae774559",
     "debuggable": false,
     "productionVerified": false,

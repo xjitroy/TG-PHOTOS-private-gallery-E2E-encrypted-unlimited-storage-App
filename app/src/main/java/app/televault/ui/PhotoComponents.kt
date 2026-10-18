@@ -83,8 +83,7 @@ internal fun MediaThumbnail(entry: MediaEntry, model: DriveViewModel, modifier: 
 }
 
 @Composable
-internal fun AlbumsGrid(device: List<AlbumTile>, cloud: List<AlbumTile>, model: DriveViewModel, open: (AlbumTile) -> Unit, create: () -> Unit, modifier: Modifier = Modifier, scopeKey: String = "albums", peopleContent: (@Composable () -> Unit)? = null) {
-    val grid = remember(scopeKey) { LazyGridState() }
+internal fun AlbumsGrid(device: List<AlbumTile>, cloud: List<AlbumTile>, model: DriveViewModel, open: (AlbumTile) -> Unit, create: () -> Unit, modifier: Modifier = Modifier, scopeKey: String = "albums", grid: LazyGridState = remember(scopeKey) { LazyGridState() }, leadingContent: (@Composable () -> Unit)? = null, peopleContent: (@Composable () -> Unit)? = null) {
     var touched by remember(grid) { mutableStateOf(false) }
     val input = remember(grid) {
         object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
@@ -100,6 +99,7 @@ internal fun AlbumsGrid(device: List<AlbumTile>, cloud: List<AlbumTile>, model: 
         if (!touched) grid.requestScrollToItem(0)
     }
     LazyVerticalGrid(columns = if (LocalConfiguration.current.screenWidthDp >= 600) GridCells.Adaptive(144.dp) else GridCells.Fixed(2), state = grid, modifier = modifier.then(Modifier.nestedScroll(input)), contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
+        if (leadingContent != null) item(key = "browse-introduction", span = { GridItemSpan(maxLineSpan) }) { leadingContent() }
         if (device.isNotEmpty()) {
             item(key = "device-title", span = { GridItemSpan(maxLineSpan) }) { SectionTitle(label("On this device", "এই ডিভাইসে"), label("View all", "সব দেখুন")) { device.firstOrNull { it.section == "All" && it.collage }?.let(open) } }
             items(device, key = { it.id }) { tile -> AlbumCover(tile, model, Modifier.animateItem()) { open(tile) } }
@@ -122,7 +122,7 @@ internal fun AlbumsGrid(device: List<AlbumTile>, cloud: List<AlbumTile>, model: 
             items(cloud, key = { "remote:${it.id}" }) { tile -> AlbumCover(tile, model, Modifier.animateItem()) { open(tile) } }
         }
         if (peopleContent != null) item(key = "people", span = { GridItemSpan(maxLineSpan) }) { peopleContent() }
-        item(key = "bottom-gap", span = { GridItemSpan(maxLineSpan) }) { Spacer(Modifier.height(72.dp)) }
+        item(key = "bottom-gap", span = { GridItemSpan(maxLineSpan) }) { Spacer(Modifier.height(140.dp)) }
     }
 }
 
@@ -449,11 +449,12 @@ private fun MediaGridCell(entry: MediaEntry, selected: Set<String>, snapshot: Dr
 }
 
 @Composable
-internal fun DocumentTimeline(files: List<MediaEntry>, selected: Set<String>, model: DriveViewModel, density: Float, changed: (Float) -> Unit, open: (MediaEntry) -> Unit, hold: (MediaEntry) -> Unit) {
+internal fun DocumentTimeline(files: List<MediaEntry>, selected: Set<String>, model: DriveViewModel, density: Float, changed: (Float) -> Unit, open: (MediaEntry) -> Unit, hold: (MediaEntry) -> Unit, scroll: androidx.compose.foundation.lazy.LazyListState = androidx.compose.foundation.lazy.rememberLazyListState(), leadingContent: (@Composable () -> Unit)? = null) {
     val groups = remember(files, TimelineZoom.period(density)) { timeGroups(files, density) }
-    LazyColumn(Modifier.fillMaxSize().timelinePinch(density, changed), contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 110.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    LazyColumn(Modifier.fillMaxSize().timelinePinch(density, changed), state = scroll, contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 110.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (leadingContent != null) item(key = "browse-introduction") { leadingContent() }
         groups.forEach { (date, entries) ->
-            stickyHeader(key = "date:$date") { Text(date, Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).padding(vertical = 12.dp), style = MaterialTheme.typography.titleSmall) }
+            stickyHeader(key = "date:$date") { Text(date, Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).padding(top = if (leadingContent != null) WindowInsets.statusBars.asPaddingValues().calculateTopPadding() else 0.dp).padding(vertical = 12.dp), style = MaterialTheme.typography.titleSmall) }
             items(entries, key = { it.id }) { entry ->
                 Surface(shape = RoundedCornerShape(22.dp), color = if (entry.id in selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.animateItem().combinedClickable(onClick = { open(entry) }, onLongClick = { hold(entry) })) {
                     Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -476,9 +477,10 @@ internal fun DocumentTimeline(files: List<MediaEntry>, selected: Set<String>, mo
 internal fun originalMediaName(name: String): String = name.replace(Regex("^\\.trashed-\\d+-"), "")
 
 @Composable
-internal fun DeviceLibraryFolders(files: List<MediaEntry>, open: (String) -> Unit) {
+internal fun DeviceLibraryFolders(files: List<MediaEntry>, scroll: androidx.compose.foundation.lazy.LazyListState = androidx.compose.foundation.lazy.rememberLazyListState(), leadingContent: (@Composable () -> Unit)? = null, open: (String) -> Unit) {
     val folders = remember(files) { files.groupBy { it.local!!.folder }.entries.sortedWith(compareByDescending<Map.Entry<String, List<MediaEntry>>> { entry -> entry.value.maxOf { app.televault.domain.LocalFolderOrder.updatedAt(it.date, it.local!!.modified) } }.thenBy { it.key.lowercase() }) }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 110.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), state = scroll, contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 140.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        if (leadingContent != null) item(key = "browse-introduction") { leadingContent() }
         items(folders, key = { it.key }) { (path, entries) ->
             val colors = folderColors(path)
             Surface(Modifier.animateItem().clickable { open(path) }, shape = RoundedCornerShape(24.dp), color = colors.container) {
