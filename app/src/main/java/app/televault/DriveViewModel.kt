@@ -74,10 +74,17 @@ class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
                         } catch (cancel: CancellationException) {
                             throw cancel
                         } catch (_: Exception) { }
-                        people.activate()
+                        people.activate(syncRemote = false)
                         ocr.activate()
                         people.cleanPrivateSources()
                         ocr.cleanPrivateSources()
+                        if (people.state.value.enabled) {
+                            try {
+                                people.sync()
+                            } catch (cancel: CancellationException) {
+                                throw cancel
+                            } catch (_: Exception) { }
+                        }
                         try {
                             repository.retryPrivateIntelligenceCleanup()
                         } catch (cancel: CancellationException) {

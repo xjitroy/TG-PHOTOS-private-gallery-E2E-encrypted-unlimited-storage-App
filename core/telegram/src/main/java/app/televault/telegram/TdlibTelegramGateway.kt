@@ -35,7 +35,8 @@ import org.json.JSONObject
 class TdlibTelegramGateway(context: Context, private val credentials: TelegramCredentials, private val protection: TransportProtection = OpenTransportProtection, private val retainCiphertext: () -> Boolean = { false }) : TelegramGateway {
     private val app = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val state = MutableStateFlow(AuthSnapshot())
+    private val sessionHistory = TelegramSessionHistory(app)
+    private val state = MutableStateFlow(AuthSnapshot(previouslyAuthorized = sessionHistory.previouslyAuthorized))
     override val authorization = state.asStateFlow()
     private val requests = ConcurrentHashMap<String, CompletableDeferred<JSONObject>>()
     private val sequence = AtomicLong()
@@ -61,7 +62,7 @@ class TdlibTelegramGateway(context: Context, private val credentials: TelegramCr
 
     init {
         if (!credentials.valid()) {
-            state.value = AuthSnapshot(AuthProtocol.State.SETUP_REQUIRED, setupIssue = SetupIssue.CREDENTIALS)
+            state.value = AuthSnapshot(AuthProtocol.State.SETUP_REQUIRED, previouslyAuthorized = sessionHistory.previouslyAuthorized, setupIssue = SetupIssue.CREDENTIALS)
         } else {
             scope.launch {
                 protection.paused.collect { paused ->
@@ -86,6 +87,7 @@ class TdlibTelegramGateway(context: Context, private val credentials: TelegramCr
         JsonClient.send(clientId, json("close").toString())
         kotlinx.coroutines.withTimeoutOrNull(10000) { receiver?.join() }
     }
+    override fun sessionDiagnostics(): String = sessionHistory.summary()
     override suspend fun reconnect() = kotlinx.coroutines.withContext(Dispatchers.IO) {
         if (!credentials.valid() || protection.blocked()) return@withContext
         lifecycle.withLock {
@@ -122,23 +124,23 @@ class TdlibTelegramGateway(context: Context, private val credentials: TelegramCr
     private suspend fun start() {
         if (protection.blocked() || explicitlyClosed) return
         if ((app.getSystemService(Context.KEYGUARD_SERVICE) as android.app.KeyguardManager).isDeviceLocked) {
-            state.value = AuthSnapshot(AuthProtocol.State.SETUP_REQUIRED, setupIssue = SetupIssue.DEVICE_KEY)
+            state.value = AuthSnapshot(AuthProtocol.State.SETUP_REQUIRED, previouslyAuthorized = sessionHistory.previouslyAuthorized, setupIssue = SetupIssue.DEVICE_KEY)
             return
         }
         protectionRestart = false
         parametersStarted = false
-        state.value = AuthSnapshot()
+        state.value = AuthSnapshot(previouslyAuthorized = sessionHistory.previouslyAuthorized)
         try {
             System.loadLibrary("tdjsonjava")
         } catch (_: UnsatisfiedLinkError) {
-            state.value = AuthSnapshot(AuthProtocol.State.SETUP_REQUIRED, setupIssue = SetupIssue.NATIVE_LIBRARY)
+            state.value = AuthSnapshot(AuthProtocol.State.SETUP_REQUIRED, previouslyAuthorized = sessionHistory.previouslyAuthorized, setupIssue = SetupIssue.NATIVE_LIBRARY)
             return
         }
         try {
             protection.requireAllowed()
             dbKey = SessionKeyStore(app).loadOrCreate()
         } catch (_: Exception) {
-            state.value = AuthSnapshot(AuthProtocol.State.SETUP_REQUIRED, setupIssue = SetupIssue.DEVICE_KEY)
+            state.value = AuthSnapshot(AuthProtocol.State.SETUP_REQUIRED, previouslyAuthorized = sessionHistory.previouslyAuthorized, setupIssue = SetupIssue.DEVICE_KEY)
             return
         }
         try {
@@ -223,6 +225,7 @@ class TdlibTelegramGateway(context: Context, private val credentials: TelegramCr
 
     private fun onAuthorization(auth: JSONObject) {
         val stage = AuthProtocol.map(auth.optString("@type"))
+        sessionHistory.observe(stage)
         if (stage == AuthProtocol.State.READY) restartAttempts = 0
         if (stage in setOf(AuthProtocol.State.CLOSED, AuthProtocol.State.LOGGING_OUT)) {
             selfChatId = 0
@@ -235,6 +238,7 @@ class TdlibTelegramGateway(context: Context, private val credentials: TelegramCr
         state.update {
             AuthSnapshot(
                 stage = stage,
+                previouslyAuthorized = sessionHistory.previouslyAuthorized,
                 busy = it.busy,
                 terms = auth.optJSONObject("terms_of_service")?.optJSONObject("text")?.optString("text").orEmpty(),
                 confirmationLink = auth.optString("link"),

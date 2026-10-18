@@ -37,14 +37,19 @@ import kotlinx.coroutines.withContext
 internal fun PhotoTextSelection(result: OcrText, uri: Uri, selectPhoto: Boolean, close: () -> Unit) {
     val context = LocalContext.current
     val shareTitle = label("Share selected text", "নির্বাচিত লেখা শেয়ার")
-    var photo by remember { mutableStateOf(selectPhoto) }
-    var selected by remember { mutableStateOf(setOf<Int>()) }
+    var photo by remember(result, uri) { mutableStateOf(selectPhoto && result.words.isNotEmpty()) }
+    var selected by remember(result, uri) { mutableStateOf(setOf<Int>()) }
     var anchor by remember { mutableIntStateOf(-1) }
     var edge by remember { mutableIntStateOf(-1) }
     var copied by remember { mutableStateOf(false) }
     val slot = remember(uri) { vaultImageSlot() }
     val bitmap by produceState<android.graphics.Bitmap?>(null, slot) {
-        withContext(Dispatchers.IO) { decodeOcrPhoto(context, uri)?.let(slot::offer) }
+        guardedProjection(Unit) {
+            withContext(Dispatchers.IO) {
+                decodeOcrPhoto(context, uri)?.let(slot::offer)
+                Unit
+            }
+        }
         value = slot.publish()
     }
     DisposableEffect(slot) { onDispose { slot.retire() } }
@@ -54,7 +59,7 @@ internal fun PhotoTextSelection(result: OcrText, uri: Uri, selectPhoto: Boolean,
             Column {
                 TopAppBar(title = { Text(label("Text in photo", "ছবির লেখা")) }, navigationIcon = { IconButton(close) { Icon(Icons.Outlined.Close, label("Close", "বন্ধ")) } }, windowInsets = WindowInsets(0, 0, 0, 0))
                 Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(photo, { photo = true }, label = { Text(label("On photo", "ছবিতে নির্বাচন")) })
+                    FilterChip(photo, { photo = true }, enabled = result.words.isNotEmpty(), label = { Text(label("On photo", "ছবিতে নির্বাচন")) })
                     FilterChip(!photo, { photo = false }, label = { Text(label("All text", "সমস্ত লেখা")) })
                 }
                 if (photo) {

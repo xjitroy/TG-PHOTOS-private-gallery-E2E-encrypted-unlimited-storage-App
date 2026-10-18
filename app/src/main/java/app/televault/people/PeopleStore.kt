@@ -133,7 +133,9 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
     private fun publish(scope: Pair<Long, String>, token: Long, notice: String = "", busy: Boolean = false) {
         access(scope, token)
         persons.values.forEach(::sanitize)
-        val cards = persons.values.filter { !it.deleted && it.members.isNotEmpty() }.map { PersonCard(it.id, it.name, it.references.firstOrNull()?.jpeg?.clone() ?: byteArrayOf(), it.members.toSet(), it.suggestion) }.sortedWith(compareBy<PersonCard> { it.name.isBlank() }.thenBy { it.name }.thenBy { it.id })
+        val previous = mutable.value.people.associateBy { it.id }
+        val reused = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<ByteArray, Boolean>())
+        val cards = persons.values.filter { !it.deleted && it.members.isNotEmpty() }.map { PersonCard(it.id, it.name, it.references.firstOrNull()?.jpeg?.let { jpeg -> previous[it.id]?.cover?.takeIf { cover -> cover.contentEquals(jpeg) }?.also { cover -> reused.add(cover) } ?: jpeg.clone() } ?: byteArrayOf(), it.members.toSet(), it.suggestion) }.sortedWith(compareBy<PersonCard> { it.name.isBlank() }.thenBy { it.name }.thenBy { it.id })
         synchronized(publicationGuard) {
             if (generation.get() != token) {
                 cards.forEach { it.cover.fill(0) }
@@ -141,7 +143,7 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
             }
             val old = mutable.value
             mutable.value = PeopleState(enabled, cards, scanned.size, busy, persons.values.any { it.dirty }, notice, faceCounts.filterKeys { !drive.privateAi.excluded(it) }.toMap())
-            old.people.forEach { it.cover.fill(0) }
+            old.people.filter { it.cover !in reused }.forEach { it.cover.fill(0) }
         }
     }
     private fun save(scope: Pair<Long, String>, token: Long) {
@@ -169,7 +171,7 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
             body.fill(0)
         }
     }
-    suspend fun activate() = withContext(Dispatchers.IO) {
+    suspend fun activate(syncRemote: Boolean = true) = withContext(Dispatchers.IO) {
         mutex.withLock {
             val scope = drive.privateVaultBinding()
             if (binding == scope) return@withLock
@@ -224,7 +226,7 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
             }
             persons.values.forEach(::sanitize)
             publish(scope, token)
-            if (enabled) {
+            if (enabled && syncRemote) {
                 try {
                     syncLocked(scope, token)
                     publish(scope, token)
@@ -469,7 +471,7 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
             }
             val image = load() ?: return@withLock false
             // Thumbnails may be shared by the gallery; the engine never erases/recycles the source.
-            val samples = (engine ?: FaceEngine(context).also { engine = it }).faces(image)
+            val samples = app.televault.OnDeviceAnalysis.run { (engine ?: FaceEngine(context).also { engine = it }).faces(image) }
             try {
                 access(scope, token)
                 val awaiting = persons.values.filter { !it.deleted && it.references.isEmpty() && id in it.members }

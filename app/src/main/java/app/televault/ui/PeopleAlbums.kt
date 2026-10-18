@@ -36,7 +36,12 @@ import kotlinx.coroutines.withContext
 internal fun PersonPortrait(person: PersonCard, modifier: Modifier = Modifier) {
     val slot = remember(person.id, person.cover) { EphemeralImageSlot<android.graphics.Bitmap>({ if (it.isMutable && !it.isRecycled) it.eraseColor(0) }, { if (!it.isRecycled) it.recycle() }) }
     val image by produceState<android.graphics.Bitmap?>(null, slot) {
-        withContext(Dispatchers.Default) { BitmapFactory.decodeByteArray(person.cover, 0, person.cover.size, BitmapFactory.Options().apply { inMutable = true })?.let(slot::offer) }
+        guardedProjection(Unit) {
+            withContext(Dispatchers.Default) {
+                BitmapFactory.decodeByteArray(person.cover, 0, person.cover.size, BitmapFactory.Options().apply { inMutable = true })?.let(slot::offer)
+                Unit
+            }
+        }
         value = slot.publish()
     }
     DisposableEffect(slot) { onDispose { slot.retire() } }

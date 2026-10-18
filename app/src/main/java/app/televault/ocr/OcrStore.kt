@@ -117,7 +117,6 @@ internal class OcrStore(private val context: Context, private val drive: DriveRe
         if (!drive.normalIntelligenceMedia(id))return@withContext OcrText.EMPTY
         val contentHash = drive.intelligenceContentHash(id)
         if (drive.privateAi.excluded(id, contentHash))return@withContext OcrText.EMPTY
-        models.prepare(false)
         guard(requestedScope, requestedToken)
         mutex.withLock {
             val scope = drive.privateVaultBinding()
@@ -130,35 +129,48 @@ internal class OcrStore(private val context: Context, private val drive: DriveRe
             } catch (_: Exception) {
                 null
             }
-            if (saved?.optString("stamp") == stamp && (!thorough || saved.optBoolean("thorough")))return@withLock OcrText.read(saved)
+            if (saved?.optString("stamp") == stamp && (!thorough || saved.optBoolean("thorough") && saved.optInt("engineRevision") >= 2)) {
+                try {
+                    return@withLock OcrText.read(saved)
+                } catch (_: org.json.JSONException) { } catch (_: IllegalStateException) { }
+            }
+            models.prepare(false)
             val files = root(scope).listFiles().orEmpty()
             check(files.size < 50000 && files.sumOf { it.length() } < 256L * 1024 * 1024) { "Text index is full; clear it in Search to rebuild" }
             publish(scope, generation, mutable.value.copy(busy = true, notice = ""))
-            val bitmap = decodeOcrPhoto(context, source()) ?: return@withLock OcrText.EMPTY
+            var bitmap: Bitmap? = null
             try {
+                val image = decodeOcrPhoto(context, source()) ?: return@withLock OcrText.EMPTY
+                bitmap = image
                 guard(scope, generation)
-                val text = (engine ?: OcrEngine(models).also { engine = it }).read(bitmap, thorough)
+                val text = app.televault.OnDeviceAnalysis.run { (engine ?: OcrEngine(models).also { engine = it }).read(image, thorough) }
                 guard(scope, generation)
                 if (drive.privateAi.excluded(id, contentHash))return@withLock OcrText.EMPTY
-                write(scope, generation, id, text.json().put("contentHash", contentHash).put("id", id).put("stamp", stamp).put("thorough", thorough))
+                write(scope, generation, id, text.json().put("contentHash", contentHash).put("id", id).put("stamp", stamp).put("thorough", thorough).put("engineRevision", 2))
                 publish(scope, generation, mutable.value.copy(indexed = mutable.value.indexed + if (saved == null) 1 else 0, busy = false))
                 text
             } finally {
-                bitmap.eraseColor(0)
-                bitmap.recycle()
+                bitmap?.let {
+                    it.eraseColor(0)
+                    it.recycle()
+                }
                 if (token.get() == generation) publish(scope, generation, mutable.value.copy(busy = false))
             }
         }
     }
     suspend fun search(names: Map<String, String>, query: String): Set<String> = withContext(Dispatchers.IO) {
         if (query.isBlank())return@withContext names.keys
-        val scope = drive.privateVaultBinding()
-        val generation = token.get()
         val words = query.lowercase(java.util.Locale.ROOT).split(Regex("\\s+")).filter { it.isNotBlank() }
-        buildSet {
+        fun matches(body: String) = words.all(app.televault.domain.TextTopics.searchText(body)::contains)
+        val scope = binding
+        val generation = token.get()
+        // Names/categories remain searchable when OCR is disabled or still activating.
+        if (scope == null || !mutable.value.enabled) return@withContext names.filter { !drive.privateAi.excluded(it.key) && matches(it.value) }.keys
+        fun current() = binding == scope && token.get() == generation && mutable.value.enabled && drive.state.value.stage == app.televault.data.VaultStage.READY
+        buildSet<String> {
             for ((id, name) in names) {
                 currentCoroutineContext().ensureActive()
-                guard(scope, generation)
+                if (!current()) return@withContext emptySet<String>()
                 val text = try {
                     val record = read(scope, id)
                     if (drive.privateAi.excluded(id, record?.optString("contentHash").orEmpty()))continue
@@ -168,9 +180,9 @@ internal class OcrStore(private val context: Context, private val drive: DriveRe
                 } catch (_: Exception) {
                     ""
                 }
-                val body = app.televault.domain.TextTopics.searchText(name + " " + text)
-                if (words.all(body::contains))add(id)
+                if (matches(name + " " + text))add(id)
             }
+            if (!current())return@withContext emptySet<String>()
         }
     }
     suspend fun cleanPrivateSources() {

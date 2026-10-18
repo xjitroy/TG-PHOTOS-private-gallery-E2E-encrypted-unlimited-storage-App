@@ -29,13 +29,24 @@ internal class FaceEngine(private val context: Context) : AutoCloseable {
             bytes.fill(0)
         }
     }
-    private val detector = Interpreter(model("blazeface_short_range"), Interpreter.Options().setNumThreads(2))
-    private val recognizer = Interpreter(model("mobile_facenet"), Interpreter.Options().setNumThreads(2))
+    private val detector: Interpreter
+    private val recognizer: Interpreter
     private data class Detection(val box: RectF, val points: FloatArray, val score: Float)
     init {
-        check(detector.getInputTensor(0).shape().contentEquals(intArrayOf(1, 128, 128, 3)))
-        check(recognizer.getInputTensor(0).shape().contentEquals(intArrayOf(1, 3, 112, 112)))
-        check(recognizer.getOutputTensor(0).shape().contentEquals(intArrayOf(2, 128)))
+        val first = Interpreter(model("blazeface_short_range"), Interpreter.Options().setNumThreads(2))
+        var second: Interpreter? = null
+        try {
+            second = Interpreter(model("mobile_facenet"), Interpreter.Options().setNumThreads(2))
+            check(first.getInputTensor(0).shape().contentEquals(intArrayOf(1, 128, 128, 3)))
+            check(second.getInputTensor(0).shape().contentEquals(intArrayOf(1, 3, 112, 112)))
+            check(second.getOutputTensor(0).shape().contentEquals(intArrayOf(2, 128)))
+            detector = first
+            recognizer = second
+        } catch (error: Throwable) {
+            second?.close()
+            first.close()
+            throw error
+        }
     }
     fun faces(source: Bitmap): List<FaceSample> {
         val owned = if (source.config == Bitmap.Config.HARDWARE) source.copy(Bitmap.Config.ARGB_8888, true) else null

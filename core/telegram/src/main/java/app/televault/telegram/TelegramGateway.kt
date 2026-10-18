@@ -17,6 +17,7 @@ enum class SetupIssue { CREDENTIALS, NATIVE_LIBRARY, DEVICE_KEY }
 
 data class AuthSnapshot(
     val stage: AuthProtocol.State = AuthProtocol.State.STARTING,
+    val previouslyAuthorized: Boolean = false,
     val busy: Boolean = false,
     val error: AuthProtocol.SafeError? = null,
     val setupIssue: SetupIssue? = null,
@@ -42,6 +43,7 @@ interface TelegramGateway {
     val authorization: StateFlow<AuthSnapshot>
     suspend fun submit(action: AuthProtocol.Action, value: String = "", lastName: String = "")
     suspend fun reconnect() {}
+    fun sessionDiagnostics(): String = ""
     suspend fun close()
     suspend fun ownerProfile(): TelegramOwnerProfile = throw UnsupportedOperationException("Owner profile unavailable")
     suspend fun accountId(): Long

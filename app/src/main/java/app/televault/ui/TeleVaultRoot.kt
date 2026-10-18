@@ -42,10 +42,21 @@ fun TeleVaultRoot(
 ) {
     var started by rememberSaveable { mutableStateOf(false) }
     Surface(Modifier.fillMaxSize()) {
-        when {
-            auth.stage == AuthProtocol.State.READY -> authenticatedContent()
-            !started -> Welcome { started = true }
-            else -> Login(auth, submit, phoneCountries, preparePhoneCountries)
+        when (app.televault.domain.AuthRestorePolicy.screen(auth.stage, auth.previouslyAuthorized, started)) {
+            app.televault.domain.AuthRestorePolicy.Screen.CONTENT -> authenticatedContent()
+            app.televault.domain.AuthRestorePolicy.Screen.WELCOME -> Welcome { started = true }
+            app.televault.domain.AuthRestorePolicy.Screen.LOGIN -> Login(auth, submit, phoneCountries, preparePhoneCountries)
+            app.televault.domain.AuthRestorePolicy.Screen.RESTORING -> Column(Modifier.fillMaxSize().safeDrawingPadding().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                CircularProgressIndicator(Modifier.size(28.dp))
+                Spacer(Modifier.height(16.dp))
+                Text(label("Connecting to your saved session…", "সংরক্ষিত সেশনে সংযোগ হচ্ছে…"), style = MaterialTheme.typography.titleMedium)
+                Text(label("Wait for Telegram to restore its saved session before requesting another code. Do not clear app data.", "নতুন কোড চাওয়ার আগে Telegram-এর সেশন ফিরে আসা পর্যন্ত অপেক্ষা করুন। অ্যাপের ডাটা ক্লিয়ার করবেন না।"), Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodyMedium)
+                if (auth.error != null) {
+                    val context = LocalContext.current
+                    val retryScope = rememberCoroutineScope()
+                    TextButton({ retryScope.launch { runCatching { (context.applicationContext as app.televault.TeleVaultApplication).telegram.reconnect() } } }) { Text(label("Retry connection", "সংযোগ আবার চেষ্টা করুন")) }
+                }
+            }
         }
     }
 }
@@ -161,6 +172,11 @@ private fun Login(auth: AuthSnapshot, submit: (AuthProtocol.Action, String, Stri
             }
             Text(if (auth.stage == AuthProtocol.State.CODE) label("Verification code", "ভেরিফিকেশন কোড") else stringResource(R.string.login_title), style = MaterialTheme.typography.headlineSmall)
             Text(stringResource(R.string.login_disclosure), style = MaterialTheme.typography.bodySmall)
+            if (auth.previouslyAuthorized && auth.stage == AuthProtocol.State.PHONE) Text(label("Telegram is requesting sign-in again. Your local encrypted library has not been reset. Sign in to the same account; do not clear app data.", "Telegram আবার লগইন চাইছে। লোকাল এনক্রিপ্টেড লাইব্রেরি রিসেট হয়নি। একই অ্যাকাউন্টে লগইন করুন; অ্যাপের ডাটা ক্লিয়ার করবেন না।"), style = MaterialTheme.typography.bodyMedium)
+            if (auth.previouslyAuthorized && auth.stage in setOf(AuthProtocol.State.PHONE, AuthProtocol.State.SETUP_REQUIRED)) {
+                val sessionInfo by produceState("") { value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { (context.applicationContext as app.televault.TeleVaultApplication).telegram.sessionDiagnostics() + " · " + app.televault.RuntimeDiagnostics.summary(context) } }
+                Text(sessionInfo, style = MaterialTheme.typography.labelSmall)
+            }
             if (auth.stage == AuthProtocol.State.CLOSED || auth.stage == AuthProtocol.State.SETUP_REQUIRED && auth.setupIssue == SetupIssue.DEVICE_KEY || auth.stage == AuthProtocol.State.PARAMETERS && auth.error != null) {
                 val retryScope = rememberCoroutineScope()
                 TextButton({ retryScope.launch { runCatching { (context.applicationContext as app.televault.TeleVaultApplication).telegram.reconnect() } } }) { Text(label("Retry connection", "সংযোগ আবার চেষ্টা করুন")) }

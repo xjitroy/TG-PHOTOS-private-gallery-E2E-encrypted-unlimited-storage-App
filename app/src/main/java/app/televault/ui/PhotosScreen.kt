@@ -163,7 +163,7 @@ fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDynamicColo
     val trashActions = rememberTrashActions(model)
     var backupSelectionMenu by remember { mutableStateOf(false) }
     val crashSummary by produceState("") {
-        value = withContext(Dispatchers.IO) { app.televault.RuntimeDiagnostics.summary(context.applicationContext) }
+        value = withContext(Dispatchers.IO) { app.televault.RuntimeDiagnostics.summary(context.applicationContext) + "\n" + (context.applicationContext as app.televault.TeleVaultApplication).telegram.sessionDiagnostics() }
     }
     val showHiddenGallery by model.preferences.showHiddenGallery.collectAsStateWithLifecycle(initialValue = false)
     val guidanceEnabled by model.preferences.guidanceEnabled.collectAsStateWithLifecycle(initialValue = true)
@@ -1531,6 +1531,12 @@ fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDynamicColo
                                 DeviceLibraryFolders(visible) { path ->
                                     folder = path
                                     selected = emptySet()
+                                }
+                            } else if (visible.isEmpty() && projection.failed) {
+                                Column(Modifier.weight(1f).fillMaxWidth().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                                    Text(label("Could not display this view", "এই তালিকা দেখানো যায়নি"), style = MaterialTheme.typography.titleMedium)
+                                    Text(label("Your saved files have not been cleared. Retry this view.", "আপনার সেভ করা ফাইল ক্লিয়ার হয়নি। আবার চেষ্টা করুন।"))
+                                    TextButton(projection.retry) { Text(label("Retry", "আবার চেষ্টা")) }
                                 }
                             } else if (visible.isEmpty() && (!projection.ready || (if (deviceContext) !deviceIndexReady || scanningFiles else !state.indexLoaded))) {
                                 val failed = if (deviceContext) deviceScanFailed else state.indexFailed

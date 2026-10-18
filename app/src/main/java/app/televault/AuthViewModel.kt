@@ -43,7 +43,15 @@ class AuthViewModel(private val gateway: TelegramGateway) : ViewModel() {
         }
     }
     fun submit(action: AuthProtocol.Action, value: String = "", lastName: String = "") {
-        viewModelScope.launch { gateway.submit(action, value, lastName) }
+        viewModelScope.launch {
+            try {
+                gateway.submit(action, value, lastName)
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (_: Exception) {
+                reconnect()
+            }
+        }
     }
 
     class Factory(private val gateway: TelegramGateway) : ViewModelProvider.Factory {

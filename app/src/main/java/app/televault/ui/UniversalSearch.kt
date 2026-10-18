@@ -50,7 +50,7 @@ internal fun UniversalSearch(files: List<MediaEntry>, people: PeopleState, model
     val person = people.people.find { it.id == personId }
     val parsed = remember(query, start, end) { UniversalMediaSearch.parse(query, start, end) }
     val scope = listOf(model.playbackEpoch, query, start, end, type, personId, companion, alone, people.faceCounts, textIndex.indexed)
-    val results = rememberBackgroundProjection(scope, files to people, emptyList<MediaEntry>()) { (all, index) ->
+    val projection = rememberBackgroundProjection(scope, files to people, emptyList<MediaEntry>()) { (all, index) ->
         val personNames = mutableMapOf<String, MutableList<String>>()
         index.people.filter { it.name.isNotBlank() }.forEach { group -> group.members.forEach { personNames.getOrPut(it) { mutableListOf() }.add(group.name) } }
         val members = index.people.find { it.id == personId }?.members
@@ -72,7 +72,8 @@ internal fun UniversalSearch(files: List<MediaEntry>, people: PeopleState, model
         }
         val matches = model.ocr.search(candidates.associate { it.id to "${it.name} ${metadata(it)}" }, parsed.text())
         candidates.filter { it.id in matches }.sortedByDescending { it.date }
-    }.value
+    }
+    val results = projection.value
     Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize().safeDrawingPadding(), color = MaterialTheme.colorScheme.background) {
             Column(Modifier.fillMaxSize()) {
@@ -118,6 +119,10 @@ internal fun UniversalSearch(files: List<MediaEntry>, people: PeopleState, model
                         FilterChip(companion != null, { chooseCompanion = true }, label = { Text(companion?.let { id -> people.people.find { it.id == id }?.name?.ifBlank { label("Together", "একসঙ্গে") } } ?: label("With someone", "কারও সঙ্গে")) }, leadingIcon = { Icon(Icons.Outlined.People, null, Modifier.size(18.dp)) })
                     }
                     if (alone) Text(label("Only photos with one detected face; unprocessed photos are excluded.", "একটি মুখ শনাক্ত হওয়া ছবি; স্ক্যান না হওয়া ছবি বাদ থাকে।"), Modifier.padding(horizontal = 20.dp), style = MaterialTheme.typography.bodySmall)
+                }
+                if (projection.failed) {
+                    Text(label("Search could not finish. Your media is kept.", "সার্চ সম্পূর্ণ হয়নি। আপনার মিডিয়া রাখা আছে।"), Modifier.padding(horizontal = 20.dp), style = MaterialTheme.typography.bodySmall)
+                    TextButton(projection.retry) { Text(label("Retry search", "সার্চ আবার চেষ্টা")) }
                 }
                 Text(label("${results.size} results · newest first", "${results.size}টি ফলাফল · নতুন আগে"), Modifier.padding(horizontal = 20.dp, vertical = 10.dp), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (initialPerson != null) {

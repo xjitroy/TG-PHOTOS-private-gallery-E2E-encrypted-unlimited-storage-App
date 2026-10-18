@@ -13,7 +13,8 @@ internal object RuntimeDiagnostics {
             runCatching {
                 val data = JSONObject().put("version", BuildConfig.VERSION_NAME).put("sdk", android.os.Build.VERSION.SDK_INT)
                     .put("time", System.currentTimeMillis()).put("type", error.javaClass.name)
-                    .put("frames", JSONArray(error.stackTrace.filter { it.className.startsWith("app.televault.") }.take(8).map { "${it.className}#${it.methodName}:${it.lineNumber}" }))
+                    .put("causes", JSONArray(generateSequence(error) { it.cause?.takeIf { cause -> cause !== it } }.take(4).map { it.javaClass.name }.toList()))
+                    .put("frames", JSONArray(error.stackTrace.take(8).map { "${it.className}#${it.methodName}:${it.lineNumber}" }))
                     .toString().toByteArray()
                 val file = AtomicFile(File(context.noBackupFilesDir, "last-runtime-diagnostic.json"))
                 val output = file.startWrite()
@@ -27,7 +28,18 @@ internal object RuntimeDiagnostics {
             if (previous != null) previous.uncaughtException(thread, error) else android.os.Process.killProcess(android.os.Process.myPid())
         }
     }
-    fun summary(context: Context): String = runCatching {
+    fun summary(context: Context): String {
+        val exit = if (android.os.Build.VERSION.SDK_INT >= 30) {
+            runCatching {
+                val manager = context.getSystemService(android.app.ActivityManager::class.java)
+                manager.getHistoricalProcessExitReasons(context.packageName, 0, 1).firstOrNull()?.let { "Android exit reason=${it.reason} status=${it.status}" }.orEmpty()
+            }.getOrDefault("")
+        } else {
+            ""
+        }
+        return javaSummary(context) + if (exit.isNotEmpty()) " · $exit" else ""
+    }
+    private fun javaSummary(context: Context): String = runCatching {
         val file = AtomicFile(File(context.noBackupFilesDir, "last-runtime-diagnostic.json"))
         file.openRead().use { input ->
             val bytes = ByteArray(4097)
