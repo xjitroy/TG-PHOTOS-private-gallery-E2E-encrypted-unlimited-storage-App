@@ -26,6 +26,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -254,7 +255,7 @@ class MainActivity : ComponentActivity() {
     }
     override fun onStart() {
         super.onStart()
-        lifecycleScope.launch { runCatching { (application as TeleVaultApplication).telegram.reconnect() } }
+        lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) { runCatching { (application as TeleVaultApplication).telegram.reconnect() } }
         lockHandler.removeCallbacks(expireLock)
         if (LockGrace.expired(backgroundAt, SystemClock.elapsedRealtime(), graceMinutes)) expireAuthentication()
         backgroundAt = -1L
@@ -277,7 +278,7 @@ class MainActivity : ComponentActivity() {
         lockHandler.removeCallbacks(expireLock)
         if (!isChangingConfigurations) {
             vaultModel?.lock()
-            (application as TeleVaultApplication).privateVault.lock()
+            (application as TeleVaultApplication).lockExistingPrivateVault()
         }
         if (screenReceiverRegistered) {
             unregisterReceiver(screenReceiver)
@@ -307,24 +308,28 @@ class MainActivity : ComponentActivity() {
             val interfaceStyle by preferences.interfaceStyle.collectAsStateWithLifecycle(initialValue = InterfaceStyle.GLASS)
             val lockGraceMinutes by preferences.lockGraceMinutes.collectAsStateWithLifecycle(initialValue = 2)
             LaunchedEffect(lockGraceMinutes) { graceMinutes = lockGraceMinutes }
-            val model: AuthViewModel = viewModel(factory = AuthViewModel.Factory((application as TeleVaultApplication).telegram))
-            val auth by model.authorization.collectAsStateWithLifecycle()
-            val phoneCountries by model.phoneCountries.collectAsStateWithLifecycle()
             var startupAttempt by remember { mutableStateOf(0) }
-            val driveResult = remember(startupAttempt) { runCatching { (application as TeleVaultApplication).drive } }
-            if (driveResult.isFailure) {
+            var startupFailed by remember(startupAttempt) { mutableStateOf(false) }
+            val services by produceState<TeleVaultApplication.Services?>(null, startupAttempt) {
+                try {
+                    value = (application as TeleVaultApplication).prepareServices()
+                } catch (cancel: kotlinx.coroutines.CancellationException) {
+                    throw cancel
+                } catch (_: Exception) {
+                    startupFailed = true
+                }
+            }
+            val ready = services
+            if (ready == null) {
                 TeleVaultTheme(dynamicColor, appearanceMode, interfaceStyle) {
-                    Surface(Modifier.fillMaxSize()) {
-                        Column(Modifier.fillMaxSize().safeDrawingPadding().padding(24.dp), verticalArrangement = Arrangement.Center) {
-                            Text(label("TG Photos could not start", "TG Photos চালু হতে পারেনি"), style = MaterialTheme.typography.titleLarge)
-                            Text(label("Check available storage, then retry. Your existing Drive and password have not been reset.", "ফোনের খালি জায়গা পরীক্ষা করে আবার চেষ্টা করুন। আপনার Drive বা পাসওয়ার্ড রিসেট হয়নি।"))
-                            TextButton({ startupAttempt++ }) { Text(label("Retry", "আবার চেষ্টা")) }
-                        }
-                    }
+                    app.televault.ui.StartupScreen(startupFailed) { startupAttempt++ }
                 }
                 return@setContent
             }
-            val drive: DriveViewModel = viewModel(factory = DriveViewModel.Factory(driveResult.getOrThrow()))
+            val model: AuthViewModel = viewModel(factory = AuthViewModel.Factory(ready.telegram))
+            val auth by model.authorization.collectAsStateWithLifecycle()
+            val phoneCountries by model.phoneCountries.collectAsStateWithLifecycle()
+            val drive: DriveViewModel = viewModel(factory = DriveViewModel.Factory(ready.drive))
             vaultModel = drive
             val driveState by drive.state.collectAsStateWithLifecycle()
             val protection = (application as TeleVaultApplication).protection

@@ -53,10 +53,15 @@ internal fun MediaThumbnail(entry: MediaEntry, model: DriveViewModel, modifier: 
     LaunchedEffect(entry.id, entry.local?.modified, entry.cloud?.thumbnail, pixels, if (entry.local != null) accessRevision else 0L) {
         repeat(3) { attempt ->
             val loaded = try {
-                if (entry.local != null) model.localMedia.thumbnail(entry.local, pixels) else model.thumbnail(entry.id, pixels)
+                app.televault.data.PreviewWorkGate.thumbnails.run {
+                    if (entry.local != null) model.localMedia.thumbnail(entry.local, pixels) else model.thumbnail(entry.id, pixels)
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
+                null
+            } catch (_: OutOfMemoryError) {
+                // Keep cached pixels/placeholder; a transient preview must not kill the process.
                 null
             }
             if (loaded != null) {

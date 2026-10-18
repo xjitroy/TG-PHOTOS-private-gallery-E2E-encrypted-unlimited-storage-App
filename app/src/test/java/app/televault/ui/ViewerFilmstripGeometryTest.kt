@@ -55,4 +55,18 @@ class ViewerFilmstripGeometryTest {
         assertEquals(2, ViewerFilmstripGeometry.nearest(items, 0, 320, 5))
         assertEquals(2, ViewerFilmstripGeometry.nearest(items.map { it.copy(offset = 320 - it.offset - it.size) }, 0, 320, 5))
     }
+
+    @Test fun dragIsClampedAndMirrorsForRtlWithoutChangingTheRealPager() {
+        assertEquals(11f, ViewerFilmstripGeometry.drag(10f, -48f, 48f, 500, false))
+        assertEquals(11f, ViewerFilmstripGeometry.drag(10f, 48f, 48f, 500, true))
+        assertEquals(0f, ViewerFilmstripGeometry.drag(0f, 10000f, 48f, 500, false))
+        assertEquals(499f, ViewerFilmstripGeometry.drag(499f, -10000f, 48f, 500, false))
+    }
+
+    @Test fun flingCannotScheduleAnUnboundedPageBurstOrInvalidIndex() {
+        assertEquals(106f, ViewerFilmstripGeometry.fling(100f, -100000f, 48f, 500, false))
+        assertEquals(94f, ViewerFilmstripGeometry.fling(100f, 100000f, 48f, 500, false))
+        assertEquals(499f, ViewerFilmstripGeometry.fling(498f, -100000f, 48f, 500, false))
+        assertEquals(100f, ViewerFilmstripGeometry.fling(100f, Float.NaN, 48f, 500, false))
+    }
 }

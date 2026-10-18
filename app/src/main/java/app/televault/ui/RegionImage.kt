@@ -176,17 +176,19 @@ internal class RegionImageView(context: Context) : View(context) {
             var opened: Pair<android.os.ParcelFileDescriptor, BitmapRegionDecoder>? = null
             try {
                 // Keep handles reachable even if the view closes during native I/O.
-                withContext(Dispatchers.IO + NonCancellable) {
-                    if (savedWidth == 0) orientation = android.os.ParcelFileDescriptor.AutoCloseInputStream(readSession.descriptor(context)).use { runCatching { androidx.exifinterface.media.ExifInterface(it).getAttributeInt(androidx.exifinterface.media.ExifInterface.TAG_ORIENTATION, 1) }.getOrDefault(1) }
-                    val fd = readSession.descriptor(context)
-                    try {
-                        val next = checkNotNull(BitmapRegionDecoder.newInstance(fd.fileDescriptor, false))
-                        opened = fd to next
-                        savedWidth = next.width
-                        savedHeight = next.height
-                    } catch (error: Throwable) {
-                        fd.close()
-                        throw error
+                app.televault.data.PreviewWorkGate.originals.run {
+                    withContext(Dispatchers.IO + NonCancellable) {
+                        if (savedWidth == 0) orientation = android.os.ParcelFileDescriptor.AutoCloseInputStream(readSession.descriptor(context)).use { runCatching { androidx.exifinterface.media.ExifInterface(it).getAttributeInt(androidx.exifinterface.media.ExifInterface.TAG_ORIENTATION, 1) }.getOrDefault(1) }
+                        val fd = readSession.descriptor(context)
+                        try {
+                            val next = checkNotNull(BitmapRegionDecoder.newInstance(fd.fileDescriptor, false))
+                            opened = fd to next
+                            savedWidth = next.width
+                            savedHeight = next.height
+                        } catch (error: Throwable) {
+                            fd.close()
+                            throw error
+                        }
                     }
                 }
                 ensureActive()
@@ -280,10 +282,12 @@ internal class RegionImageView(context: Context) : View(context) {
                 val originalHeight = savedHeight
                 var bitmap: Bitmap? = null
                 try {
-                    withContext(Dispatchers.IO + NonCancellable) {
-                        bitmap = synchronized(d) { if (d.isRecycled) null else runCatching { d.decodeRegion(tile.rect, BitmapFactory.Options().apply { inSampleSize = tile.sample }) }.getOrNull() }
-                        if (tile.rect == Rect(0, 0, originalWidth, originalHeight) && previewCache != null) {
-                            bitmap?.let { previewCache?.remember(previewKey, it, originalWidth, originalHeight, orientation, previewEpoch) }
+                    app.televault.data.PreviewWorkGate.originals.run {
+                        withContext(Dispatchers.IO + NonCancellable) {
+                            bitmap = synchronized(d) { if (d.isRecycled) null else runCatching { d.decodeRegion(tile.rect, BitmapFactory.Options().apply { inSampleSize = tile.sample }) }.getOrNull() }
+                            if (tile.rect == Rect(0, 0, originalWidth, originalHeight) && previewCache != null) {
+                                bitmap?.let { previewCache?.remember(previewKey, it, originalWidth, originalHeight, orientation, previewEpoch) }
+                            }
                         }
                     }
                     ensureActive()

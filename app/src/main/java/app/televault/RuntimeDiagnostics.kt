@@ -39,6 +39,33 @@ internal object RuntimeDiagnostics {
         }
         return javaSummary(context) + if (exit.isNotEmpty()) " · $exit" else ""
     }
+
+    /** Allowlisted local report: no exception messages, media paths, names, phone numbers or keys. */
+    fun report(context: Context): String = buildString {
+        append("TG Photos ").append(BuildConfig.VERSION_NAME).append(" · ").append(android.os.Build.MANUFACTURER).append(' ').append(android.os.Build.MODEL).append(" · Android ").append(android.os.Build.VERSION.RELEASE).append(" (SDK ").append(android.os.Build.VERSION.SDK_INT).append(")\n")
+        append(summary(context))
+        runCatching {
+            val file = AtomicFile(File(context.noBackupFilesDir, "last-runtime-diagnostic.json"))
+            val data = file.openRead().use { input ->
+                val bytes = ByteArray(4097)
+                var count = 0
+                while (count < bytes.size) {
+                    val read = input.read(bytes, count, bytes.size - count)
+                    if (read <= 0) break
+                    count += read
+                }
+                check(count in 1..4096)
+                JSONObject(String(bytes, 0, count, Charsets.UTF_8))
+            }
+            for (field in listOf("causes", "frames")) {
+                val values = data.optJSONArray(field) ?: continue
+                for (i in 0 until minOf(values.length(), 8)) {
+                    val text = values.optString(i)
+                    if (text.length <= 256 && text.matches(Regex("[A-Za-z0-9_.$#:<>()-]+"))) append('\n').append(text)
+                }
+            }
+        }
+    }
     private fun javaSummary(context: Context): String = runCatching {
         val file = AtomicFile(File(context.noBackupFilesDir, "last-runtime-diagnostic.json"))
         file.openRead().use { input ->

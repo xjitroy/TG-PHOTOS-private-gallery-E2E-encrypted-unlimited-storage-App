@@ -16,6 +16,15 @@ internal object ViewerFilmstripGeometry {
             .minByOrNull { abs(it.offset + it.size / 2f - center) }?.index
     }
 
+    fun drag(position: Float, delta: Float, stride: Float, count: Int, rtl: Boolean): Float {
+        if (count <= 0 || !position.isFinite() || !delta.isFinite() || !stride.isFinite() || stride <= 0f) return 0f
+        return (position + (if (rtl) delta else -delta) / stride).coerceIn(0f, (count - 1).toFloat())
+    }
+    fun fling(position: Float, velocity: Float, stride: Float, count: Int, rtl: Boolean): Float {
+        val travel = if (velocity.isFinite() && stride > 0f) (velocity * .12f / stride).coerceIn(-6f, 6f) else 0f
+        return drag(position, travel * stride, stride, count, rtl)
+    }
+
     /** Equal edge padding makes scrollToItem(index, 0) center even the first/last thumbnail. */
     fun target(position: Float, count: Int, stride: Float): FilmstripScrollTarget? {
         if (count <= 0 || !position.isFinite() || !stride.isFinite() || stride <= 0f) return null

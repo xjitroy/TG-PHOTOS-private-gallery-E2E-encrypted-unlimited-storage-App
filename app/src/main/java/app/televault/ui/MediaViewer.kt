@@ -80,7 +80,7 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
     val media = remember(latest, cloudById, editedById) { stableIds.mapNotNull { id -> editedById[id] ?: (latest[id] ?: initialById[id])?.let { value -> value.copy(cloud = cloudById[id] ?: value.cloud) } }.ifEmpty { listOf(entry) } }
     val videos = remember(media) { media.filter { it.mime.startsWith("video/") } }
     var scrubbing by remember { mutableStateOf(false) }
-    var navigation by remember { mutableStateOf<Job?>(null) }
+    var scrubPreview by remember { mutableStateOf<Int?>(null) }
     val pager = rememberPagerState(initialPage = media.indexOfFirst { it.id == entry.id }.coerceAtLeast(0)) { media.size }
     var videoFullscreen by remember { mutableStateOf(false) }
     var fullscreenExit by remember { mutableIntStateOf(0) }
@@ -93,6 +93,17 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
     var busy by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
+    val navigationFailure by rememberUpdatedState<(Exception) -> Unit>({ message = "Could not change media. Try again or go back." })
+    val navigation = remember(pager, scope) {
+        ViewerNavigation(scope, { index, animate ->
+            if (index in 0 until pager.pageCount) {
+                if (animate && kotlin.math.abs(index - pager.currentPage) <= 2) pager.animateScrollToPage(index, animationSpec = tween(150)) else pager.scrollToPage(index)
+            }
+        }, { navigationFailure(it) })
+    }
+    DisposableEffect(navigation) { onDispose { navigation.cancel() } }
+    LaunchedEffect(closing) { if (closing) navigation.cancel() }
+
     var prepared by remember { mutableStateOf<Uri?>(null) }
     var preparedId by remember { mutableStateOf<String?>(null) }
     val current = media.getOrElse(pager.settledPage) { entry }
@@ -100,6 +111,7 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
     var settledChrome by remember { mutableStateOf(current) }
     SideEffect { if (!scrubbing) settledChrome = current }
     val chrome = if (scrubbing) settledChrome else current
+    val displayed = media.getOrNull(scrubPreview ?: -1) ?: current
     val currentLive by rememberUpdatedState(current)
     var lensConfirm by remember { mutableStateOf<MediaEntry?>(null) }
     var textReading by remember { mutableStateOf(false) }
@@ -246,9 +258,9 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
     }
     fun navigate(index: Int, animate: Boolean = true) {
         if (index !in media.indices || closing) return
-        navigation?.cancel()
-        navigation = scope.launch(start = CoroutineStart.UNDISPATCHED) {
-            if (animate && kotlin.math.abs(index - pager.currentPage) <= 2) pager.animateScrollToPage(index, animationSpec = tween(150)) else pager.scrollToPage(index)
+        navigation.select(index, animate) {
+            scrubPreview = null
+            scrubbing = false
         }
     }
     fun select(item: MediaEntry) {
@@ -340,9 +352,9 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
                     Text(SimpleDateFormat("d MMMM yyyy", Locale.getDefault()).format(current.date) + " · ${pager.settledPage + 1}/${media.size}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Text(if (current.cloud != null) label("Encrypted cloud", "এনক্রিপ্টেড ক্লাউড") else label("On device", "ফোনে"), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                IconButton({ details = true }) { Icon(Icons.Outlined.Info, label("Details", "বিস্তারিত")) }
+                IconButton({ details = true }, enabled = !scrubbing && !closing) { Icon(Icons.Outlined.Info, label("Details", "বিস্তারিত")) }
                 Box {
-                    IconButton({ menu = true }) { Icon(Icons.Outlined.MoreVert, label("More", "আরও")) }
+                    IconButton({ menu = true }, enabled = !scrubbing && !closing) { Icon(Icons.Outlined.MoreVert, label("More", "আরও")) }
                     viewerMenu()
                 }
             }
@@ -430,22 +442,30 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
                 color = if (photoLayout) Color.Black else MaterialTheme.colorScheme.background
             ) {
                 Box(Modifier.fillMaxSize()) {
-                    renderMedia(Modifier.fillMaxSize())
+                    renderMedia(
+                        Modifier.fillMaxSize().graphicsLayer {
+                            alpha = if (scrubbing && scrubPreview != null && scrubPreview != pager.settledPage) 0f else 1f
+                        }
+                    )
+                    scrubPreview?.takeIf { scrubbing && it != pager.settledPage }?.let { index ->
+                        media.getOrNull(index)?.let { item -> ScrubMediaPreview(item, model) }
+                    }
+
                     Column(if (videoFullscreen) Modifier.fillMaxSize() else Modifier.fillMaxSize().safeDrawingPadding()) {
                         AnimatedVisibility(controls && !videoLayout && !pager.isScrollInProgress, enter = fadeIn(), exit = fadeOut()) {
                             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp).clip(RoundedCornerShape(26.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh).padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                                 IconButton(requestClose) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, label("Back", "ফিরুন")) }
                                 Column(Modifier.weight(1f)) {
-                                    Text(SimpleDateFormat("d MMMM", Locale.getDefault()).format(current.date) + " · ${pager.currentPage + 1}/${media.size}", style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Text(originalMediaName(current.name), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(SimpleDateFormat("d MMMM", Locale.getDefault()).format(displayed.date) + " · ${(scrubPreview ?: pager.currentPage) + 1}/${media.size}", style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(originalMediaName(displayed.name), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
                                 if (current.mime.startsWith("image/") && !trashed) {
-                                    IconButton({ lensConfirm = current }) { Icon(Icons.Outlined.CenterFocusStrong, label("Google Lens", "Google Lens")) }
-                                    IconButton({ readText(false) }) { Icon(Icons.Outlined.TextFields, label("Text in photo", "ছবির লেখা")) }
+                                    IconButton({ lensConfirm = current }, enabled = !scrubbing && !closing) { Icon(Icons.Outlined.CenterFocusStrong, label("Google Lens", "Google Lens")) }
+                                    IconButton({ readText(false) }, enabled = !scrubbing && !closing) { Icon(Icons.Outlined.TextFields, label("Text in photo", "ছবির লেখা")) }
                                 }
-                                IconButton({ details = true }) { Icon(Icons.Outlined.Info, label("Photo information", "ছবির তথ্য")) }
+                                IconButton({ details = true }, enabled = !scrubbing && !closing) { Icon(Icons.Outlined.Info, label("Photo information", "ছবির তথ্য")) }
                                 Box {
-                                    IconButton({ menu = true }) { Icon(Icons.Outlined.MoreVert, label("More", "আরও")) }
+                                    IconButton({ menu = true }, enabled = !scrubbing && !closing) { Icon(Icons.Outlined.MoreVert, label("More", "আরও")) }
                                     viewerMenu()
                                 }
                             }
@@ -456,10 +476,23 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
                         AnimatedVisibility(controls, enter = fadeIn(tween(100)), exit = fadeOut(tween(100))) {
                             Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 if (media.size > 1) {
-                                    ViewerFilmstrip(media, pager, model, !busy && !closing, { dragging ->
-                                        if (dragging) navigation?.cancel()
-                                        scrubbing = dragging
-                                    }, ::navigate, Modifier.fillMaxWidth())
+                                    ViewerFilmstrip(
+                                        media, pager, model, !busy && !closing, scrubbing,
+                                        start = {
+                                            navigation.cancel()
+                                            scrubbing = true
+                                            scrubPreview = pager.currentPage
+                                        },
+                                        preview = { scrubPreview = it },
+                                        finish = { navigate(it, false) },
+                                        cancel = {
+                                            navigation.cancel()
+                                            scrubPreview = null
+                                            scrubbing = false
+                                        },
+                                        pick = { navigate(it) },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
                                 }
                                 if (chrome.mime.startsWith("video/")) {
                                     Spacer(Modifier.height(104.dp).then(if (videoFullscreen) Modifier.navigationBarsPadding() else Modifier))
