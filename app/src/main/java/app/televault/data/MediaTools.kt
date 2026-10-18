@@ -85,10 +85,12 @@ internal object MediaTools {
                 val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 context.contentResolver.openInputStream(uri)!!.use { BitmapFactory.decodeStream(it, null, bounds) }
                 if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
-                var sample = 1
-                while (bounds.outWidth / sample > 384 || bounds.outHeight / sample > 384) sample *= 2
+                val sample = app.televault.domain.ThumbnailQuality.sample(bounds.outWidth, bounds.outHeight, 1024)
                 context.contentResolver.openInputStream(uri)!!.use {
                     BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample })
+                }?.let { decoded ->
+                    val edge = maxOf(decoded.width, decoded.height)
+                    if (edge <= 1024) decoded else Bitmap.createScaledBitmap(decoded, maxOf(1, (decoded.width.toLong() * 1024 / edge).toInt()), maxOf(1, (decoded.height.toLong() * 1024 / edge).toInt()), true).also { if (it !== decoded) decoded.recycle() }
                 }
             }
             mime.startsWith("video/") -> {
@@ -109,8 +111,12 @@ internal object MediaTools {
         val bitmap = if (mime.startsWith("image/")) orientThumbnail(context, uri, raw) else raw
         try {
             ByteArrayOutputStream().use {
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 75, it)
-                it.toByteArray()
+                for (quality in if (mime.startsWith("image/")) intArrayOf(86, 72, 55) else intArrayOf(75)) {
+                    it.reset()
+                    bitmap.compress(Bitmap.CompressFormat.JPEG, quality, it)
+                    if (it.size() <= 512 * 1024) return@use it.toByteArray()
+                }
+                null // Encrypted catalogue bounds remain unchanged even for a noisy source.
             }
         } finally {
             bitmap.recycle()

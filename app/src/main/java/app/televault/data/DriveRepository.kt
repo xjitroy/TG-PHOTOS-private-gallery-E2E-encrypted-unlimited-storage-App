@@ -36,6 +36,8 @@ import app.televault.domain.MediaBackupPolicy
 import app.televault.domain.MediaCategories
 import app.televault.domain.PasswordAttempts
 import app.televault.domain.ProfileIdentity
+import app.televault.domain.ScrubPreviewQuality
+import app.televault.domain.ThumbnailQuality
 import app.televault.domain.TrashCooldown
 import app.televault.domain.UploadQueuePolicy
 import app.televault.domain.VaultNames
@@ -2040,7 +2042,8 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
     suspend fun openPreview(id: String): Uri = withContext(Dispatchers.IO) { privateMediaUri(id) }
     fun cachedThumbnail(id: String, pixels: Int): Bitmap? = synchronized(this) {
         if (state.value.stage != VaultStage.READY) return@synchronized null
-        thumbnails.get("$id:384") ?: if (pixels <= 96) thumbnails.get("$id:96") else null
+        for (tier in intArrayOf(96, 192, 384, 640, 768, 960, 1024)) if (ThumbnailQuality.reusableTier(pixels, tier)) thumbnails.get("$id:$tier")?.let { return@synchronized it }
+        null
     }
     fun canPrefetchPhotos() = runningTransfers.isEmpty() && !state.value.uploadSettings.dataSaver && !policy.cellular()
     suspend fun thumbnail(id: String, pixels: Int = 384): Bitmap? = withContext(Dispatchers.IO) {
@@ -2055,10 +2058,12 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
             if (thumbnail.isEmpty()) return@withContext null
             val bytes = VaultCrypto.open(key, decode(thumbnail), context("thumbnail/$id"))
             try {
-                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = if (pixels <= 96) 4 else 1 })?.let { bitmap ->
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = ThumbnailQuality.sample(bounds.outWidth, bounds.outHeight, pixels) })?.let { bitmap ->
                     synchronized(this@DriveRepository) {
                         if (master != null && state.value.stage == VaultStage.READY && accessEpoch.get() == epoch) {
-                            thumbnails.put("$id:${if (pixels <= 96) 96 else 384}", bitmap)
+                            thumbnails.put("$id:$pixels", bitmap)
                             bitmap
                         } else {
                             bitmap.recycle()
@@ -2268,13 +2273,31 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
             }
         }
     }
-    suspend fun preferredDeviceSource(id: String): Uri? = withContext(Dispatchers.IO) {
+    suspend fun preferredDeviceSource(id: String, localOnly: Boolean = false): Uri? = withContext(Dispatchers.IO) {
         val epoch = accessEpoch.get()
         if (state.value.stage != VaultStage.READY) return@withContext null
         val file = state.value.files.find { it.id == id && it.trashedAt == 0L } ?: return@withContext null
-        val copy = deviceCopies.preferred(file, localMedia.changes.value, state.value.backedDeviceFiles) ?: return@withContext null
+        val items = localMedia.changes.value.let { if (localOnly) it.filter { item -> onDevicePreviewSource(item.uri) } else it }
+        val copy = deviceCopies.preferred(file, items, state.value.backedDeviceFiles) ?: return@withContext null
         copy.uri.takeIf { epoch == accessEpoch.get() && state.value.stage == VaultStage.READY && state.value.files.any { it.id == id && it.hash == file.hash && it.trashedAt == 0L } }
     }
+    internal suspend fun scrubPreview(id: String, key: String, local: Uri?, cloud: Boolean, width: Int, height: Int, adjacent: Boolean, allowCloud: Boolean, owner: PreviewRequestOwner) {
+        if (adjacent) photoPriority.await(id)
+        val epoch = photoPreviews.epoch()
+        val access = accessEpoch.get()
+        photoPreviews.get(key)?.let { frame ->
+            val rotated = frame.orientation in 5..8
+            val target = ScrubPreviewQuality.fit(frame.width, frame.height, if (rotated) height else width, if (rotated) width else height, photoPreviews.scrubPixelBudget(), adjacent)
+            if (photoPreviews.sufficient(key, target.width(), target.height())) return
+        }
+        if (adjacent && local != null && !onDevicePreviewSource(local)) return
+        val device = local ?: if (cloud) preferredDeviceSource(id, localOnly = adjacent) else null
+        owner.ensureOpen()
+        val source = device ?: if (cloud && allowCloud && access == accessEpoch.get() && state.value.stage == VaultStage.READY) privateMediaUri(id) else return
+        if (access != accessEpoch.get()) return
+        ScrubPhotoDecoder.decode(app, source, photoPreviews, key, epoch, width, height, adjacent, owner)
+    }
+    private fun onDevicePreviewSource(uri: Uri) = uri.scheme == "file" || uri.scheme == "content" && uri.authority in setOf("media", "com.android.externalstorage.documents", "com.android.providers.media.documents", "com.android.providers.downloads.documents")
     suspend fun verifiedDeviceCopies(cloudIds: Set<String>? = null, sources: Set<String>? = null): List<BackedDeviceCopy> = withContext(Dispatchers.IO) {
         deviceCopyChecks.withLock {
             val epoch = accessEpoch.get()
@@ -3131,6 +3154,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
                 schedule(task)
             }
             refreshTransfers()
+            if (items.isNotEmpty()) notice("Permanent deletion queued. Check Transfers for completion.")
         } finally {
             key.fill(0)
         }

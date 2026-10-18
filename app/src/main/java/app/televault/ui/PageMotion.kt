@@ -11,7 +11,7 @@ import androidx.compose.ui.unit.dp
 @Composable
 internal fun Modifier.pageEntrance(vararg address: Any?): Modifier {
     val progress = remember(*address) { Animatable(0f) }
-    LaunchedEffect(progress) { progress.animateTo(1f, tween(220)) }
+    LaunchedEffect(progress) { progress.animateTo(1f, tween(150)) }
     return graphicsLayer {
         alpha = progress.value
         translationY = (1f - progress.value) * 12.dp.toPx()

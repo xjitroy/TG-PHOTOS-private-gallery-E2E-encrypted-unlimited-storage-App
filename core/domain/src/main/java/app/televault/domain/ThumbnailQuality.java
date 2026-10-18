@@ -21,4 +21,8 @@ public final class ThumbnailQuality {
         if (newWidth <= 0 || newHeight <= 0) return false;
         return oldWidth <= 0 || oldHeight <= 0 || (long) newWidth * newHeight >= (long) oldWidth * oldHeight;
     }
+    /** Small strip tiles must not pin screen-sized bitmaps; high-detail requests cannot reuse tiny tiers. */
+    public static boolean reusableTier(int requested, int available) {
+        return requested > 0 && available >= requested && available <= Math.max(384L, requested * 2L);
+    }
 }

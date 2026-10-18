@@ -213,7 +213,7 @@ fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDynamicColo
     var libraryShownIds by remember { mutableStateOf(emptySet<String>()) }
     val mediaFilters = rememberMediaFilters(model) { selected = emptySet() }
     val mediaFilter = mediaFilters.options
-    val local by model.localMedia.changes.collectAsStateWithLifecycle()
+    val local by model.localContent.collectAsStateWithLifecycle()
     val storedTrash by model.deviceFileTrash.items.collectAsStateWithLifecycle()
     val allTrashDates = remember(state.deviceTrashDates, storedTrash) { state.deviceTrashDates + storedTrash.associate { it.local.uri.toString() to it.trashedAt } }
     val allTrashOrigins = remember(state.deviceTrashOrigins, storedTrash) { state.deviceTrashOrigins + storedTrash.associate { it.local.uri.toString() to it.origin } }

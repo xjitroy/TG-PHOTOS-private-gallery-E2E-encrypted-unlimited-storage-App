@@ -4,6 +4,18 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class ThumbnailQualityTest {
+    @Test public void tinyStripTilesDoNotRetainEveryScreenPreview() {
+        assertTrue(ThumbnailQuality.reusableTier(192,192));
+        assertTrue(ThumbnailQuality.reusableTier(192,384));
+        assertFalse(ThumbnailQuality.reusableTier(192,768));
+        assertFalse(ThumbnailQuality.reusableTier(192,1024));
+    }
+    @Test public void largePreviewRequestsCannotBeSatisfiedByTinyCachedTiers() {
+        assertFalse(ThumbnailQuality.reusableTier(1024,384));
+        assertTrue(ThumbnailQuality.reusableTier(1024,1024));
+        assertFalse(ThumbnailQuality.reusableTier(0,384));
+        assertTrue(ThumbnailQuality.reusableTier(Integer.MAX_VALUE,Integer.MAX_VALUE));
+    }
     @Test public void gridAndLargeMosaicStayAboveTinyPreviewResolution() {
         for (int columns = 1; columns <= 12; columns++) {
             assertTrue(ThumbnailQuality.gridPixels(columns, false) >= 192);

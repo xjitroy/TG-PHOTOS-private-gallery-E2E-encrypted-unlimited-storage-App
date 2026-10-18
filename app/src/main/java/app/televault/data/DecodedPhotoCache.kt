@@ -4,11 +4,19 @@ import android.graphics.Bitmap
 import android.os.SystemClock
 import android.util.LruCache
 import app.televault.domain.PreviewSize
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /** Screen-fit pixels in bounded RAM only. Never writes decrypted previews to disk. */
 class DecodedPhotoCache(private val capacity: Int = 24 * 1024 * 1024) {
     data class Frame(val bitmap: Bitmap, val width: Int, val height: Int, val orientation: Int, val created: Long = SystemClock.elapsedRealtime())
     private var generation = 0L
+    private val changed = MutableStateFlow(0L)
+    internal val revision = changed.asStateFlow()
+    internal fun scrubPixelBudget() = minOf(2L * 1024 * 1024, capacity.toLong() / 8).coerceAtLeast(1)
+
+    @Synchronized internal fun sufficient(key: String, width: Int, height: Int): Boolean = get(key)?.let { it.bitmap.width >= width && it.bitmap.height >= height } == true
+    internal fun adopt(key: String, bitmap: Bitmap, width: Int, height: Int, orientation: Int, epoch: Long): Boolean = put(key, Frame(bitmap, width, height, orientation), epoch)
     private val frames = object : LruCache<String, Frame>(capacity) {
         override fun sizeOf(key: String, value: Frame) = value.bitmap.allocationByteCount
     }
@@ -43,12 +51,16 @@ class DecodedPhotoCache(private val capacity: Int = 24 * 1024 * 1024) {
 
     @Synchronized private fun put(key: String, frame: Frame, epoch: Long): Boolean {
         if (epoch != generation || frame.bitmap.allocationByteCount > 8 * 1024 * 1024) return false
+        val previous = get(key)
+        if (previous != null && !app.televault.domain.ThumbnailQuality.preferNew(previous.bitmap.width, previous.bitmap.height, frame.bitmap.width, frame.bitmap.height)) return false
         frames.put(key, frame)
+        changed.value++
         return true
     }
 
     @Synchronized fun clear() {
         generation++
         frames.evictAll()
+        changed.value++
     }
 }

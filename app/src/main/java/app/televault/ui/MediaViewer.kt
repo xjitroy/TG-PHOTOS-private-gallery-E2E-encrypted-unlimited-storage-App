@@ -450,6 +450,7 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
                     scrubPreview?.takeIf { scrubbing && it != pager.settledPage }?.let { index ->
                         media.getOrNull(index)?.let { item -> ScrubMediaPreview(item, model) }
                     }
+                    PrepareScrubPreviews(media, scrubPreview ?: pager.settledPage, scrubbing, !closing, model)
 
                     Column(if (videoFullscreen) Modifier.fillMaxSize() else Modifier.fillMaxSize().safeDrawingPadding()) {
                         AnimatedVisibility(controls && !videoLayout && !pager.isScrollInProgress, enter = fadeIn(), exit = fadeOut()) {

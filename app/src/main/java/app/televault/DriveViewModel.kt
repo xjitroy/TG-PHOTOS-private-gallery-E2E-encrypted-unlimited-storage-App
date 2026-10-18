@@ -13,6 +13,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
@@ -37,9 +38,32 @@ class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
     suspend fun awaitPhotoLoad(id: String) = repository.photoPriority.await(id)
 
     private val hiddenTransferPhases = setOf("WAITING", "COMPLETE", "CANCELLED")
+    private val pendingRemovals = app.televault.data.PendingRemovals()
+    internal val localContent = combine(repository.localMedia.changes, pendingRemovals.ids) { files, hidden -> if (hidden.isEmpty()) files else files.filterNot { it.uri.toString() in hidden } }.distinctUntilChanged().flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), repository.localMedia.changes.value)
+    internal suspend fun trashDeviceConfirmed(file: app.televault.data.LocalMedia, origin: String, epoch: Long) {
+        check(playbackEpoch == epoch && state.value.stage == app.televault.data.VaultStage.READY)
+        pendingRemovals.run(setOf(file.uri.toString())) {
+            repository.deviceFileTrash.trash(listOf(file), origin)
+            repository.localMedia.confirmedTrash(setOf(file.uri), removed = true)
+        }
+    }
 
     // Progress collectors live in small transfer components, not the album grid/player tree.
-    val contentState = state.map { value -> value.copy(indexLoading = value.indexLoading && !value.indexLoaded, transfers = value.transfers.filter { it.phase !in hiddenTransferPhases && !app.televault.domain.ActivityProgress.active(it.phase) }.map { it.copy(progress = 0, total = 0) }, syncProgress = null, deviceCopyProgress = value.deviceCopyProgress?.copy(completed = 0, total = 0)) }.distinctUntilChanged().flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, state.value)
+    val contentState = run {
+        var previousFiles: List<app.televault.data.DriveFile>? = null
+        var previousHidden = emptySet<String>()
+        var visibleFiles = state.value.files
+        combine(state, pendingRemovals.ids) { value, pending ->
+            val hidden = pending + value.transfers.mapNotNull { app.televault.data.PendingRemovals.queuedPurge(it.id, it.phase) }
+            // Transfer percentages must not repeatedly filter a large unchanged gallery.
+            if (value.files !== previousFiles || hidden != previousHidden) {
+                previousFiles = value.files
+                previousHidden = hidden
+                visibleFiles = if (hidden.isEmpty()) value.files else value.files.filterNot { it.id in hidden }
+            }
+            value.copy(files = visibleFiles, notice = if (pending.isNotEmpty()) "Updating selected files…" else value.notice, indexLoading = value.indexLoading && !value.indexLoaded, transfers = value.transfers.filter { it.phase !in hiddenTransferPhases && !app.televault.domain.ActivityProgress.active(it.phase) }.map { it.copy(progress = 0, total = 0) }, syncProgress = null, deviceCopyProgress = value.deviceCopyProgress?.copy(completed = 0, total = 0))
+        }.distinctUntilChanged().flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, state.value)
+    }
     internal val backupBadgeTimes = state.map { it.files to it.backedDeviceFiles }.distinctUntilChanged().map { (files, links) ->
         val times = files.associate { it.id to it.backedUpAt }
         times + links.mapValues { times[it.value] ?: 0L }
@@ -172,6 +196,7 @@ class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
     val localMedia = repository.localMedia
     internal val deviceFileTrash = repository.deviceFileTrash
     val photoPreviews = repository.photoPreviews
+    internal suspend fun scrubPreview(item: app.televault.ui.MediaEntry, width: Int, height: Int, adjacent: Boolean, allowCloud: Boolean, owner: app.televault.data.PreviewRequestOwner) = repository.scrubPreview(item.id, item.id + ":" + (item.local?.fingerprint ?: item.cloud?.hash.orEmpty()), item.local?.uri, item.cloud != null, width, height, adjacent, allowCloud, owner)
     internal val documentPreviews = repository.documentPreviews
     fun activeTelegramSessions(finished: (List<app.televault.telegram.TelegramSessionInfo>?) -> Unit) = action {
         try {
@@ -233,10 +258,10 @@ class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
     fun mediaSourceFactory() = repository.mediaSourceFactory()
     suspend fun prefetch(id: String) = repository.prefetch(id)
     fun favorite(id: String, value: Boolean) = action { repository.changeFiles(setOf(id), favorite = value) }
-    fun trash(ids: Set<String>, deleted: Boolean = true, origin: String = "") = action { repository.changeFiles(ids, trash = deleted, trashOrigin = origin) }
+    fun trash(ids: Set<String>, deleted: Boolean = true, origin: String = "") = action { pendingRemovals.run(ids) { repository.changeFiles(ids, trash = deleted, trashOrigin = origin) } }
     internal suspend fun trashConfirmed(ids: Set<String>, origin: String, epoch: Long) {
         check(playbackEpoch == epoch && state.value.stage == app.televault.data.VaultStage.READY)
-        repository.changeFiles(ids, trash = true, trashOrigin = origin, expectedEpoch = epoch)
+        pendingRemovals.run(ids) { repository.changeFiles(ids, trash = true, trashOrigin = origin, expectedEpoch = epoch) }
     }
     internal suspend fun deviceTrashOriginConfirmed(uris: List<Uri>, origin: String, epoch: Long) {
         check(playbackEpoch == epoch && state.value.stage == app.televault.data.VaultStage.READY)
@@ -255,7 +280,7 @@ class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
             phrase.fill('\u0000')
         }
     }
-    fun purge(ids: Set<String>) = action { repository.purgeTrash(ids) }
+    fun purge(ids: Set<String>) = action { pendingRemovals.run(ids) { repository.purgeTrash(ids) } }
     fun verifyRecoveryPhrase(phrase: CharArray, finished: (Boolean) -> Unit) = action {
         try {
             finished(repository.verifyRecoveryPhrase(phrase))
@@ -363,6 +388,7 @@ class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
     fun retry(id: String) = action { repository.retry(id) }
     fun cancel(id: String) = action { repository.cancel(id) }
     fun lock() {
+        pendingRemovals.clear()
         previewJob?.cancel()
         operations.forEach { it.cancel() }
         operations.clear()

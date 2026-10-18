@@ -83,7 +83,7 @@ internal fun ViewerFilmstrip(media: List<MediaEntry>, pager: PagerState, model: 
                 } else {
                     settling = scope.launch {
                         val target = ViewerFilmstripGeometry.fling(position, velocity, stride, count, rtl).roundToInt().coerceIn(0, (count - 1).coerceAtLeast(0))
-                        animate(position, target.toFloat(), animationSpec = tween(160)) { value, _ -> gesture.update(value) }
+                        animate(position, target.toFloat(), animationSpec = tween(120)) { value, _ -> gesture.update(value) }
                         gesture.finish(target.toFloat())
                     }
                 }

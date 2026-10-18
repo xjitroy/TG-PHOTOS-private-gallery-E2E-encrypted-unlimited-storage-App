@@ -73,6 +73,8 @@ internal fun rememberTrashActions(model: DriveViewModel): TrashActions {
                         return@launch
                     }
                     val completed = withContext(Dispatchers.IO) { current.awaiting.filter { DeviceTrashUris.isTrashed(context, it.second) } }
+                    check(valid(current.plan))
+                    model.localMedia.confirmedTrash(completed.flatMap { listOf(it.first.uri, it.second) }.toSet())
                     if (completed.isNotEmpty()) model.deviceTrashOriginConfirmed(completed.map { it.second }, current.plan.origin, current.plan.epoch)
                     check(valid(current.plan))
                     if (completed.size != current.awaiting.size) {
@@ -134,7 +136,7 @@ internal fun rememberTrashActions(model: DriveViewModel): TrashActions {
         for (item in private) {
             check(valid(value))
             check(DeviceTrashUris.unchanged(context, item))
-            model.deviceFileTrash.trash(listOf(item), value.origin)
+            model.trashDeviceConfirmed(item, value.origin, value.epoch)
             completed++
         }
         check(valid(value))

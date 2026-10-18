@@ -182,6 +182,24 @@ class LocalMediaRepository(private val context: Context) {
         }
         refreshes.tryEmit(Unit)
     }
+
+    /** Called only after Android/provider or the recoverable file store confirms the change. */
+    @Synchronized internal fun confirmedTrash(uris: Set<Uri>, trashed: Boolean = true, removed: Boolean = false) {
+        if (uris.isEmpty()) return
+        generation.incrementAndGet() // A scan begun before confirmation must not resurrect old rows.
+        durationJob?.cancel()
+        durationRevision.incrementAndGet()
+        latestIndex.value = latestIndex.value.mapNotNull { item ->
+            if (item.uri !in uris) {
+                item
+            } else if (removed) {
+                null
+            } else {
+                item.copy(trashed = trashed)
+            }
+        }
+        refreshes.tryEmit(Unit)
+    }
     fun close() {
         scope.cancel()
         clearCache()
@@ -335,9 +353,9 @@ class LocalMediaRepository(private val context: Context) {
 
     fun cachedThumbnail(item: LocalMedia, pixels: Int): Bitmap? {
         thumbnails.get("${item.fingerprint}:$pixels")?.let { return it }
-        // Reuse an already sharp tile for the strip/smaller tile; never request a tiny replacement.
+        // Reuse sufficient detail without pinning screen-sized bitmaps in every tiny strip tile.
         for (size in intArrayOf(192, 384, 640, 768, 960)) {
-            if (size > pixels) thumbnails.get("${item.fingerprint}:$size")?.let { return it }
+            if (app.televault.domain.ThumbnailQuality.reusableTier(pixels, size)) thumbnails.get("${item.fingerprint}:$size")?.let { return it }
         }
         return null
     }
