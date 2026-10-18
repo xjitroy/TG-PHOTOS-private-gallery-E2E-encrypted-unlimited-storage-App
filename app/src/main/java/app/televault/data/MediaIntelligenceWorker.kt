@@ -19,10 +19,10 @@ internal object MediaIntelligenceScheduling {
         WorkManager.getInstance(context).enqueueUniquePeriodicWork("$NAME-periodic", ExistingPeriodicWorkPolicy.KEEP, work)
     }
     private fun constraints() = Constraints.Builder().setRequiresBatteryNotLow(true).setRequiresStorageNotLow(true).build()
-    fun request(context: Context) {
+    fun request(context: Context, afterCurrent: Boolean = false) {
         val work = OneTimeWorkRequestBuilder<MediaIntelligenceWorker>().setConstraints(constraints())
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).addTag(NAME).build()
-        WorkManager.getInstance(context).enqueueUniqueWork(NAME, ExistingWorkPolicy.KEEP, work)
+        WorkManager.getInstance(context).enqueueUniqueWork(NAME, if (afterCurrent) ExistingWorkPolicy.APPEND_OR_REPLACE else ExistingWorkPolicy.KEEP, work)
     }
 }
 
@@ -37,6 +37,7 @@ class MediaIntelligenceWorker(context: Context, params: WorkerParameters) : Coro
         val binding = drive.privateVaultBinding()
         val people = drive.people
         val ocr = drive.ocr
+        val scenes = drive.scenes
         fun current() = BackgroundAnalysisPolicy.sessionAllowed(drive.state.value.stage == VaultStage.READY, epoch, drive.playbackEpoch, app.intelligencePaused)
         // Subscribe only while work is alive; LocalMediaRepository restores its encrypted device
         // index and observes new photos. No new Android storage permission is requested here.
@@ -45,7 +46,8 @@ class MediaIntelligenceWorker(context: Context, params: WorkerParameters) : Coro
             drive.privateAi.activate()
             people.activate(syncRemote = false)
             ocr.activate()
-            if (!people.state.value.enabled && !ocr.state.value.enabled) return@withContext Result.success()
+            scenes.activate()
+            if (!people.state.value.enabled && !ocr.state.value.enabled && !scenes.state.value.enabled) return@withContext Result.success()
             setForeground(transferForeground(applicationContext, 71908, "Indexing photos privately · on-device"))
             withTimeout(8 * 60 * 1000L) {
                 withTimeoutOrNull(30_000) { drive.localMedia.indexReady.first { it } }
@@ -64,7 +66,8 @@ class MediaIntelligenceWorker(context: Context, params: WorkerParameters) : Coro
                 } catch (_: Exception) {
                     false
                 }
-                if (!faceReady && !textReady) return@withTimeout
+                val sceneReady = scenes.state.value.enabled && app.memoryModels.prepareInstalled()
+                if (!faceReady && !textReady && !sceneReady) return@withTimeout
                 val local = drive.localMedia.changes.value.filter { !it.trashed && !it.galleryHidden }.distinctBy { it.uri }
                 val cloud = drive.state.value.files.filter { it.trashedAt == 0L }.sortedByDescending { it.date }
                 val links = drive.state.value.backedDeviceFiles
@@ -95,11 +98,20 @@ class MediaIntelligenceWorker(context: Context, params: WorkerParameters) : Coro
                             throw cancel
                         } catch (_: Exception) { /* Per-photo isolation; successful records stay encrypted. */ }
                     }
+                    if ((photo || video) && sceneReady && scenes.state.value.enabled && !scenes.state.value.capacityReached && app.ocrModels.backgroundAllowed(original == null)) {
+                        try {
+                            scenes.analyze(id, stamp, preview = if (video) preview else null) { original ?: drive.privateMediaUri(id) }
+                            delay(120)
+                        } catch (cancel: CancellationException) {
+                            throw cancel
+                        } catch (_: Exception) { /* An unreadable item never invalidates other suggestions. */ }
+                    }
                 }
                 // Device originals are available offline and precede speculative cloud downloads.
                 for (file in local.filter { links[it.fingerprint] == null }.sortedByDescending { it.date }) scan(file.uri.toString(), file.fingerprint, file.mime, file.uri) { drive.localMedia.thumbnail(file, 768) }
                 for (file in cloud) scan(file.id, file.hash, file.mime, drive.preferredDeviceSource(file.id)) { drive.thumbnail(file.id, 384) }
                 people.finishScan()
+                scenes.finish()
                 if (people.state.value.pendingSync && app.ocrModels.backgroundAllowed()) runCatching { people.sync() }
             }
             Result.success()
@@ -119,6 +131,7 @@ class MediaIntelligenceWorker(context: Context, params: WorkerParameters) : Coro
             observer.cancel()
             withContext(NonCancellable) {
                 runCatching { people.finishScan() }
+                runCatching { scenes.finish() }
                 runCatching { people.pauseEngine() }
                 runCatching { ocr.pauseEngine() }
             }

@@ -25,4 +25,13 @@ with zipfile.ZipFile(root/'app/libs/onnxruntime-android-1.22.0.aar') as aar:
    for i in range(count):
     at=offset+i*size;kind=struct.unpack_from(endian+'I',data,at)[0]
     if kind==1:assert struct.unpack_from(endian+('Q' if is64 else 'I'),data,at+(48 if is64 else 28))[0]>=(16384 if is64 else 4096)
+memory=json.loads((root/'app/src/main/assets/memory-models.json').read_text())
+assert memory['modelId']=='mobilenetv2-c1c51358-v1'
+assert len(memory['models'])==1
+row=memory['models'][0]
+assert row['bytes']==14246826 and row['sha256']=='c1c513582d56afceff8516c73804e484c81c6a830712ab6d682253f4a3cd042f'
+assert row['url']=='https://media.githubusercontent.com/media/onnx/models/'+memory['upstreamCommit']+'/validated/vision/classification/mobilenet/model/mobilenetv2-7.onnx'
+labels=(root/'app/src/main/assets/memory-labels.txt').read_bytes()
+assert hashlib.sha256(labels).hexdigest()==memory['labelsSha256'] and len(labels.splitlines())==1000
+assert (root/'licenses/MobileNetV2-Apache-2.0.txt').read_bytes()==(root/'app/src/main/assets/third-party/MobileNetV2-Apache-2.0.txt').read_bytes()
 print('PASS: licensed optional YuNet/SFace manifest and pinned four-ABI ONNX runtime (64-bit 16 KB alignment)')

@@ -47,9 +47,11 @@ import kotlinx.coroutines.*
 internal data class AlbumTile(val id: String, val name: String, val items: List<MediaEntry>, val cloud: Boolean = false, val folder: String? = null, val album: String? = null, val section: String = "All", val collage: Boolean = false)
 
 @Composable
-internal fun MediaThumbnail(entry: MediaEntry, model: DriveViewModel, modifier: Modifier = Modifier, pixels: Int = 384, contentScale: ContentScale = ContentScale.Crop) {
+internal fun MediaThumbnail(entry: MediaEntry, model: DriveViewModel, modifier: Modifier = Modifier, pixels: Int = 384, contentScale: ContentScale = ContentScale.Crop, onReady: (() -> Unit)? = null) {
     val accessRevision by model.localMedia.accessRevision.collectAsStateWithLifecycle()
     var bitmap by remember(entry.id, entry.local?.modified) { mutableStateOf(entry.local?.let { model.localMedia.cachedThumbnail(it, pixels) } ?: model.cachedThumbnail(entry.id, pixels)) }
+    val ready by rememberUpdatedState(onReady)
+    LaunchedEffect(bitmap) { if (bitmap != null) ready?.invoke() }
     LaunchedEffect(entry.id, entry.local?.modified, entry.cloud?.thumbnail, pixels, if (entry.local != null) accessRevision else 0L) {
         repeat(3) { attempt ->
             val loaded = try {
@@ -61,8 +63,8 @@ internal fun MediaThumbnail(entry: MediaEntry, model: DriveViewModel, modifier: 
             } catch (_: Exception) {
                 null
             } catch (_: OutOfMemoryError) {
-                // Keep cached pixels/placeholder; a transient preview must not kill the process.
-                null
+                // Keep cached pixels; do not repeat a failed allocation three times.
+                return@LaunchedEffect
             }
             if (loaded != null) {
                 val previous = bitmap

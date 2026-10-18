@@ -223,6 +223,8 @@ fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDynamicColo
     var renameEntry by remember { mutableStateOf<MediaEntry?>(null) }
     var renameValue by remember { mutableStateOf("") }
     var pendingVaultCopies by remember { mutableStateOf<List<android.net.Uri>>(emptyList()) }
+    val sceneIndex by model.scenes.state.collectAsStateWithLifecycle()
+    var memoryStory by remember { mutableStateOf<PhotoMemory?>(null) }
     var opening by remember { mutableStateOf<MediaEntry?>(null) }
     var viewerEntries by remember { mutableStateOf<List<MediaEntry>?>(null) }
     var prompt by remember { mutableStateOf("") }
@@ -738,7 +740,7 @@ fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDynamicColo
         search = ""
         showSearch = false
     }
-    val memoryCards = if (isPhotoTimeline && section == "All" && search.isBlank() && selected.isEmpty()) rememberPhotoMemories(visible, projectionScope, people.people, people.selfId) else emptyList()
+    val memoryCards = if (isPhotoTimeline && section == "All" && search.isBlank() && selected.isEmpty()) rememberPhotoMemories(visible, projectionScope, people.people, people.selfId, sceneIndex.labels, state.backedDeviceFiles) else emptyList()
     val choosePhotoSection: (String) -> Unit = { key ->
         section = key
         folder = null
@@ -895,8 +897,7 @@ fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDynamicColo
                     Unit
                 }, compact = true)
                 PhotoMemories(memoryCards, model) { card ->
-                    viewerEntries = card.entries
-                    opening = card.entries.firstOrNull()
+                    memoryStory = card
                 }
             } else if (!fileLibrary && tab != PhotoTab.VAULT) {
                 if (tab in setOf(PhotoTab.TIMELINE, PhotoTab.GALLERY) && section !in setOf("Trash", "Transfers")) MediaFilterBar(mediaFilters)
@@ -1928,6 +1929,13 @@ fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDynamicColo
         UniversalSearch(searchFiles, people, model, searchPerson, close = { universalSearch = false }) { item, collection ->
             universalSearch = false
             viewerEntries = collection
+            opening = item
+        }
+    }
+    memoryStory?.let { card ->
+        MemoryStory(card, model, close = { memoryStory = null }) { item ->
+            memoryStory = null
+            viewerEntries = card.entries
             opening = item
         }
     }

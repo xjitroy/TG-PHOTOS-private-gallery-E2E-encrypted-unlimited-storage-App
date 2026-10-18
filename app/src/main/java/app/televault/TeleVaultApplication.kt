@@ -16,6 +16,7 @@ class TeleVaultApplication : Application() {
 
     @Volatile internal var intelligencePaused = false
     internal val faceModels by lazy { app.televault.people.FaceModels(this) }
+    internal val memoryModels by lazy { app.televault.memories.MemoryModels(this) }
     internal val ocrModels by lazy { app.televault.ocr.OcrModels(this) }
     val motion by lazy { AppMotion(this) }
     private val privateVaultLazy = lazy { app.televault.data.PrivateVaultRepository(this) }

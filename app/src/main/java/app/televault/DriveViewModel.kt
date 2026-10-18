@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import app.televault.data.DriveRepository
+import app.televault.data.recoveringMemory
 import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -23,6 +24,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
+    internal val scenes = repository.scenes
     internal val ocr = repository.ocr
     internal val people = repository.people
     val state = repository.state
@@ -39,7 +41,7 @@ class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
 
     private val hiddenTransferPhases = setOf("WAITING", "COMPLETE", "CANCELLED")
     private val pendingRemovals = app.televault.data.PendingRemovals()
-    internal val localContent = combine(repository.localMedia.changes, pendingRemovals.ids) { files, hidden -> if (hidden.isEmpty()) files else files.filterNot { it.uri.toString() in hidden } }.distinctUntilChanged().flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), repository.localMedia.changes.value)
+    internal val localContent = combine(repository.localMedia.changes, pendingRemovals.ids) { files, hidden -> if (hidden.isEmpty()) files else files.filterNot { it.uri.toString() in hidden } }.distinctUntilChanged().flowOn(Dispatchers.Default).recoveringMemory { recoverMemory() }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), repository.localMedia.changes.value)
     internal suspend fun trashDeviceConfirmed(file: app.televault.data.LocalMedia, origin: String, epoch: Long) {
         check(playbackEpoch == epoch && state.value.stage == app.televault.data.VaultStage.READY)
         pendingRemovals.run(setOf(file.uri.toString())) {
@@ -62,17 +64,28 @@ class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
                 visibleFiles = if (hidden.isEmpty()) value.files else value.files.filterNot { it.id in hidden }
             }
             value.copy(files = visibleFiles, notice = if (pending.isNotEmpty()) "Updating selected files…" else value.notice, indexLoading = value.indexLoading && !value.indexLoaded, transfers = value.transfers.filter { it.phase !in hiddenTransferPhases && !app.televault.domain.ActivityProgress.active(it.phase) }.map { it.copy(progress = 0, total = 0) }, syncProgress = null, deviceCopyProgress = value.deviceCopyProgress?.copy(completed = 0, total = 0))
-        }.distinctUntilChanged().flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, state.value)
+        }.distinctUntilChanged().flowOn(Dispatchers.Default).recoveringMemory { recoverMemory() }.stateIn(viewModelScope, SharingStarted.Eagerly, state.value)
     }
     internal val backupBadgeTimes = state.map { it.files to it.backedDeviceFiles }.distinctUntilChanged().map { (files, links) ->
         val times = files.associate { it.id to it.backedUpAt }
         times + links.mapValues { times[it.value] ?: 0L }
-    }.distinctUntilChanged().flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
-    val playerState = state.map { app.televault.data.DriveSnapshot(stage = it.stage, localFavorites = it.localFavorites, privateProfile = it.privateProfile) }.distinctUntilChanged().stateIn(viewModelScope, SharingStarted.Eagerly, state.value)
-    internal val transferOverview = state.map { it.transfers }.distinctUntilChanged().map { app.televault.data.transferOverviews(it) }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
-    internal val backupOverview = state.map { if (it.stage == app.televault.data.VaultStage.READY) it.transfers.filter { job -> !job.download } else emptyList() }.distinctUntilChanged().runningFold(app.televault.data.BackupOverview()) { previous, jobs -> app.televault.data.backupOverview(jobs, previous) }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, app.televault.data.BackupOverview())
+    }.distinctUntilChanged().flowOn(Dispatchers.Default).recoveringMemory { recoverMemory() }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+    val playerState = state.map { app.televault.data.DriveSnapshot(stage = it.stage, localFavorites = it.localFavorites, privateProfile = it.privateProfile) }.distinctUntilChanged().recoveringMemory { recoverMemory() }.stateIn(viewModelScope, SharingStarted.Eagerly, state.value)
+    internal val transferOverview = state.map { it.transfers }.distinctUntilChanged().map { app.televault.data.transferOverviews(it) }.flowOn(Dispatchers.Default).recoveringMemory { recoverMemory() }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    internal val backupOverview = state.map { if (it.stage == app.televault.data.VaultStage.READY) it.transfers.filter { job -> !job.download } else emptyList() }.distinctUntilChanged().runningFold(app.televault.data.BackupOverview()) { previous, jobs -> app.televault.data.backupOverview(jobs, previous) }.flowOn(Dispatchers.Default).recoveringMemory { recoverMemory() }.stateIn(viewModelScope, SharingStarted.Eagerly, app.televault.data.BackupOverview())
     private var previewJob: Job? = null
-    private val operations = mutableListOf<Job>()
+    private val operations = java.util.concurrent.ConcurrentHashMap.newKeySet<Job>()
+    private data class Mutation(val epoch: Long, val kind: String, val ids: Set<String>, val value: Any? = null)
+    private val mutations = app.televault.data.BoundedOperations<Mutation>(viewModelScope, { report("Several file changes are still running. Wait for them to finish, then retry.") }, parallelism = 1)
+    private fun mutation(kind: String, ids: Set<String>, value: Any? = null, block: suspend (Long) -> Unit): Job {
+        val epoch = playbackEpoch
+        return mutations.submit(Mutation(epoch, kind, ids, value)) {
+            performAction {
+                check(epoch == playbackEpoch && state.value.stage == app.televault.data.VaultStage.READY)
+                block(epoch)
+            }
+        }
+    }
     init {
         viewModelScope.launch {
             state.map { it.stage }.distinctUntilChanged().collectLatest { stage ->
@@ -83,7 +96,9 @@ class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
                             repository.retryPrivateIntelligenceCleanup()
                         } catch (cancel: CancellationException) {
                             throw cancel
-                        } catch (_: Exception) { }
+                        } catch (_: Exception) { } catch (_: OutOfMemoryError) {
+                            recoverMemory()
+                        }
                     }
                 }
             }
@@ -100,6 +115,7 @@ class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
                         } catch (_: Exception) { }
                         people.activate(syncRemote = false)
                         ocr.activate()
+                        scenes.activate()
                         people.cleanPrivateSources()
                         ocr.cleanPrivateSources()
                         if (people.state.value.enabled) {
@@ -116,10 +132,15 @@ class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
                         } catch (_: Exception) { }
                     } catch (cancel: CancellationException) {
                         throw cancel
-                    } catch (_: Exception) { }
+                    } catch (_: Exception) { } catch (_: OutOfMemoryError) {
+                        recoverMemory()
+                    }
                 } else {
+                    mutations.cancel()
+                    pendingRemovals.clear()
                     people.lock()
                     ocr.lock()
+                    scenes.lock()
                 }
             }
         }
@@ -130,7 +151,9 @@ class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
                         repository.pollTransfers()
                     } catch (e: CancellationException) {
                         throw e
-                    } catch (_: Exception) { }
+                    } catch (_: Exception) { } catch (_: OutOfMemoryError) {
+                        recoverMemory()
+                    }
                     delay(if (active) 1000 else 15000)
                 }
             }
@@ -160,7 +183,7 @@ class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
     fun refreshMediaStorage() = action { repository.mediaStorage.refresh() }
     fun mediaCacheQuota(bytes: Long) = action { repository.mediaStorage.setQuota(bytes) }
     internal val offlineDownloads = repository.offlineDownloads
-    internal val offlineIds = offlineDownloads.map { it.ids }.distinctUntilChanged().stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
+    internal val offlineIds = offlineDownloads.map { it.ids }.distinctUntilChanged().recoveringMemory { recoverMemory() }.stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
     private var offlineJob: Job? = null
     fun cancelOfflineDownload() {
         offlineJob?.cancel()
@@ -257,8 +280,8 @@ class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
     }
     fun mediaSourceFactory() = repository.mediaSourceFactory()
     suspend fun prefetch(id: String) = repository.prefetch(id)
-    fun favorite(id: String, value: Boolean) = action { repository.changeFiles(setOf(id), favorite = value) }
-    fun trash(ids: Set<String>, deleted: Boolean = true, origin: String = "") = action { pendingRemovals.run(ids) { repository.changeFiles(ids, trash = deleted, trashOrigin = origin) } }
+    fun favorite(id: String, value: Boolean) = mutation("favorite", setOf(id), value) { epoch -> repository.changeFiles(setOf(id), expectedEpoch = epoch, favorite = value) }
+    fun trash(ids: Set<String>, deleted: Boolean = true, origin: String = "") = mutation("trash", ids, deleted to origin) { epoch -> pendingRemovals.run(ids) { repository.changeFiles(ids, expectedEpoch = epoch, trash = deleted, trashOrigin = origin) } }
     internal suspend fun trashConfirmed(ids: Set<String>, origin: String, epoch: Long) {
         check(playbackEpoch == epoch && state.value.stage == app.televault.data.VaultStage.READY)
         pendingRemovals.run(ids) { repository.changeFiles(ids, trash = true, trashOrigin = origin, expectedEpoch = epoch) }
@@ -280,7 +303,7 @@ class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
             phrase.fill('\u0000')
         }
     }
-    fun purge(ids: Set<String>) = action { pendingRemovals.run(ids) { repository.purgeTrash(ids) } }
+    fun purge(ids: Set<String>) = mutation("purge", ids) { epoch -> pendingRemovals.run(ids) { repository.purgeTrash(ids, epoch) } }
     fun verifyRecoveryPhrase(phrase: CharArray, finished: (Boolean) -> Unit) = action {
         try {
             finished(repository.verifyRecoveryPhrase(phrase))
@@ -388,9 +411,10 @@ class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
     fun retry(id: String) = action { repository.retry(id) }
     fun cancel(id: String) = action { repository.cancel(id) }
     fun lock() {
+        mutations.cancel()
         pendingRemovals.clear()
         previewJob?.cancel()
-        operations.forEach { it.cancel() }
+        operations.toList().forEach { it.cancel() }
         operations.clear()
         repository.lock()
     }
@@ -413,17 +437,31 @@ class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
     fun closePreview() {
         previewJob?.cancel()
     }
-    private fun action(block: suspend () -> Unit): Job = viewModelScope.launch {
+    private fun recoverMemory() {
+        repository.trimMemory()
+        // Discard partially restored derived indexes, never their encrypted files or session keys.
+        people.lock()
+        ocr.lock()
+        scenes.lock()
+        repository.notice("Background indexing paused to free memory. Your files and saved tags are kept; indexing will retry.")
+        runCatching { requestIntelligence() }
+    }
+    private suspend fun performAction(block: suspend () -> Unit) {
         try {
             block()
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
             repository.notice("Could not complete the operation. Check access, connection and available space.")
+        } catch (_: OutOfMemoryError) {
+            recoverMemory()
+            repository.notice("Memory is busy. Check Trash or Transfers for partial completion, then retry remaining changes.")
         }
-    }.also {
-        operations.removeAll { job -> job.isCompleted }
+    }
+    private fun action(block: suspend () -> Unit): Job = viewModelScope.launch { performAction(block) }.also {
         operations.add(it)
+        val task = it
+        task.invokeOnCompletion { operations.remove(task) }
     }
     class Factory(private val repository: DriveRepository) : ViewModelProvider.Factory {
         override fun <T : ViewModel> create(modelClass: Class<T>): T {

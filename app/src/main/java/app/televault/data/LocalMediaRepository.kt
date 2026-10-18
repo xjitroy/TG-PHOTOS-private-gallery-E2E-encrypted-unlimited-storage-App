@@ -117,6 +117,9 @@ class LocalMediaRepository(private val context: Context) {
                         throw e
                     } catch (_: Exception) {
                         scanFailed.value = true
+                    } catch (_: OutOfMemoryError) {
+                        trimThumbnails()
+                        scanFailed.value = true
                     } finally {
                         scanningDocuments.value = false
                     }

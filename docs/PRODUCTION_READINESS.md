@@ -1,3 +1,9 @@
+# 1.20.31 — validation scope
+
+Load fixes bound mutation admission, avoid bulk encrypted job payload materialization and preserve running purge checkpoints. Shared native analysis gates now cover decoded pixels. New optional MobileNetV2 subjects use an immutable size/SHA256 pin, the existing ONNX runtime, CPU-only inference and encrypted phone-local derived records; Private Vault is excluded. Existing face/OCR models, authorization, encrypted session/key paths and Room1 remain. Stories, new subject classification and phone/OEM behavior require native acceptance.
+
+An explicit cloud virtual-phone attempt failed before ADB target enumeration because its native configuration directory is read-only; this runner has no provisioned emulator/KVM. Do not interpret host JVM/SQLite/model smoke, successful Android compilation/lint or artifact checks as a real-device crash/ANR, FPS, semantic accuracy, OTP or hardware-biometric certification. Existing open acceptance items below remain unless separately demonstrated.
+
 # Current production readiness — 0.19.0
 
 The implemented native Kotlin/Compose app has encrypted backup/recovery, normal Cloud and independent Private Vault, media playback/editing, folder-scoped filtering, exports and configurable encrypted temporary storage. This audit fixes concrete responsiveness, UI, clipboard and export ownership defects. Build/test evidence is reported separately; passing host checks is not a phone acceptance or independent cryptographic audit.
@@ -14,3 +20,5 @@ Dynamic cache limits cover disposable ciphertext, not essential catalogs, active
 
 
 0.19 native acceptance must also cover restore before auto-backup, changed-name/changed-content/new empty/audio/document cases, explicit force-copy, first-paint snapshot/filter scope, actual metered/Data Saver/device-original bypass, short full warming, long VBR/MKV seek/±30min observed-window pruning/resume, Vault gallery memory cancellation and real per-use CryptoObject enrollment/unlock/cancel/invalidation/account-switch/screen-off. JVM/source/artifact checks cannot exercise Android Keystore or establish exact decoded-time mapping of cached byte blocks. Cache window tags use actual player observations , not sample-accurate extractor timestamps.
+
+Allocation failures in derived flows/index restoration now release RAM caches/partial indexes and retry with cancellation-aware backoff. Encrypted indexes and session/master keys are kept. The optional subject catalog has an8MiB encoded budget; when full it pauses new subject work with a notice and keeps existing search results, without repeated failed serialization or growing the in-memory catalog. This is not an unlimited index or arbitrary-load crash-free guarantee.

@@ -30,3 +30,8 @@
 -keep,allowoptimization class app.televault.people.FaceModelsWorker {
     public <init>(android.content.Context, androidx.work.WorkerParameters);
 }
+
+# Retain the optional on-device Memories model worker across upgrades.
+-keep,allowoptimization class app.televault.memories.MemoryModelsWorker {
+    public <init>(android.content.Context, androidx.work.WorkerParameters);
+}

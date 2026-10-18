@@ -314,6 +314,16 @@ internal class RegionImageView(context: Context) : View(context) {
                             loadingChanged(false, true, image != null)
                         }
                     }
+                } catch (cancel: CancellationException) {
+                    throw cancel
+                } catch (_: OutOfMemoryError) {
+                    // Retain the painted frame; never repeatedly allocate tiles under pressure.
+                    pending = null
+                    previewCache?.clear()
+                    loadingChanged(false, true, image != null || overview != null)
+                } catch (_: Exception) {
+                    pending = null
+                    loadingChanged(false, true, image != null || overview != null)
                 } finally {
                     bitmap?.let { abandoned -> app.televault.data.MediaReadSession.dispose { abandoned.recycle() } }
                 }

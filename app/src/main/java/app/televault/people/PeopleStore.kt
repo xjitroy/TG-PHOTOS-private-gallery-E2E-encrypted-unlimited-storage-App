@@ -555,16 +555,17 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
                     return@withLock true
                 }
             }
-            val image = load() ?: return@withLock false
-            // Original-photo decodes are owned RAM; video previews may be shared by the gallery.
-            val samples = try {
-                app.televault.OnDeviceAnalysis.run { (engine ?: FaceEngine(context).also { engine = it }).faces(image) }
-            } finally {
-                if (ownedSource) {
-                    image.eraseColor(0)
-                    image.recycle()
+            val samples = app.televault.OnDeviceAnalysis.run {
+                val image = load() ?: return@run null
+                try {
+                    (engine ?: FaceEngine(context).also { engine = it }).faces(image)
+                } finally {
+                    if (ownedSource) {
+                        image.eraseColor(0)
+                        image.recycle()
+                    }
                 }
-            }
+            } ?: return@withLock false
             try {
                 access(scope, token)
                 for (person in persons.values.filter { !it.deleted && it.rescanAutomatic && it.name.isBlank() && !it.reviewed && it.id != selectedSelf()?.id && id in it.members }) {

@@ -163,22 +163,23 @@ internal class OcrStore(private val context: Context, private val drive: DriveRe
             val files = root(scope).listFiles().orEmpty()
             check(files.size < 50000 && files.sumOf { it.length() } < 256L * 1024 * 1024) { "Text index is full; clear it in Search to rebuild" }
             publish(scope, generation, mutable.value.copy(busy = true, notice = ""))
-            var bitmap: Bitmap? = null
             try {
-                val image = decodeOcrPhoto(context, source()) ?: return@withLock OcrText.EMPTY
-                bitmap = image
-                guard(scope, generation)
-                val text = app.televault.OnDeviceAnalysis.run { (engine ?: OcrEngine(models).also { engine = it }).read(image, thorough) }
+                val text = app.televault.OnDeviceAnalysis.run {
+                    val image = decodeOcrPhoto(context, source()) ?: return@run OcrText.EMPTY
+                    try {
+                        guard(scope, generation)
+                        (engine ?: OcrEngine(models).also { engine = it }).read(image, thorough)
+                    } finally {
+                        image.eraseColor(0)
+                        image.recycle()
+                    }
+                }
                 guard(scope, generation)
                 if (drive.privateAi.excluded(id, contentHash))return@withLock OcrText.EMPTY
                 write(scope, generation, id, text.json().put("contentHash", contentHash).put("id", id).put("stamp", stamp).put("thorough", thorough).put("engineRevision", 3))
                 publish(scope, generation, mutable.value.copy(indexed = mutable.value.indexed + if (saved == null) 1 else 0, processed = mutable.value.processed + 1, busy = false))
                 text
             } finally {
-                bitmap?.let {
-                    it.eraseColor(0)
-                    it.recycle()
-                }
                 if (token.get() == generation) publish(scope, generation, mutable.value.copy(busy = false))
             }
         }

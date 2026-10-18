@@ -32,12 +32,13 @@ import java.time.ZoneId
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
-private data class SearchIndexInput(val files: List<MediaEntry>, val people: PeopleState, val textRevision: Pair<Long, Int>, val favorites: Set<String>)
+private data class SearchIndexInput(val files: List<MediaEntry>, val people: PeopleState, val textRevision: Pair<Long, Int>, val favorites: Set<String>, val sceneLabels: Map<String, String>)
 
 /** One search across normal Photos/device/cloud media; never includes Private Vault or Trash. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun UniversalSearch(files: List<MediaEntry>, people: PeopleState, model: DriveViewModel, initialPerson: String?, close: () -> Unit, open: (MediaEntry, List<MediaEntry>) -> Unit) {
+    val sceneIndex by model.scenes.state.collectAsStateWithLifecycle()
     val textIndex by model.ocr.state.collectAsStateWithLifecycle()
     val mediaState by model.contentState.collectAsStateWithLifecycle()
     var query by remember { mutableStateOf("") }
@@ -81,13 +82,13 @@ internal fun UniversalSearch(files: List<MediaEntry>, people: PeopleState, model
     val person = people.people.find { it.id == personId }
     val parsed = remember(query, start, end) { UniversalMediaSearch.parse(query, start, end) }
     val scope = listOf(model.playbackEpoch, query, start, end, type, personId, companion, alone, filters.options)
-    val projection = rememberCoalescedProjection(scope, SearchIndexInput(files, people, textIndex.processed to textIndex.indexed, mediaState.localFavorites), emptyList<MediaEntry>()) { (all, index, _, favorites) ->
+    val projection = rememberCoalescedProjection(scope, SearchIndexInput(files, people, textIndex.processed to textIndex.indexed, mediaState.localFavorites, sceneIndex.labels), emptyList<MediaEntry>()) { (all, index, _, favorites, sceneLabels) ->
         val personNames = mutableMapOf<String, MutableList<String>>()
         index.people.filter { it.name.isNotBlank() }.forEach { group -> group.members.forEach { personNames.getOrPut(it) { mutableListOf() }.add(group.name) } }
         val dateQuery = UniversalMediaSearch.Query("", parsed.start(), parsed.end(), parsed.valid())
         fun metadata(file: MediaEntry): String {
             val tags = MediaCategories.Category.entries.filter { it.mask and file.mediaCategories != 0 }.joinToString(" ") { it.name.replace('_', ' ') }
-            return "${personNames[file.id].orEmpty().joinToString(" ")} $tags ${file.local?.folder ?: file.cloud?.album.orEmpty()}"
+            return "${personNames[file.id].orEmpty().joinToString(" ")} ${sceneLabels[file.id].orEmpty()} $tags ${file.local?.folder ?: file.cloud?.album.orEmpty()}"
         }
         val selection = SearchMediaFilter(type, personId, alone, companion, filters.options)
         val candidates = all.filter { file -> selection.matches(file, index, favorites) && UniversalMediaSearch.matches(dateQuery, "", "", file.date, ZoneId.systemDefault()) }
@@ -109,8 +110,11 @@ internal fun UniversalSearch(files: List<MediaEntry>, people: PeopleState, model
                 val grid = remember(scope) { LazyGridState() }
                 val introduction: @Composable () -> Unit = {
                     Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (initialPerson == null) TextSearchControls(model)
-                        OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth().padding(horizontal = 16.dp), placeholder = { Text(label("Search names, dates or text in photos", "নাম, তারিখ বা ছবির লেখা খুঁজুন")) }, leadingIcon = { Icon(Icons.Outlined.Search, null) }, trailingIcon = if (query.isNotBlank()) ({ IconButton({ query = "" }) { Icon(Icons.Outlined.Close, label("Clear search", "সার্চ মুছুন")) } }) else null, singleLine = true, shape = RoundedCornerShape(28.dp))
+                        if (initialPerson == null) {
+                            TextSearchControls(model)
+                            SmartSuggestionControls(model)
+                        }
+                        OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth().padding(horizontal = 16.dp), placeholder = { Text(label("Search people, dates, text or subjects", "নাম, তারিখ বা ছবির লেখা খুঁজুন")) }, leadingIcon = { Icon(Icons.Outlined.Search, null) }, trailingIcon = if (query.isNotBlank()) ({ IconButton({ query = "" }) { Icon(Icons.Outlined.Close, label("Clear search", "সার্চ মুছুন")) } }) else null, singleLine = true, shape = RoundedCornerShape(28.dp))
                         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
                             listOf("All", "Photos", "Videos", "Audio", "Files", "Favorites").forEach { key -> FilterChip(type == key, { type = key }, label = { Text(sectionLabel(key)) }, modifier = Modifier.padding(end = 6.dp), shape = RoundedCornerShape(24.dp)) }
                             FilterChip(dates, { dates = !dates }, label = { Text(label("Dates", "তারিখ")) }, leadingIcon = { Icon(Icons.Outlined.DateRange, null, Modifier.size(18.dp)) })

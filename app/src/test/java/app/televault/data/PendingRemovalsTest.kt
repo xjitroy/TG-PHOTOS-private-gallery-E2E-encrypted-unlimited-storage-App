@@ -40,6 +40,16 @@ class PendingRemovalsTest {
         assertTrue(pending.ids.value.isEmpty())
     }
 
+    @Test fun largeOverlappingBatchesRetainUniqueIdsUntilTheirLastOwnerFinishes() {
+        val pending = PendingRemovals()
+        val ids = (0 until 10000).map { "photo:$it" }.toSet()
+        val requests = (0 until 100).map { pending.begin(ids) }
+        requests.dropLast(1).forEach { pending.end(it) }
+        assertEquals(ids, pending.ids.value)
+        pending.end(requests.last())
+        assertTrue(pending.ids.value.isEmpty())
+    }
+
     @Test fun onlyKnownQueuedPurgePhasesHideRowsAndFailureOrCooldownRestoresThem() {
         for (phase in listOf("WAITING", "RETRYING", "INTERRUPTED", "WAITING_TELEGRAM", "WAITING_UNLOCK")) assertEquals("photo", PendingRemovals.queuedPurge("purge:photo", phase))
         for (phase in listOf("FAILED", "CANCELLED", "COMPLETE", "WAITING_TRASH_COOLDOWN", "unknown")) assertNull(PendingRemovals.queuedPurge("purge:photo", phase))

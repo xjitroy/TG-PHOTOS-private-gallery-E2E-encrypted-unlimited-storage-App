@@ -28,6 +28,21 @@ public class MemoryHighlightsTest {
         assertEquals(0, cards.get(0).yearsAgo());
         assertEquals(List.of("a", "b", "c"), cards.get(0).ids());
     }
+    @Test public void newLibrariesGetRealRecentHighlightsWithoutInventingAnAnniversary() {
+        var photos = List.of(photo("a", "2026-10-16"), photo("b", "2026-10-16"), photo("c", "2026-10-16"), photo("future", "2027-10-16"));
+        var cards = MemoryHighlights.select(photos, LocalDate.parse("2026-10-17"), zone);
+        assertEquals(1, cards.size());
+        assertEquals("recent:2026-10-16", cards.get(0).key());
+        assertEquals(0, cards.get(0).yearsAgo());
+        assertFalse(cards.get(0).ids().contains("future"));
+    }
+    @Test public void largeDaysIncludeTheWholeEventInsteadOfOnlyTheFirstBurst() {
+        var photos = new ArrayList<MemoryHighlights.Photo>();
+        for (int i = 0; i < 1000; i++) photos.add(photo("p" + i, "2025-10-17"));
+        var ids = MemoryHighlights.select(photos, LocalDate.parse("2026-10-17"), zone).get(0).ids();
+        assertEquals(30, ids.size()); assertEquals("p0", ids.get(0)); assertEquals("p999", ids.get(29));
+        assertEquals(30, new HashSet<>(ids).size());
+    }
     @Test public void selectionsAreBoundedAndDoNotInventEmptyMemories() {
         assertTrue(MemoryHighlights.select(List.of(), LocalDate.now(zone), zone).isEmpty());
         var photos = new ArrayList<MemoryHighlights.Photo>();

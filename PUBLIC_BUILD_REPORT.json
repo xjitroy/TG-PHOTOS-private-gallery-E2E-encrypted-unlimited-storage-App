@@ -1,11 +1,11 @@
 {
-  "version": "0.19.13",
-  "code": 42,
+  "version": "1.20.31",
+  "code": 43,
   "checks": {
-    "distinctHostTests": 434,
+    "distinctHostTests": 450,
     "suites": {
       "domain": {
-        "tests": 259,
+        "tests": 264,
         "failures": 0,
         "errors": 0,
         "skipped": 0
@@ -23,31 +23,32 @@
         "skipped": 0
       },
       "app": {
-        "tests": 109,
+        "tests": 120,
         "failures": 0,
         "errors": 0,
         "skipped": 0
       }
     },
     "lintErrors": 0,
-    "lintWarnings": 99,
+    "lintWarnings": 101,
     "localChecks": 8,
     "nativeAcceptance": "Unavailable: exact affected-phone crash/ANR, Android Binder/FUSE/codec/UI/OEM/Keystore behavior",
     "otpRootCauseVerified": false,
-    "runtimeModelPins": "Unchanged; model/runtime/license checks rerun",
+    "runtimeModelPins": "Existing face/OCR/runtime preserved; approved optional MobileNetV2 and labels/licensing pins verified",
     "privateDataReset": false,
-    "privateApkBuilt": false
+    "privateApkBuilt": false,
+    "additionalAppRegressionPass": "Original cross-dispatcher inference test retained; memory retry/cancellation and encoded catalog admission regressions included in app120 tests"
   },
   "artifact": {
-    "apk": "TG-Photos-0.19.13-universal.apk",
-    "bytes": 88097931,
-    "sha256": "842083673e6658282515a6a8dd271c5b3736706098c7cec600fbaacf9c8ec348",
-    "versionCode": 42,
-    "versionName": "0.19.13",
+    "apk": "TG-Photos-1.20.31-universal.apk",
+    "bytes": 88144854,
+    "sha256": "163ddccaa8a490dfcc146a8f70213625d04163fb299c33c044fad939bfbe577a",
+    "versionCode": 43,
+    "versionName": "1.20.31",
     "package": "app.televault.photos",
     "distribution": "public",
-    "sourceCommit": "8025a44e080a66f75eb901f1ee0852766b914c48",
-    "sourceTree": "db10a823d83ffa2daeb171f7d2b245e3c2f53d9f",
+    "sourceCommit": "ee5592b686f81b0c4b1de204267d777fdd7332a2",
+    "sourceTree": "277f96d6a0734fb5d6282c1eb5552dbfeb5fc027",
     "certificateSHA256": "3e7c1029cb5e2da80026758abd483b5bd7f0551b6a56bee6b21640b8ae774559",
     "debuggable": false,
     "productionVerified": false,

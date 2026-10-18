@@ -7,14 +7,18 @@ import java.util.List;
 public interface CacheDao {
     @Query("SELECT * FROM vault_cache WHERE account=:account AND vault=:vault AND kind=:kind")
     List<CacheRow> list(long account, String vault, String kind);
-    @Query("SELECT * FROM vault_cache WHERE account=:account AND vault=:vault AND kind='job' AND (phase NOT IN ('COMPLETE','CANCELLED') OR id IN (SELECT id FROM vault_cache WHERE account=:account AND vault=:vault AND kind='job' AND phase IN ('COMPLETE','CANCELLED') ORDER BY rowid DESC LIMIT 100))")
+    // Status polling must not materialize every encrypted file/thumbnail checkpoint.
+    @Query("SELECT id, vault, account, kind, X'' AS sealed, phase, progress, total, retryAt FROM vault_cache WHERE account=:account AND vault=:vault AND kind='job' AND (phase NOT IN ('COMPLETE','CANCELLED') OR id IN (SELECT id FROM vault_cache WHERE account=:account AND vault=:vault AND kind='job' AND phase IN ('COMPLETE','CANCELLED') ORDER BY rowid DESC LIMIT 100))")
     List<CacheRow> transfers(long account, String vault);
     @Query("SELECT id FROM vault_cache WHERE account=:account AND vault=:vault AND kind=:kind")
     List<String> ids(long account, String vault, String kind);
-    @Query("SELECT * FROM vault_cache WHERE account=:account AND vault=:vault AND kind='job' AND phase NOT IN ('COMPLETE','CANCELLED')")
-    List<CacheRow> activeJobs(long account, String vault);
+    @Query("SELECT id FROM vault_cache WHERE account=:account AND vault=:vault AND kind='job' AND phase NOT IN ('COMPLETE','CANCELLED')")
+    List<String> activeJobIds(long account, String vault);
     @Query("SELECT * FROM vault_cache WHERE id=:id") CacheRow get(String id);
     @Insert(onConflict=OnConflictStrategy.REPLACE) void put(CacheRow row);
+    @Insert(onConflict=OnConflictStrategy.IGNORE) long insertIfAbsent(CacheRow row);
+    @Query("UPDATE vault_cache SET phase='WAITING', retryAt=0 WHERE id=:id AND account=:account AND vault=:vault AND kind='job' AND phase='CANCELLED'")
+    int requeueCancelled(String id, long account, String vault);
     @Query("UPDATE vault_cache SET phase=:phase, progress=:progress, total=:total, retryAt=:retryAt WHERE id=:id AND kind='job' AND phase!='CANCELLED'")
     int updateTransfer(String id, String phase, long progress, long total, long retryAt);
     @Query("UPDATE vault_cache SET sealed=:sealed, phase=:phase, progress=:progress, total=:total, retryAt=:retryAt WHERE id=:id AND kind='job' AND phase!='CANCELLED'")

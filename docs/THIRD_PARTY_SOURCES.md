@@ -29,3 +29,7 @@ The models require a user-requested39MB verified HTTPS download, then inference 
 
 
 Optional eight-language OCR (0.19.3): Tesseract4Android4.9.0 (Apache-2.0) from https://github.com/adaptech-cz/Tesseract4Android/tree/4.9.0 and https://jitpack.io/cz/adaptech/tesseract4android/tesseract4android/4.9.0/tesseract4android-4.9.0.aar ; includes Tesseract5.5.1 (Apache-2.0), Leptonica1.85.0 (BSD), IJG JPEG and libpng licenses. Exact bundled versions/source/build files are under that immutable upstream tag. License texts are in licenses/ and app assets/third-party. Language data is from pinned tessdata_fast commit87416418657359cb625c412a48b6e1d6d41c29bd, Apache-2.0; config/ocr-models.json records all nine file sizes/URLs/SHA256 and pinned runtime/owned bridge hashes. Only public models download; recognition and encrypted derived text remain local. Owned JNI source: app/src/main/cpp/ocr_script.c, rebuild: scripts/build-ocr-script.py --ndk /path/to/ndk28.
+
+## Optional MobileNetV2 subjects (1.20.31)
+
+ONNX Model Zoo MobileNetV2, upstream commit c5cae0f1942c8d7727372c7b1f6b485aa39e4421. Model and synset documentation specify Apache-2.0; license and notice are in licenses/MobileNetV2-*.txt and identical app assets. Optional weights14246826bytes, SHA256 c1c513582d56afceff8516c73804e484c81c6a830712ab6d682253f4a3cd042f. No new native runtime; existing pinned ONNX Runtime1.22.0 is reused. Weights download from the immutable upstream URL in memory-models.json after user opt-in. ImageNet classes are imperfect subject clues, not identity/event/relationship claims.

@@ -1,0 +1,5 @@
+MobileNetV2 ONNX ImageNet classifier and 1000-class synset labels
+ONNX Model Zoo: https://github.com/onnx/models/tree/c5cae0f1942c8d7727372c7b1f6b485aa39e4421/validated/vision/classification/mobilenet
+Upstream model documentation specifies Apache License 2.0. See MobileNetV2-Apache-2.0.txt.
+Model weights are an optional verified download, not bundled in this APK.
+Outputs are imperfect ImageNet class suggestions, not identity or event recognition.

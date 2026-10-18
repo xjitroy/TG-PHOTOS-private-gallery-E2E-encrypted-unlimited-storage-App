@@ -43,6 +43,7 @@ import app.televault.domain.UploadQueuePolicy
 import app.televault.domain.VaultNames
 import app.televault.domain.VaultScope
 import app.televault.domain.VideoPresentation
+import app.televault.memories.SceneStore
 import app.televault.ocr.OcrStore
 import app.televault.ocr.decodeOcrPhoto
 import app.televault.people.PeopleStore
@@ -107,11 +108,13 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
     private val startupWarm = Mutex()
     private val transferDisplayCache = object : LruCache<String, DriveTransfer>(8192) {}
     private val transferRefresh = Mutex()
+    private val purgeQueue = Mutex()
     private val metadataCache = java.util.concurrent.ConcurrentHashMap<String, DriveFile>()
     private val reconciliation = Mutex()
     private val transferLocks = Array(64) { Mutex() }
     internal val cloudExports by lazy { CloudExports(app, database, telegram, protection, { account to vault }, { unlockedKey() }, { backgroundKey(it) }, { releaseWorkKey(it) }, { state.value.stage == VaultStage.READY }, { sync(requireComplete = true, backgroundTask = it) }, { file(it) }) }
     internal val privateAi by lazy { PrivateIntelligenceExclusions(app, this, telegram) }
+    internal val scenes by lazy { SceneStore(app, this, (app as app.televault.TeleVaultApplication).memoryModels) }
     internal val ocr by lazy { OcrStore(app, this, (app as app.televault.TeleVaultApplication).ocrModels) }
     internal val people by lazy { PeopleStore(app, this, telegram) }
     internal fun localMediaContext(): Context = app
@@ -565,6 +568,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
             photoPriority.clear()
             people.lock()
             ocr.lock()
+            scenes.lock()
             privateAi.lock()
             restoreMutable.value = null
             vaultChoicesMutable.update { choices -> choices.map { it.copy(name = if (it.createdAt > 0) VaultNames.generated(it.createdAt, java.time.ZoneId.systemDefault(), it.id) else "TG Photos vault · ${it.id.take(8)}") } }
@@ -687,6 +691,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
         privateAi.activate()
         privateAi.block(emptySet(), setOf(encode(hash)))
         ocr.cleanPrivateSources()
+        scenes.cleanPrivateSources()
         people.cleanPrivateSources()
     }
     internal suspend fun retryPrivateIntelligenceCleanup() {
@@ -695,6 +700,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
         privateAi.sync()
         people.cleanPrivateSources()
         ocr.cleanPrivateSources()
+        scenes.cleanPrivateSources()
         people.sync()
         privateAi.finishCleanup()
     }
@@ -709,6 +715,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
         val ids = sourceKeys + cloudIds + local.map { it.uri.toString() }
         privateAi.block(ids, setOf(encoded)) // Persist before network/deletion; failed cleanup cannot re-enable scanning.
         ocr.cleanPrivateSources()
+        scenes.cleanPrivateSources()
         people.cleanPrivateSources()
         privateAi.sync() // Read back the encrypted exclusion before removing owned remote references/originals.
         people.sync()
@@ -1003,12 +1010,13 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
             }
         }
     }
+    private fun activeJobs(owner: Long, scope: String) = dao.activeJobIds(owner, scope).asSequence().mapNotNull { dao.get(it)?.takeIf { row -> row.account == owner && row.vault == scope && row.kind == "job" && row.phase !in setOf("COMPLETE", "CANCELLED") } }
     private fun transferList(key: ByteArray) = dao.transfers(account, vault).map { transfer ->
         verifiedRecord {
             val identity = "$account:$vault:${transfer.id}"
             // Display fields are immutable for a queued job. Avoid decrypting its thumbnail/key
             // checkpoint on every byte update. Never cache content keys or the decrypted payload.
-            val display = transferDisplayCache[identity] ?: payload(transfer, key).let { data ->
+            val display = transferDisplayCache[identity] ?: payload(checkNotNull(dao.get(transfer.id)), key).let { data ->
                 DriveTransfer(transfer.id, data.optString("name", "File"), "", 0, 0, data.optString("action") == "download", batchId = data.optString("batchId"), batchName = data.optString("album"), batchCount = data.optInt("batchCount"), batchBytes = data.optLong("batchBytes", -1), fileBytes = data.optLong("initialSize", -1))
                     .also { if (state.value.stage == VaultStage.READY) transferDisplayCache.put(identity, it) }
             }
@@ -1214,6 +1222,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
         }
         people.retire(owner, scope)
         ocr.retire(owner, scope)
+        scenes.retire(owner, scope)
         privateAi.retire(owner, scope)
         dao.removeVault(owner, scope)
         archivedRoot(owner, scope).delete()
@@ -1282,7 +1291,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
         uploadQueue.withLock {
             val key = unlockedKey()
             try {
-                val queued = dao.activeJobs(account, vault).filter { it.phase != "FAILED" }.associateBy { payload(it, key).optString("source") }
+                val queued = activeJobs(account, vault).filter { it.phase != "FAILED" }.associateBy { payload(it, key).optString("source") }
                 val promoted = mutableListOf<CacheRow>()
                 val tasks = uris.distinct().mapNotNull { uri ->
                     coroutineContext.ensureActive()
@@ -1337,7 +1346,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
         // Cold workers and the UI use the same device-local content receipts.
         // Never import source tokens from restored cloud manifests as backup proof.
         val known = verifiedBackupSources(account, vault, key)
-        known += dao.activeJobs(account, vault).filter { it.phase != "FAILED" }.map { payload(it, key).optString("source") }
+        known += activeJobs(account, vault).filter { it.phase != "FAILED" }.map { payload(it, key).optString("source") }
         val selected = candidates.filter { known.add(payload(it, key).optString("source")) }
         if (selected.isEmpty()) return@withLock
         // Discover and persist the whole folder plan before any worker starts.
@@ -2110,7 +2119,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
         work.cancelUniqueWork("backup:$id")
         work.cancelUniqueWork("backup-now:$id")
         work.cancelUniqueWork("camera-watch:$id")
-        dao.activeJobs(account, vault).filter { payload(it, key).optString("backupId") == id && dao.get("upload-queue:${it.id}")?.let { ticket -> payload(ticket, key).optBoolean("manual") } != true }.forEach { job ->
+        activeJobs(account, vault).filter { payload(it, key).optString("backupId") == id && dao.get("upload-queue:${it.id}")?.let { ticket -> payload(ticket, key).optBoolean("manual") } != true }.forEach { job ->
             job.phase = "CANCELLED"
             dao.put(job)
             work.cancelUniqueWork("transfer:${job.id}")
@@ -2196,7 +2205,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
                 // No UI unlock or master-key storage is required; backgroundKey already checked
                 // account/vault, unlocked phone and transport protection for this encrypted row.
                 val noticesAllowed = AutomaticVideoNotice.available(app)
-                dao.activeJobs(record.account, record.vault).filter {
+                activeJobs(record.account, record.vault).filter {
                     it.id !in runningTransfers && it.retryAt <= System.currentTimeMillis() && MediaBackupPolicy.retryEligible(it.phase, saver.dataSaver, saver.mobileVideos, noticesAllowed)
                 }.forEach { task ->
                     val pending = payload(task, key)
@@ -2212,7 +2221,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
                     val legacyCamera = data.optString("uri") == "camera"
                     val media = backupMedia().filter { !it.trashed && DeviceBackupFolder.matches(it.folder, data.optString("deviceFolder"), legacyCamera) && (it.mime.startsWith("image/") || it.mime.startsWith("video/")) }
                     val known = verifiedBackupSources(record.account, record.vault, key)
-                    known += dao.activeJobs(record.account, record.vault).filter { it.phase !in setOf("FAILED", "CANCELLED") }.map { payload(it, key).optString("source") }
+                    known += activeJobs(record.account, record.vault).filter { it.phase !in setOf("FAILED", "CANCELLED") }.map { payload(it, key).optString("source") }
                     val candidates = mutableListOf<CacheRow>()
                     media.filter { it.fingerprint !in known && MediaBackupPolicy.automaticAllowed(saver.dataSaver, id == "camera:$account:$vault", it.mime, it.date, saver.saverSince) }.forEach { item ->
                         coroutineContext.ensureActive()
@@ -2229,7 +2238,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
                 val directory = checkNotNull(DocumentFile.fromTreeUri(app, Uri.parse(data.getString("uri"))))
                 check(directory.canRead()) { "Folder permission lost" }
                 val known = verifiedBackupSources(record.account, record.vault, key)
-                known += dao.activeJobs(record.account, record.vault).filter { it.phase !in setOf("FAILED", "CANCELLED") }.map { payload(it, key).optString("source") }
+                known += activeJobs(record.account, record.vault).filter { it.phase !in setOf("FAILED", "CANCELLED") }.map { payload(it, key).optString("source") }
                 val candidates = mutableListOf<CacheRow>()
                 var scanned = 0
                 suspend fun visit(folder: DocumentFile, depth: Int) {
@@ -2955,7 +2964,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
             check(account == authorizedAccount && vault == authorizedVault && state.value.stage == VaultStage.READY)
             val key = unlockedKey()
             try {
-                val existing = dao.activeJobs(account, vault).firstOrNull { it.id.startsWith("trash-all:") }
+                val existing = activeJobs(account, vault).firstOrNull { it.id.startsWith("trash-all:") }
                 if (existing != null) {
                     notice("Cloud Trash is already queued. Follow progress in Library → Transfers.")
                     return@withLock
@@ -3008,13 +3017,14 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
             delay(350)
         }
     }
-    suspend fun changeFiles(ids: Set<String>, expectedEpoch: Long? = null, favorite: Boolean? = null, folder: String? = null, trash: Boolean? = null, albums: Set<String>? = null, trashOrigin: String = "", displayName: String? = null) = withContext(Dispatchers.IO) {
+    suspend fun changeFiles(ids: Set<String>, expectedEpoch: Long = accessEpoch.get(), favorite: Boolean? = null, folder: String? = null, trash: Boolean? = null, albums: Set<String>? = null, trashOrigin: String = "", displayName: String? = null) = withContext(Dispatchers.IO) {
         edits.withLock {
-            check(expectedEpoch == null || expectedEpoch == accessEpoch.get())
+            check(expectedEpoch == accessEpoch.get())
             val key = unlockedKey()
             try {
                 for (id in ids) {
-                    check(expectedEpoch == null || expectedEpoch == accessEpoch.get())
+                    coroutineContext.ensureActive()
+                    check(expectedEpoch == accessEpoch.get())
                     checkNotNull(dao.get("file:$id"))
                     val event = dao.get("state:$id")?.let { payload(it, key) } ?: JSONObject().put("version", 1).put("kind", "state").put("id", id)
                     favorite?.let { event.put("favorite", it) }
@@ -3035,7 +3045,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
                 }
             } finally {
                 try {
-                    withContext(NonCancellable) { refreshLocal() }
+                    withContext(NonCancellable) { if (expectedEpoch == accessEpoch.get()) refreshLocal() }
                 } finally {
                     key.fill(0)
                 }
@@ -3089,10 +3099,10 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
                 retireIntelligenceForPrivateMove(Uri.parse("content://${app.packageName}.private-media/media/$id"), verifiedSize, verifiedHash)
                 access()
                 val metadata = payload(checkNotNull(dao.get("file:$id")), key)
-                retiredJobs = dao.list(account, vault, "job").filter { job ->
+                retiredJobs = dao.ids(account, vault, "job").asSequence().mapNotNull { dao.get(it) }.filter { job ->
                     val data = payload(job, key)
                     job.id == id || data.optJSONObject("metadata")?.optString("id") == id || data.optJSONObject("file")?.optString("id") == id
-                }.map { it.id }
+                }.map { it.id }.toList()
                 val event = JSONObject().put("version", 1).put("kind", "state").put("id", id).put("purged", true)
                 journal = row("vault-source-retired:$id", "vault-source-retired", event, key, "PREPARED")
                 dao.put(checkNotNull(journal))
@@ -3140,23 +3150,45 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
         publishEvent(event, key)
         File(encryptedCache, "${item.id}.bin").delete()
     }
-    suspend fun purgeTrash(ids: Set<String>) = withContext(Dispatchers.IO) {
-        val key = unlockedKey()
-        try {
-            val items = state.value.files.filter { it.id in ids && it.trashedAt > 0 }
-            val enabled = preferences.trashCooldownEnabled.first()
-            check(items.all { TrashCooldown.allowed(it.trashedAt, System.currentTimeMillis(), enabled) }) { "Trash protection: wait 24 hours after deletion, or change the setting." }
-            for (item in items) {
-                val metadata = payload(checkNotNull(dao.get("file:${item.id}")), key)
-                val jobId = "purge:${item.id}"
-                val task = row(jobId, "job", JSONObject().put("action", "purge").put("file", metadata).put("name", metadata.getString("name")), key, "WAITING")
-                dao.put(task)
-                schedule(task)
+    suspend fun purgeTrash(ids: Set<String>, epoch: Long = accessEpoch.get()) = withContext(Dispatchers.IO) {
+        purgeQueue.withLock {
+            check(epoch == accessEpoch.get())
+            val key = unlockedKey()
+            try {
+                val items = state.value.files.filter { it.id in ids && it.trashedAt > 0 }
+                val enabled = preferences.trashCooldownEnabled.first()
+                check(items.all { TrashCooldown.allowed(it.trashedAt, System.currentTimeMillis(), enabled) }) { "Trash protection: wait 24 hours after deletion, or change the setting." }
+                for (item in items) {
+                    coroutineContext.ensureActive()
+                    check(epoch == accessEpoch.get())
+                    val jobId = "purge:${item.id}"
+                    val existing = dao.get(jobId)
+                    if (existing != null) {
+                        check(existing.account == account && existing.vault == vault)
+                        // Repeated taps never replace a running encrypted checkpoint.
+                        if (existing.phase == "FAILED") retry(jobId)
+                        if (existing.phase == "CANCELLED") {
+                            // Join the old worker's resource lifetime before explicitly requeueing.
+                            transferLocks[jobId.hashCode().ushr(1) % transferLocks.size].withLock {
+                                check(epoch == accessEpoch.get())
+                                if (dao.requeueCancelled(jobId, account, vault) > 0) {
+                                    val resumed = checkNotNull(dao.get(jobId))
+                                    schedule(resumed, restart = true)
+                                }
+                            }
+                        }
+                        continue
+                    }
+                    val metadata = payload(checkNotNull(dao.get("file:${item.id}")), key)
+                    val task = row(jobId, "job", JSONObject().put("action", "purge").put("file", metadata).put("name", metadata.getString("name")), key, "WAITING")
+                    if (dao.insertIfAbsent(task) != -1L) schedule(task)
+                    yield()
+                }
+                refreshTransfers()
+                if (items.isNotEmpty()) notice("Permanent deletion queued. Check Transfers for completion.")
+            } finally {
+                key.fill(0)
             }
-            refreshTransfers()
-            if (items.isNotEmpty()) notice("Permanent deletion queued. Check Transfers for completion.")
-        } finally {
-            key.fill(0)
         }
     }
 
@@ -3297,7 +3329,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
         BackupScheduling.request(app)
         val settings = policy.settings()
         val notices = AutomaticVideoNotice.available(app)
-        dao.activeJobs(account, vault).filter { MediaBackupPolicy.retryEligible(it.phase, settings.dataSaver, settings.mobileVideos, notices) }.forEach { retry(it.id) }
+        activeJobs(account, vault).filter { MediaBackupPolicy.retryEligible(it.phase, settings.dataSaver, settings.mobileVideos, notices) }.forEach { retry(it.id) }
     }
     suspend fun watchCamera(id: String, rearm: Boolean = false) = withContext(Dispatchers.IO) {
         if (dao.get(id) == null) return@withContext
@@ -3334,7 +3366,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
                 releaseWorkKey(key)
             }
         }
-        val jobs = dao.activeJobs(owner, scope).filter { it.phase != "FAILED" }
+        val jobs = activeJobs(owner, scope).filter { it.phase != "FAILED" }
         jobs.firstOrNull()?.let { anchor ->
             val key = backgroundKey(anchor)
             try {
