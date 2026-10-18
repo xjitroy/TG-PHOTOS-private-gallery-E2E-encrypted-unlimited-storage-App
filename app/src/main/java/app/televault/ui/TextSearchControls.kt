@@ -29,8 +29,9 @@ internal fun TextSearchControls(model: DriveViewModel) {
     val text by model.ocr.state.collectAsStateWithLifecycle()
     val pack by model.ocr.models.state.collectAsStateWithLifecycle()
     var consent by remember { mutableStateOf(false) }
+    var expanded by remember { mutableStateOf(false) }
     var clearing by remember { mutableStateOf(false) }
-    Surface(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = .5f)) {
+    Surface(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Outlined.TextFields, null, Modifier.size(20.dp))
@@ -47,7 +48,8 @@ internal fun TextSearchControls(model: DriveViewModel) {
                     }
                 })
             }
-            if (text.enabled) {
+            TextButton({ expanded = !expanded }) { Text(label(if (expanded) "Hide options" else "Text search options", if (expanded) "অপশন লুকান" else "টেক্সট সার্চ অপশন")) }
+            if (text.enabled && expanded) {
                 Row {
                     TextButton({
                         model.ocr.models.install()
@@ -56,8 +58,8 @@ internal fun TextSearchControls(model: DriveViewModel) {
                     TextButton({ clearing = true }) { Text(label("Clear text index", "লেখার ইনডেক্স মুছুন")) }
                 }
             }
-            if (pack.notice.isNotBlank()) Text(pack.notice, style = MaterialTheme.typography.bodySmall)
-            if (text.notice.isNotBlank()) Text(text.notice, style = MaterialTheme.typography.bodySmall)
+            if (expanded && pack.notice.isNotBlank()) Text(pack.notice, style = MaterialTheme.typography.bodySmall)
+            if (expanded && text.notice.isNotBlank()) Text(text.notice, style = MaterialTheme.typography.bodySmall)
         }
     }
     if (consent) OcrEnableDialog(model, { consent = false })

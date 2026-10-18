@@ -12,4 +12,10 @@ public class BackgroundAnalysisPolicyTest {
   assertFalse(BackgroundAnalysisPolicy.allowed(true,false,false));
   assertFalse(BackgroundAnalysisPolicy.allowed(true,false,true));
  }
+ @org.junit.Test public void backgroundWorkNeverCrossesLockOrAccountEpoch() {
+  org.junit.Assert.assertFalse(BackgroundAnalysisPolicy.sessionAllowed(false, 1L, 1L, false));
+  org.junit.Assert.assertFalse(BackgroundAnalysisPolicy.sessionAllowed(true, 1L, 2L, false));
+  org.junit.Assert.assertFalse(BackgroundAnalysisPolicy.sessionAllowed(true, 1L, 1L, true));
+  org.junit.Assert.assertTrue(BackgroundAnalysisPolicy.sessionAllowed(true, 1L, 1L, false));
+ }
 }

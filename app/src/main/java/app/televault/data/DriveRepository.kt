@@ -112,6 +112,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
     internal val privateAi by lazy { PrivateIntelligenceExclusions(app, this, telegram) }
     internal val ocr by lazy { OcrStore(app, this, (app as app.televault.TeleVaultApplication).ocrModels) }
     internal val people by lazy { PeopleStore(app, this, telegram) }
+    internal fun localMediaContext(): Context = app
     val localMedia = LocalMediaRepository(app)
     internal val deviceFileTrash = LocalFileTrash(app)
     private val deviceCopies = DeviceCopyResolver(app)

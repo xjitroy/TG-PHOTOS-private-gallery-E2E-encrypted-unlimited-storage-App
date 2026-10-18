@@ -3,6 +3,7 @@ package app.televault.ui
 import androidx.compose.runtime.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 
 /** A scope includes the access epoch and every visible filter, never just the source list. */
@@ -43,4 +44,34 @@ internal suspend fun <T> guardedProjection(empty: T, project: suspend () -> T): 
     empty
 } catch (_: OutOfMemoryError) {
     empty
+}
+
+/** Source progress may change while a search is reading encrypted records. Finish that read,
+ * then consume the newest source snapshot; only user filters cancel an in-flight projection. */
+@Composable
+internal fun <S, I, T> rememberCoalescedProjection(scope: S, input: I, empty: T, project: suspend (I) -> T): BackgroundProjection<T> {
+    val latest by rememberUpdatedState(input)
+    val projector by rememberUpdatedState(project)
+    var failed by remember(scope) { mutableStateOf(false) }
+    var attempts by remember(scope) { mutableIntStateOf(0) }
+    val snapshot by produceState<ProjectionSnapshot<S, T>?>(null, scope, attempts) {
+        var previous: I? = null
+        var first = true
+        while (kotlinx.coroutines.currentCoroutineContext().isActive) {
+            val next = latest
+            if (first || previous != next) {
+                first = false
+                previous = next
+                val result = guardedProjection<ProjectionSnapshot<S, T>?>(null) {
+                    val output = withContext(Dispatchers.Default) { projector(next) }
+                    ProjectionSnapshot(scope, next as Any, output)
+                }
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                failed = result == null
+                if (result != null) value = result
+            }
+            kotlinx.coroutines.delay(2000)
+        }
+    }
+    return BackgroundProjection(snapshot?.valueIn(scope) ?: empty, snapshot?.scope == scope || failed, failed) { attempts++ }
 }

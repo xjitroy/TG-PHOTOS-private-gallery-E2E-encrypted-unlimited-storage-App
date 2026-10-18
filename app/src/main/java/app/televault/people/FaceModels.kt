@@ -124,6 +124,7 @@ internal class FaceModels(context: Context) {
 class FaceModelsWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result = try {
         (applicationContext as app.televault.TeleVaultApplication).faceModels.download()
+        app.televault.data.MediaIntelligenceScheduling.request(applicationContext)
         Result.success()
     } catch (cancel: CancellationException) {
         throw cancel

@@ -276,6 +276,9 @@ fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDynamicColo
             }
         }
     }
+    val compactChromeTransition = remember(tab, section, folder, album) { androidx.compose.animation.core.MutableTransitionState(false) }
+    compactChromeTransition.targetState = isBrowse && tab != PhotoTab.VAULT && !fileLibrary && selected.isEmpty() && photoChromeMode == app.televault.domain.PhotoChromePolicy.Mode.COMPACT
+    val showTimelineDates = !compactChromeTransition.currentState && !compactChromeTransition.targetState
     val statusPull = remember(tab, section, selected.isEmpty(), headerScroll, edgeReveal, photoChrome, timelineGrid, browseList, usesBrowseList, isBrowse, isPhotoTimeline) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
@@ -1216,6 +1219,17 @@ fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDynamicColo
                         LazyColumn(contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 100.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                             item { TelegramStorageWarning() }
                             item { Text(settingsCategory, style = MaterialTheme.typography.titleLarge) }
+                            if (settingsCategory == "People & text search") {
+                                item {
+                                    PeopleAlbums(people, model) { person ->
+                                        searchPerson = person.id
+                                        universalSearch = true
+                                    }
+                                }
+                                item { FaceResetControls(model) }
+                                item { TextSearchControls(model) }
+                                item { Text("Automatic indexing continues in the background while Photos is unlocked. It pauses on lock or battery saver and resumes after unlock. Cloud originals wait for an unmetered connection. Private Vault is excluded.", style = MaterialTheme.typography.bodySmall) }
+                            }
                             if (settingsCategory == "About") item { Text("TG Photos ${app.televault.BuildConfig.VERSION_NAME}\nNative Android gallery. Encrypted Telegram backups. Independent Private Vault. Keep passwords and recovery keys safe.", style = MaterialTheme.typography.bodyMedium) }
                             if (settingsCategory == "Player") item { Text("Set playback speed, audio language, subtitles and fit/fill from the video player's menu. Choose animation duration below.", style = MaterialTheme.typography.bodyMedium) }
                             if (settingsCategory in setOf("Help")) {
@@ -1633,11 +1647,11 @@ fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDynamicColo
                                 val click: (MediaEntry) -> Unit = { item -> if (selected.isEmpty()) open(item) else selectVisible(if (item.id in selected) selected - item.id else selected + item.id) }
                                 val hold: (MediaEntry) -> Unit = { item -> selectVisible(selected + item.id) }
                                 if (section in setOf("Documents", "Audio", "All files") || (section == "Trash" && visible.none { it.mime.startsWith("image/") || it.mime.startsWith("video/") })) {
-                                    DocumentTimeline(visible, selected, model, density, { density = it }, click, hold, scroll = browseList, leadingContent = browsingIntroduction)
+                                    DocumentTimeline(visible, selected, model, density, { density = it }, click, hold, scroll = browseList, leadingContent = browsingIntroduction, showDateHeaders = showTimelineDates)
                                 } else {
                                     MediaGrid(
                                         visible, selected, model, deviceContext, click, hold, density, { density = it }, grid = timelineGrid, mosaic = mosaicLayout, selectionChanged = { selectVisible(it) },
-                                        leadingContent = if (isBrowse) browsingIntroduction else null
+                                        leadingContent = if (isBrowse) browsingIntroduction else null, showDateHeaders = showTimelineDates
                                     )
                                 }
                             }
@@ -1645,11 +1659,11 @@ fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDynamicColo
                     }
                 }
             }
-            androidx.compose.animation.AnimatedVisibility(isBrowse && tab != PhotoTab.VAULT && !fileLibrary && selected.isEmpty() && photoChromeMode == app.televault.domain.PhotoChromePolicy.Mode.COMPACT, Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 8.dp, start = 16.dp, end = 16.dp), enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.slideInVertically { -it }, exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.slideOutVertically { -it }) {
+            androidx.compose.animation.AnimatedVisibility(compactChromeTransition, Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 8.dp, start = 16.dp, end = 16.dp), enter = androidx.compose.animation.fadeIn(), exit = androidx.compose.animation.fadeOut()) {
                 if (isPhotoTimeline) {
                     PhotoSectionPills(section, choosePhotoSection)
                 } else {
-                    Surface(shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = .96f), shadowElevation = 4.dp) {
+                    Surface(shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, shadowElevation = 4.dp) {
                         Column {
                             if (!isPhotoTimeline && section != "Trash") MediaFilterBar(mediaFilters)
                             if (section !in setOf("Albums", "Folders", "Trash")) {

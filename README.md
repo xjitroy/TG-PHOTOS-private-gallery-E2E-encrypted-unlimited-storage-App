@@ -2,7 +2,7 @@
 
 Native Android photo gallery, encrypted Telegram backups, media player, file management and an independent Private Vault. Android8.0+; One Universal APK includes ARM64, ARMv7, x86 and x86_64 with the same app and signing identity.
 
-[Download public APK](https://github.com/xjitroy/TG-PHOTOS-private-gallery-E2E-encrypted-unlimited-storage-App/tree/apk-downloads/public-0.19.7) · [Build source](BUILD.md) · [Privacy](PRIVACY.md) · [Security](SECURITY.md)
+[Download public APK](https://github.com/xjitroy/TG-PHOTOS-private-gallery-E2E-encrypted-unlimited-storage-App/tree/apk-downloads/public-0.19.8) · [Build source](BUILD.md) · [Privacy](PRIVACY.md) · [Security](SECURITY.md)
 
 Photos, Albums, Files and Vault share a native Kotlin/Jetpack Compose interface with Glass/Material You options. Verified device originals open directly. Cloud media streams as authenticated encrypted ranges with bounded temporary storage. Background folder backup, manual-priority uploads, restore-safe content dedup, category/date ZIP export and media editing are included.
 
@@ -10,7 +10,7 @@ Private Vault uses a separate password/recovery key and nested cloud encryption.
 
 **DO NOT DELETE the TG Photos attachments, recovery/catalog messages or Saved Messages chat in Telegram.** Those messages contain your backups. Use TG Photos to manage deletion. Keep your passwords and recovery keys privately; uninstalling or clearing data removes local recovery convenience and biometric enrollment.
 
-The public distribution is `app.televault.photos`, version0.19.7, signed with the certificate pinned in config/public-signing-cert.sha256. Official future APK updates require the same private signing identity. Public source can be inspected/forked and APKs can be reverse engineered; code visibility/obfuscation does not prevent every modification. Other users cannot push to this repository merely because it is public. Verify the certificate/checksums before installation.
+The public distribution is `app.televault.photos`, version0.19.8, signed with the certificate pinned in config/public-signing-cert.sha256. Official future APK updates require the same private signing identity. Public source can be inspected/forked and APKs can be reverse engineered; code visibility/obfuscation does not prevent every modification. Other users cannot push to this repository merely because it is public. Verify the certificate/checksums before installation.
 
 This repository contains a sanitized snapshot of the same app's current executable source, not personal development history or owner backups. No private signing/session/recovery/encryption keys or client source credential values are included. Telegram client API identity necessarily exists in a working APK and must not be treated as a server secret. Supply your own client configuration when building.
 
@@ -37,3 +37,5 @@ Photos includes phone-local date-based Memories cards and floating, scroll-aware
 0.19.7 replaces People inference with YuNet + SFace and a one-time verified39MB in-app download (Albums → People → Download & start). Existing names/confirmed tags and encrypted recovery stay; legacy references are converted without mixing model spaces. Strong automatic duplicates consolidate, uncertain single-photo groups remain unsorted, and review dialogs start on demand. Reviews improve reference examples rather than model weights. Original photos are not reuploaded just to migrate face metadata.
 
 Photos-style scroll-away introductions and reverse-scroll compact controls now cover Albums, Files/folders and the Private Vault gallery. Filter changes stay within the current folder. English is the default app UI language, including when Android uses Bengali; an explicitly chosen per-app OS locale is respected. Face/OCR/Lens remain excluded from Private Vault. Device/OEM/gesture/model accuracy acceptance remains pending.
+
+0.19.8 fixes transparent Search/People pages and date/filter collisions. Search results use the Photos gallery grid with categories, date grouping and zoom; Everyone removes person-only constraints and Clear all removes every search filter. Names have an explicit Save dialog. Settings → People & text search provides a confirmed face reset, preserving names/manual decisions by default. Automatic encrypted face/OCR indexing uses background WorkManager batches while Photos is unlocked; lock/force-stop pauses it, with no new key storage or unlock bypass. Private Vault remains excluded. Actual Android rendering/background execution and the prior affected-phone OTP report still need phone acceptance.

@@ -3,8 +3,6 @@ package app.televault.ui
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -47,8 +45,8 @@ internal fun rememberFileChrome(scroll: LazyListState, vararg keys: Any?): Brows
 
 @Composable
 internal fun BrowseCompactBar(show: Boolean, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
-    AnimatedVisibility(show, modifier.statusBarsPadding().padding(top = 8.dp, start = 16.dp, end = 16.dp), enter = fadeIn() + slideInVertically { -it }, exit = fadeOut() + slideOutVertically { -it }) {
-        Surface(shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = .96f), shadowElevation = 4.dp) {
+    AnimatedVisibility(show, modifier.statusBarsPadding().padding(top = 8.dp, start = 16.dp, end = 16.dp), enter = fadeIn(), exit = fadeOut()) {
+        Surface(shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, shadowElevation = 4.dp) {
             Column(content = content)
         }
     }

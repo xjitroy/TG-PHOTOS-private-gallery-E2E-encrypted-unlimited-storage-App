@@ -724,6 +724,31 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
     suspend fun refreshFaceTags() = mutate(localFirst = true) {
         scanned.keys.filter { id -> (faceCounts[id] ?: 0) == 0 && persons.values.none { !it.deleted && id in it.members } }.toList().forEach { scanned.remove(it) }
     }
+
+    /** Rebuild derived scans. Only explicit full reset removes identities, via encrypted tombstones. */
+    suspend fun resetRecognition(keepIdentities: Boolean) = mutate(localFirst = true) {
+        scanned.clear()
+        scanQuality.clear()
+        faceCounts.clear()
+        hashCounts.clear()
+        changedSinceSave = 0
+        if (keepIdentities) {
+            persons.values.filter { !it.deleted }.forEach {
+                it.rescanAutomatic = true
+                it.suggestion = null
+                it.dirty = true
+            }
+        } else {
+            persons.values.filter { !it.deleted }.forEach {
+                it.wipe()
+                it.deleted = true
+                it.selfSelected = false
+                it.selfChangedAt = maxOf(System.currentTimeMillis(), it.selfChangedAt + 1)
+                it.dirty = true
+            }
+            sourceHashes.clear()
+        }
+    }
     private fun refreshSuggestions() {
         val active = persons.values.filter { !it.deleted && it.embeddingModel == MODEL && it.references.isNotEmpty() }
         for (person in active) {

@@ -20,6 +20,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -262,7 +263,7 @@ internal fun timeGroups(files: List<MediaEntry>, density: Float): Map<String, Li
 }
 
 @Composable
-internal fun MediaGrid(files: List<MediaEntry>, selected: Set<String>, model: DriveViewModel, device: Boolean, click: (MediaEntry) -> Unit, hold: (MediaEntry) -> Unit, density: Float, densityChanged: (Float) -> Unit, grid: LazyGridState = rememberLazyGridState(), mosaic: Boolean = true, selectionChanged: (Set<String>) -> Unit = {}, leadingContent: (@Composable () -> Unit)? = null) {
+internal fun MediaGrid(files: List<MediaEntry>, selected: Set<String>, model: DriveViewModel, device: Boolean, click: (MediaEntry) -> Unit, hold: (MediaEntry) -> Unit, density: Float, densityChanged: (Float) -> Unit, grid: LazyGridState = rememberLazyGridState(), mosaic: Boolean = true, selectionChanged: (Set<String>) -> Unit = {}, leadingContent: (@Composable () -> Unit)? = null, showDateHeaders: Boolean = true) {
     val snapshot by model.contentState.collectAsStateWithLifecycle()
     var high by remember { mutableStateOf(true) }
     var anchor by remember { mutableStateOf<String?>(null) }
@@ -345,7 +346,7 @@ internal fun MediaGrid(files: List<MediaEntry>, selected: Set<String>, model: Dr
         if (leadingContent != null) item(key = "timeline-introduction", span = { GridItemSpan(maxLineSpan) }, contentType = "timeline-introduction") { leadingContent() }
         groups.forEach { (date, group) ->
             stickyHeader(key = "date:$date") {
-                Box(Modifier.fillMaxWidth().padding(top = if (leadingContent != null) WindowInsets.statusBars.asPaddingValues().calculateTopPadding() else 0.dp, bottom = 8.dp), contentAlignment = Alignment.Center) {
+                Box(Modifier.fillMaxWidth().alpha(if (showDateHeaders) 1f else 0f).padding(top = if (leadingContent != null) WindowInsets.statusBars.asPaddingValues().calculateTopPadding() else 0.dp, bottom = 8.dp), contentAlignment = Alignment.Center) {
                     Surface(shape = RoundedCornerShape(32.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = .94f), shadowElevation = 3.dp) {
                         Text(date, Modifier.padding(horizontal = 18.dp, vertical = 10.dp), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium)
                     }
@@ -437,6 +438,9 @@ private fun MediaGridCell(entry: MediaEntry, selected: Set<String>, snapshot: Dr
             },
             pixels
         )
+        if (!entry.mime.startsWith("image/") && !entry.mime.startsWith("video/")) {
+            Text(entry.name, Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHigh).padding(5.dp), maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall)
+        }
         if (entry.mime.startsWith("video/")) Icon(Icons.Outlined.PlayCircle, null, Modifier.align(Alignment.BottomEnd).padding(7.dp), tint = Color.White)
         if (recentBackupBadge(entry, model)) BadgeIcon(Icons.Outlined.CloudDone, label("Backed up", "ব্যাকআপ হয়েছে"), Modifier.align(Alignment.BottomStart))
         if (entry.cloud?.favorite == true || entry.id in snapshot.localFavorites) BadgeIcon(Icons.Outlined.Favorite, label("Favorite", "প্রিয়"), Modifier.align(Alignment.TopStart))
@@ -449,12 +453,12 @@ private fun MediaGridCell(entry: MediaEntry, selected: Set<String>, snapshot: Dr
 }
 
 @Composable
-internal fun DocumentTimeline(files: List<MediaEntry>, selected: Set<String>, model: DriveViewModel, density: Float, changed: (Float) -> Unit, open: (MediaEntry) -> Unit, hold: (MediaEntry) -> Unit, scroll: androidx.compose.foundation.lazy.LazyListState = androidx.compose.foundation.lazy.rememberLazyListState(), leadingContent: (@Composable () -> Unit)? = null) {
+internal fun DocumentTimeline(files: List<MediaEntry>, selected: Set<String>, model: DriveViewModel, density: Float, changed: (Float) -> Unit, open: (MediaEntry) -> Unit, hold: (MediaEntry) -> Unit, scroll: androidx.compose.foundation.lazy.LazyListState = androidx.compose.foundation.lazy.rememberLazyListState(), leadingContent: (@Composable () -> Unit)? = null, showDateHeaders: Boolean = true) {
     val groups = remember(files, TimelineZoom.period(density)) { timeGroups(files, density) }
     LazyColumn(Modifier.fillMaxSize().timelinePinch(density, changed), state = scroll, contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 110.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (leadingContent != null) item(key = "browse-introduction") { leadingContent() }
         groups.forEach { (date, entries) ->
-            stickyHeader(key = "date:$date") { Text(date, Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).padding(top = if (leadingContent != null) WindowInsets.statusBars.asPaddingValues().calculateTopPadding() else 0.dp).padding(vertical = 12.dp), style = MaterialTheme.typography.titleSmall) }
+            stickyHeader(key = "date:$date") { Text(date, Modifier.fillMaxWidth().alpha(if (showDateHeaders) 1f else 0f).background(MaterialTheme.colorScheme.background).padding(top = if (leadingContent != null) WindowInsets.statusBars.asPaddingValues().calculateTopPadding() else 0.dp).padding(vertical = 12.dp), style = MaterialTheme.typography.titleSmall) }
             items(entries, key = { it.id }) { entry ->
                 Surface(shape = RoundedCornerShape(22.dp), color = if (entry.id in selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.animateItem().combinedClickable(onClick = { open(entry) }, onLongClick = { hold(entry) })) {
                     Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {

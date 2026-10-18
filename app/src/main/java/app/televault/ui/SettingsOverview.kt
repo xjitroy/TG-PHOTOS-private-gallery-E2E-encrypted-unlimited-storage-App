@@ -14,7 +14,7 @@ import androidx.compose.ui.unit.dp
 
 @Composable
 internal fun SettingsOverview(open: (String) -> Unit, logout: () -> Unit, modifier: Modifier = Modifier) {
-    val entries = listOf("Backup & Sync" to Icons.Outlined.Backup, "Export Cloud library" to Icons.Outlined.FolderZip, "Storage & Cache" to Icons.Outlined.Storage, "Security" to Icons.Outlined.Security, "Player" to Icons.Outlined.PlayCircle, "Theme" to Icons.Outlined.Palette, "Data Usage" to Icons.Outlined.DataUsage, "Help" to Icons.Outlined.HelpOutline, "About" to Icons.Outlined.Info)
+    val entries = listOf("People & text search" to Icons.Outlined.Face, "Backup & Sync" to Icons.Outlined.Backup, "Export Cloud library" to Icons.Outlined.FolderZip, "Storage & Cache" to Icons.Outlined.Storage, "Security" to Icons.Outlined.Security, "Player" to Icons.Outlined.PlayCircle, "Theme" to Icons.Outlined.Palette, "Data Usage" to Icons.Outlined.DataUsage, "Help" to Icons.Outlined.HelpOutline, "About" to Icons.Outlined.Info)
     LazyColumn(modifier.fillMaxWidth(), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         item { TelegramStorageWarning() }
         item { Text("TG Photos ${app.televault.BuildConfig.VERSION_NAME}", Modifier.padding(12.dp), style = MaterialTheme.typography.titleMedium) }

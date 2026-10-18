@@ -139,7 +139,7 @@ fun TeleVaultTheme(dynamicColor: Boolean = true, appearanceMode: AppearanceMode 
             // opaque so content underneath never compromises text contrast or shows through a
             // sensitive dialog. Glass transparency belongs to the backdrop and explicit chrome.
             palette.copy(
-                background = Color.Transparent,
+                background = palette.background,
                 surfaceTint = palette.primary
             )
         }

@@ -2,6 +2,7 @@ package app.televault.ocr
 
 import android.content.Context
 import androidx.work.*
+import app.televault.data.MediaIntelligenceScheduling
 import app.televault.domain.BackgroundAnalysisPolicy
 import java.io.File
 import java.net.HttpURLConnection
@@ -118,6 +119,7 @@ class OcrModelsWorker(context: Context, params: WorkerParameters) : CoroutineWor
     override suspend fun doWork(): Result = try {
         val app = applicationContext as app.televault.TeleVaultApplication
         app.ocrModels.prepare(inputData.getBoolean("all", false))
+        MediaIntelligenceScheduling.request(applicationContext)
         Result.success()
     } catch (cancel: CancellationException) {
         throw cancel

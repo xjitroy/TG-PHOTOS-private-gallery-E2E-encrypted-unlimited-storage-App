@@ -138,9 +138,9 @@ internal fun PeopleAlbums(state: PeopleState, model: DriveViewModel, open: (Pers
         }
     }
     if (allPeople) {
-        Dialog(onDismissRequest = { allPeople = false }, properties = DialogProperties(usePlatformDefaultWidth = false, securePolicy = androidx.compose.ui.window.SecureFlagPolicy.SecureOn)) {
-            Surface(Modifier.fillMaxSize().safeDrawingPadding(), color = MaterialTheme.colorScheme.background) {
-                Column(Modifier.padding(16.dp)) {
+        Dialog(onDismissRequest = { allPeople = false }, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false, securePolicy = androidx.compose.ui.window.SecureFlagPolicy.SecureOn)) {
+            Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                Column(Modifier.fillMaxSize().safeDrawingPadding().padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(label("People", "মানুষ"), Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall)
                         IconButton({ allPeople = false }) { Icon(Icons.Outlined.Close, label("Close", "বন্ধ")) }
@@ -188,6 +188,7 @@ internal fun PeopleAlbums(state: PeopleState, model: DriveViewModel, open: (Pers
                     }
                     settings = false
                 }) { Text(label("Update missing face tags", "অসম্পূর্ণ ফেস-ট্যাগ আপডেট")) }
+                FaceResetControls(model)
                 Text(label("Open a person to view photos, filter alone/together, rename or merge duplicate groups. Reviews improve matching examples, not the bundled model weights.", "ব্যক্তিতে ট্যাপ করে ছবি, একা/একসঙ্গে ফিল্টার, নাম ও duplicate merge পাবেন। রিভিউ মিলের রেফারেন্স উন্নত করে; মূল মডেলের ওজন বদলায় না।"), style = MaterialTheme.typography.bodySmall)
             }
         }, confirmButton = { TextButton({ settings = false }) { Text(label("Done", "হয়েছে")) } })

@@ -27,6 +27,29 @@ internal class OcrStore(private val context: Context, private val drive: DriveRe
 
     @Volatile private var binding: Pair<Long, String>? = null
     private var engine: OcrEngine? = null
+    private data class SearchRecord(val text: String, val hash: String)
+
+    // A bounded RAM-only copy avoids decrypting every OCR record for every keystroke.
+    private val searchCache = object : android.util.LruCache<String, SearchRecord>(4 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: SearchRecord) = 2 * (key.length + value.text.length + value.hash.length) + 64
+    }
+    private val searchRevision = AtomicLong()
+    private fun cacheKey(generation: Long, id: String) = "$generation:$id"
+    private fun cacheRecord(scope: Pair<Long, String>, generation: Long, id: String, record: SearchRecord) {
+        val revision = searchRevision.get()
+        // Drive.lock holds the Drive monitor before this publication monitor. Never call back
+        // into Drive while publication is held; recheck the token and cache revision instead.
+        val allowed = try {
+            !drive.privateAi.excluded(id, record.hash)
+        } catch (_: IllegalStateException) {
+            false
+        } catch (_: SecurityException) {
+            false
+        }
+        synchronized(publication) {
+            if (allowed && binding == scope && token.get() == generation && searchRevision.get() == revision && mutable.value.enabled) searchCache.put(cacheKey(generation, id), record)
+        }
+    }
     private fun root(scope: Pair<Long, String>) = File(context.noBackupFilesDir, "ocr-index/${scope.first}/${scope.second}")
     private fun key(id: String) = MessageDigest.getInstance("SHA-256").digest(id.toByteArray()).joinToString("") { "%02x".format(it) }
     private fun guard(scope: Pair<Long, String>, generation: Long) {
@@ -73,6 +96,7 @@ internal class OcrStore(private val context: Context, private val drive: DriveRe
                 output.write(cipher)
                 guard(scope, generation)
                 file.finishWrite(output)
+                if (id != "settings") cacheRecord(scope, generation, id, SearchRecord(body.optString("text"), body.optString("contentHash")))
             } catch (error: Throwable) {
                 file.failWrite(output)
                 throw error
@@ -88,6 +112,7 @@ internal class OcrStore(private val context: Context, private val drive: DriveRe
             engine?.close()
             engine = null
             binding = scope
+            searchCache.evictAll()
             val generation = token.incrementAndGet()
             val enabled = try {
                 read(scope, "settings")?.optBoolean("enabled") ?: false
@@ -172,9 +197,13 @@ internal class OcrStore(private val context: Context, private val drive: DriveRe
                 currentCoroutineContext().ensureActive()
                 if (!current()) return@withContext emptySet<String>()
                 val text = try {
-                    val record = read(scope, id)
-                    if (drive.privateAi.excluded(id, record?.optString("contentHash").orEmpty()))continue
-                    record?.optString("text").orEmpty()
+                    val cacheId = cacheKey(generation, id)
+                    val cached = searchCache.get(cacheId)
+                    val record = cached ?: read(scope, id)?.let { SearchRecord(it.optString("text"), it.optString("contentHash")) }?.also {
+                        if (current()) cacheRecord(scope, generation, id, it)
+                    }
+                    if (drive.privateAi.excluded(id, record?.hash.orEmpty()))continue
+                    record?.text.orEmpty()
                 } catch (cancel: CancellationException) {
                     throw cancel
                 } catch (_: Exception) {
@@ -191,12 +220,17 @@ internal class OcrStore(private val context: Context, private val drive: DriveRe
             mutex.withLock {
                 val scope = drive.privateVaultBinding()
                 val generation = token.get()
+                synchronized(publication) {
+                    searchRevision.incrementAndGet()
+                    searchCache.evictAll()
+                }
                 var removed = 0
                 for (path in root(scope).listFiles().orEmpty().filter { it.extension == "bin" && it.nameWithoutExtension != key("settings") }) {
                     currentCoroutineContext().ensureActive()
                     guard(scope, generation)
                     val body = readByKey(scope, path.nameWithoutExtension) ?: continue
                     if (drive.privateAi.excluded(body.getString("id"), body.optString("contentHash"))) {
+                        searchCache.remove(cacheKey(generation, body.getString("id")))
                         AtomicFile(path).delete()
                         removed++
                     }
@@ -210,10 +244,12 @@ internal class OcrStore(private val context: Context, private val drive: DriveRe
             val scope = drive.privateVaultBinding()
             val generation = token.get()
             guard(scope, generation)
+            searchCache.evictAll()
             root(scope).deleteRecursively()
             engine?.close()
             engine = null
             publish(scope, generation, OcrState(notice = "Text index cleared. Original photos and People are unchanged."))
+            searchCache.evictAll()
         }
     }
     suspend fun pauseEngine() = withContext(Dispatchers.IO) {
@@ -227,6 +263,7 @@ internal class OcrStore(private val context: Context, private val drive: DriveRe
         val generation = synchronized(publication) {
             token.incrementAndGet().also {
                 binding = null
+                searchCache.evictAll()
                 mutable.value = OcrState()
             }
         }

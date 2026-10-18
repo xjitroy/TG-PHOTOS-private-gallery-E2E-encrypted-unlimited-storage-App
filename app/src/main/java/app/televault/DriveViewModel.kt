@@ -94,7 +94,6 @@ class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
                         throw cancel
                     } catch (_: Exception) { }
                 } else {
-                    peopleIndex?.cancel()
                     people.lock()
                     ocr.lock()
                 }
@@ -114,106 +113,21 @@ class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
         }
     }
 
-    @Volatile private var intelligenceActive = true
     internal fun intelligenceActive(value: Boolean) {
-        intelligenceActive = value
-        if (!value) {
-            peopleIndex?.cancel()
-            textIndex?.cancel()
-            viewModelScope.launch(Dispatchers.IO) {
-                people.pauseEngine()
-                ocr.pauseEngine()
-            }
-        }
+        (repository.localMediaContext() as app.televault.TeleVaultApplication).intelligencePaused = !value
     }
-    private var peopleIndex: Job? = null
-    internal fun setPeopleEnabled(value: Boolean) {
-        if (!value) peopleIndex?.cancel()
-        peopleAction { people.enable(value) }
+    internal fun setPeopleEnabled(value: Boolean) = peopleAction {
+        people.enable(value)
+        if (value) requestIntelligence()
     }
+    internal fun requestIntelligence() = app.televault.data.MediaIntelligenceScheduling.request(repository.localMediaContext())
     internal fun indexPeople(cloud: List<app.televault.data.DriveFile>, local: List<app.televault.data.LocalMedia>, restart: Boolean = true) {
-        if (!intelligenceActive || !restart && peopleIndex?.isActive == true)return
-        peopleIndex?.cancel()
-        peopleIndex = viewModelScope.launch(Dispatchers.IO) {
-            try {
-                if (!people.state.value.enabled || !ocr.models.backgroundAllowed(false) || !people.prepareAnalysis()) return@launch
-                val epoch = playbackEpoch
-                val byCloud = state.value.backedDeviceFiles
-                val allowCloud = ocr.models.backgroundAllowed()
-                suspend fun scan(id: String, stamp: String, photo: Boolean, videoPreview: suspend () -> Bitmap?) {
-                    repository.photoPriority.await("people-index")
-                    try {
-                        val changed = people.analyze(id, stamp, ownedSource = photo) { if (photo) repository.analysisPhoto(id, allowCloud) else videoPreview() }
-                        if (changed) delay(160)
-                    } catch (_: java.io.IOException) { } catch (_: SecurityException) { }
-                }
-                for (file in cloud.filter { it.trashedAt == 0L && (it.mime.startsWith("image/") || it.mime.startsWith("video/")) }.sortedByDescending { it.date }) {
-                    if (epoch != playbackEpoch) break
-                    scan(file.id, file.hash, file.mime.startsWith("image/")) { repository.thumbnail(file.id, 384) }
-                }
-                for (file in local.distinctBy { it.uri }.filter { !it.trashed && !it.galleryHidden && (it.mime.startsWith("image/") || it.mime.startsWith("video/")) && byCloud[it.fingerprint] == null }.sortedByDescending { it.date }) {
-                    if (epoch != playbackEpoch) break
-                    scan(file.uri.toString(), file.fingerprint, file.mime.startsWith("image/")) { localMedia.thumbnail(file, 768) }
-                }
-                people.finishScan()
-                if (people.state.value.pendingSync) people.sync()
-            } catch (cancel: CancellationException) {
-                throw cancel
-            } catch (_: LinkageError) {
-                repository.notice("People recognition is unavailable on this device. Your media is unchanged.")
-            } catch (_: OutOfMemoryError) {
-                people.pauseEngine()
-                repository.notice("People indexing paused to free memory. Your media is unchanged.")
-            } catch (_: Exception) {
-                repository.notice("People indexing paused. Open Albums → People to sync or retry. Your media is unchanged.")
-            } finally {
-                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { runCatching { people.finishScan() } }
-            }
-        }
+        requestIntelligence()
+    }
+    internal fun indexText(cloud: List<app.televault.data.DriveFile>, local: List<app.televault.data.LocalMedia>, restart: Boolean = true) {
+        requestIntelligence()
     }
     internal fun peopleAction(block: suspend () -> Unit) = action(block)
-    private var textIndex: Job? = null
-    internal fun indexText(cloud: List<app.televault.data.DriveFile>, local: List<app.televault.data.LocalMedia>, restart: Boolean = true) {
-        if (!intelligenceActive)return
-        if (!restart && textIndex?.isActive == true)return
-        textIndex?.cancel()
-        textIndex = viewModelScope.launch(Dispatchers.IO) {
-            try {
-                if (!ocr.state.value.enabled)return@launch
-                val epoch = playbackEpoch
-                for (file in cloud.filter { it.trashedAt == 0L && it.mime.startsWith("image/") }.sortedByDescending { it.date }) {
-                    if (epoch != playbackEpoch)break
-                    val original = repository.preferredDeviceSource(file.id)
-                    if (!ocr.models.backgroundAllowed(original == null)) continue
-                    repository.photoPriority.await("text-index")
-                    val before = ocr.state.value.processed
-                    try {
-                        ocr.analyze(file.id, file.hash, { original ?: repository.privateMediaUri(file.id) })
-                    } catch (_: java.io.IOException) { } catch (_: SecurityException) { }
-                    if (ocr.state.value.processed > before)delay(500)
-                }
-                for (file in local.filter { !it.trashed && !it.galleryHidden && it.mime.startsWith("image/") && state.value.backedDeviceFiles[it.fingerprint] == null }.sortedByDescending { it.date }) {
-                    if (epoch != playbackEpoch)break
-                    if (!ocr.models.backgroundAllowed(false))continue
-                    repository.photoPriority.await("text-index")
-                    val before = ocr.state.value.processed
-                    try {
-                        ocr.analyze(file.uri.toString(), file.fingerprint, { file.uri })
-                    } catch (_: java.io.IOException) { } catch (_: SecurityException) { }
-                    if (ocr.state.value.processed > before)delay(500)
-                }
-            } catch (cancel: CancellationException) {
-                throw cancel
-            } catch (_: LinkageError) {
-                repository.notice("On-device OCR is unavailable on this device. Your photos are unchanged.")
-            } catch (_: OutOfMemoryError) {
-                ocr.pauseEngine()
-                repository.notice("Text indexing paused to free memory. Your photos are unchanged.")
-            } catch (_: Exception) {
-                repository.notice("Text indexing paused. Open Search to check language downloads or retry. Original photos are unchanged.")
-            }
-        }
-    }
     internal suspend fun photoText(item: app.televault.ui.MediaEntry, preferCached: Boolean = false): app.televault.ocr.OcrText {
         check(item.mime.startsWith("image/") && (item.cloud == null || item.cloud.trashedAt == 0L) && item.local?.trashed != true)
         return ocr.analyze(item.id, item.local?.fingerprint ?: item.cloud!!.hash, { item.local?.uri ?: repository.preferredDeviceSource(item.id) ?: repository.privateMediaUri(item.id) }, thorough = true, preferCached = preferCached)

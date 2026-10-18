@@ -12,6 +12,8 @@ class TeleVaultApplication : Application() {
     override fun attachBaseContext(base: android.content.Context) {
         super.attachBaseContext(AppLanguage.context(base))
     }
+
+    @Volatile internal var intelligencePaused = false
     internal val faceModels by lazy { app.televault.people.FaceModels(this) }
     internal val ocrModels by lazy { app.televault.ocr.OcrModels(this) }
     val motion by lazy { AppMotion(this) }
@@ -30,6 +32,7 @@ class TeleVaultApplication : Application() {
             if (driveLazy.isInitialized()) driveLazy.value.lock()
             privateVault.lock()
         }
+        runCatching { app.televault.data.MediaIntelligenceScheduling.ensure(this) }
         runCatching { app.televault.data.SharedMedia.schedule(this) }
         runCatching { app.televault.data.BackupScheduling.request(this) }
         runCatching { forgottenVaults.scheduleRecovery() }

@@ -1,11 +1,11 @@
 {
-  "version": "0.19.7",
-  "code": 36,
+  "version": "0.19.8",
+  "code": 37,
   "checks": {
-    "distinctHostTests": 355,
+    "distinctHostTests": 360,
     "suites": {
       "domain": {
-        "tests": 231,
+        "tests": 232,
         "failures": 0,
         "errors": 0,
         "skipped": 0
@@ -23,7 +23,7 @@
         "skipped": 0
       },
       "app": {
-        "tests": 62,
+        "tests": 66,
         "failures": 0,
         "errors": 0,
         "skipped": 0
@@ -32,40 +32,21 @@
     "lintErrors": 0,
     "lintWarnings": 96,
     "localChecks": 8,
-    "nativeAcceptance": "Unavailable: affected-phone repeated OTP and native force-stop/gesture/JNI behavior not reproduced",
+    "nativeAcceptance": "Unavailable: Android rendering/keyboard/gesture/background-worker/OEM/model behavior; prior affected-phone OTP report remains unverified",
     "otpRootCauseVerified": false,
-    "finalFocusedChecks": "Domain/app tests and all ktlint rerun after shared-photo alias and manual-tag correction guards; other suite/lint evidence from preceding full check",
-    "hostSmoke": {
-      "people": {
-        "model": "OpenCV YuNet + SFace, pinned upstream ONNX files",
-        "runtime": "ONNX Runtime CPU 1.22.0",
-        "javaProductionFivePointAlignment": true,
-        "positiveSameIdentityAcrossTwoDifferentPhotos": 0.7549259066581726,
-        "negativeDifferentIdentities": 0.13957127928733826,
-        "detectedFaces": {
-          "obama.jpg": 1,
-          "obama2.jpg": 1,
-          "biden.jpg": 1
-        },
-        "legacyReferenceReembeddingCosine": 0.7114347219467163,
-        "legacyReferenceDetected": false,
-        "seconds": 2.26,
-        "fixtureSource": "Public figure examples from github.com/ageitgey/face_recognition; host-only, not redistributed, no owner photos",
-        "scope": "Limited host smoke, not a recognition accuracy benchmark or Android/JNI/device acceptance"
-      },
-      "ocrRuntimeUnchangedFrom": "0.19.6"
-    }
+    "runtimeModelPins": "Unchanged from public0.19.7; model/license checks rerun",
+    "ocrInference": "Unchanged from0.19.6; scheduling/search cache updated"
   },
   "artifact": {
-    "apk": "TG-Photos-0.19.7-universal.apk",
-    "bytes": 88063863,
-    "sha256": "1115a0ae7c6b5a2a765cd078afbd4174ba8b828e7ec305085e2475021006027c",
-    "versionCode": 36,
-    "versionName": "0.19.7",
+    "apk": "TG-Photos-0.19.8-universal.apk",
+    "bytes": 88070599,
+    "sha256": "8a34225fd576a0d7cedfa6e83789a4274c3d6eaa0a6ceee298162aa39dcb2a8f",
+    "versionCode": 37,
+    "versionName": "0.19.8",
     "package": "app.televault.photos",
     "distribution": "public",
-    "sourceCommit": "1bc7e5e8daaeb66f7f8d0b6a3be8f7fcdb6d964d",
-    "sourceTree": "ae1f4436422c8f45d8bc052f7a81ff9d7783806b",
+    "sourceCommit": "114c00d19912d5beca5b7ceccf90273d32ca86bc",
+    "sourceTree": "d6aa0b5124df5decf143e61cb43003f3fbdb9ca4",
     "certificateSHA256": "3e7c1029cb5e2da80026758abd483b5bd7f0551b6a56bee6b21640b8ae774559",
     "debuggable": false,
     "productionVerified": false,
