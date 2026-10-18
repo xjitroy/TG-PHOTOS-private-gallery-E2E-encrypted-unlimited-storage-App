@@ -1,0 +1,19 @@
+{
+  "scope": "Static hardened DEX retention for WorkManager/manifest class identities; not native construction/execution acceptance",
+  "classes": [
+    "UploadQueueWorker",
+    "CloudExportWorker",
+    "BackupRecoveryWorker",
+    "FolderBackupWorker",
+    "CameraChangeWorker",
+    "TransferWorker",
+    "BackupEventReceiver",
+    "SharedMediaCleanupWorker",
+    "TrashRetentionWorker",
+    "CloudRestoreWorker",
+    "ForgottenVaultWorker",
+    "app.televault.ocr.OcrModelsWorker",
+    "app.televault.people.FaceModelsWorker"
+  ],
+  "productionVerified": false
+}
