@@ -1,0 +1,49 @@
+{
+  "apk": "TG-Photos-1.20.34-universal.apk",
+  "bytes": 88338966,
+  "sha256": "5b5ad33f00f09728113526068dc7df7ebe7aeb5a9f32827a424c8283af1804bc",
+  "versionCode": 46,
+  "versionName": "1.20.34",
+  "package": "app.televault.photos",
+  "distribution": "public",
+  "sourceCommit": "d2cf98c30711e3ff8dc3f70c3d4282216ac2ceb6",
+  "sourceTree": "6d4ce33d1e1c9409baeacdc8f0ab842f8d8a4c7e",
+  "certificateSHA256": "3e7c1029cb5e2da80026758abd483b5bd7f0551b6a56bee6b21640b8ae774559",
+  "debuggable": false,
+  "productionVerified": false,
+  "nativeAbis": [
+    "arm64-v8a",
+    "armeabi-v7a",
+    "x86",
+    "x86_64"
+  ],
+  "nativeLibraries": {
+    "arm64-v8a": {
+      "bytes": 24065840,
+      "sha256": "9f467fa2247ddba8e123fa34555ff06a2793ae4774e011c8eef14f860b5892ab"
+    },
+    "armeabi-v7a": {
+      "bytes": 16623720,
+      "sha256": "99f588174ed155dacaee5ff872ea77455564c59230fd5f8d4da6213b21af4d54"
+    },
+    "x86": {
+      "bytes": 27017648,
+      "sha256": "c186f794a12e364d940bf05504e8e91ac44f34074d388a2e54b329bd36541aab"
+    },
+    "x86_64": {
+      "bytes": 26322640,
+      "sha256": "d89fbc8237211c3f4b0ae4e338a09c72b50a866f75d35a77d7527f634af6eba4"
+    }
+  },
+  "checks": [
+    "ZIP CRC",
+    "signature and pinned distribution certificate",
+    "non-debuggable, backup/cleartext disabled manifest",
+    "requested pinned native ABI byte equality",
+    "16 KB ZIP alignment",
+    "shrunk JNI/Room entry points",
+    "frozen source VCS checkpoint",
+    "bundled dependency notices"
+  ],
+  "nativeAcceptance": "Authorized but unavailable in this workspace: native phone/account/provider/background-worker/performance/security acceptance. See PRODUCTION_READINESS.md for actual release gates."
+}
