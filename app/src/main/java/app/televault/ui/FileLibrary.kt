@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -223,7 +224,7 @@ internal fun FileLibrary(files: List<MediaEntry>, cloud: Boolean, chooseCloud: (
         }, dismissButton = { TextButton({ folderBackupMenu = null }) { Text(label("Cancel", "বাতিল")) } })
     }
     val focusPositions = remember(directories, direct) { direct.mapIndexed { index, entry -> entry.file.id to index + directories.size + 1 }.toMap() }
-    LocateBrowseFocus(focusPositions, { scroll.firstVisibleItemIndex }, { scroll.scrollToItem(it) }, { scroll.animateScrollBy(it, tween(180)) })
+    LocateBrowseFocus(focusPositions, { scroll.firstVisibleItemIndex }, { scroll.scrollToItem(it) }, { distance, duration -> if (duration == 0) scroll.scrollBy(distance) else scroll.animateScrollBy(distance, tween(duration, easing = androidx.compose.animation.core.FastOutSlowInEasing)) })
     val managerChrome = rememberFileChrome(scroll, cloud, folder, category, search)
     Box(modifier.fillMaxSize().nestedScroll(managerChrome.connection)) {
         LazyColumn(Modifier.fillMaxSize().browseFocusViewport().clipToBounds(), state = scroll, contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = browseFocusBottom(140.dp)), verticalArrangement = Arrangement.spacedBy(6.dp)) {

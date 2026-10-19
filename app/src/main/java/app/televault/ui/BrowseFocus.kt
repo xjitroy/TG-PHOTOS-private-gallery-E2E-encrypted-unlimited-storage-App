@@ -14,8 +14,11 @@ import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withTimeoutOrNull
 
 /** The saved id locates a normal-library row; it never reopens a viewer or Private Vault. */
@@ -45,28 +48,46 @@ internal class BrowseFocusState {
     fun clearHighlight(token: Int) {
         if (token == revision) highlightedId = null
     }
+    fun cancel(id: String, token: Int) {
+        if (token == revision && pendingId == id) request(null)
+    }
 }
 internal val LocalBrowseFocus = staticCompositionLocalOf<BrowseFocusState?> { null }
 
 @Composable
-internal fun LocateBrowseFocus(positions: Map<String, Int>, firstVisible: () -> Int, jump: suspend (Int) -> Unit, adjust: suspend (Float) -> Unit) {
+internal fun LocateBrowseFocus(positions: Map<String, Int>, firstVisible: () -> Int, jump: suspend (Int) -> Unit, adjust: suspend (Float, Int) -> Unit) {
     val focus = LocalBrowseFocus.current ?: return
     val id = focus.pendingId
     val position = positions[id]
     val token = focus.revision
     LaunchedEffect(focus, token, position) {
         if (id == null || position == null) return@LaunchedEffect
-        // Locate the actual tile, including a cell within a tall mosaic block.
-        // Distant travel does not animate thousands of intervening rows.
-        if (focus.targetBounds == null || kotlin.math.abs(position - firstVisible()) > 12) jump(position)
-        withFrameNanos { }
-        val bounds = withTimeoutOrNull(800) { snapshotFlow { focus.targetBounds to focus.viewportBounds }.first { it.first != null && it.second != null } }
-        if (bounds != null && focus.revision == token) {
+        try {
+            withFrameNanos { }
+            // Distant travel does not animate thousands of intervening rows.
+            if (focus.targetBounds == null || kotlin.math.abs(position - firstVisible()) > 12) jump(position)
+            withFrameNanos { }
+            val bounds = withTimeoutOrNull(800) { snapshotFlow { focus.targetBounds to focus.viewportBounds }.first { it.first != null && it.second != null } }
+            if (bounds == null || focus.revision != token) {
+                focus.cancel(id, token)
+                return@LaunchedEffect
+            }
             val item = checkNotNull(bounds.first)
             val viewport = checkNotNull(bounds.second)
-            BrowseFocusGeometry.delta(item.top, item.bottom, viewport.top, viewport.bottom)?.let { if (kotlin.math.abs(it) > 1) adjust(it) }
+            val delta = BrowseFocusGeometry.delta(item.top, item.bottom, viewport.top, viewport.bottom)
+            if (delta == null) {
+                focus.cancel(id, token)
+                return@LaunchedEffect
+            }
+            val travel = BrowseFocusMotion.travel(delta, viewport.height)
+            if (kotlin.math.abs(travel.jump) > 1) adjust(travel.jump, 0)
+            if (kotlin.math.abs(travel.glide) > 1) adjust(travel.glide, travel.durationMs)
+            focus.located(id, token)
+        } catch (cancel: CancellationException) {
+            // A user drag wins. Effect replacement may retry the same target with newer data.
+            if (currentCoroutineContext().isActive) focus.cancel(id, token)
+            throw cancel
         }
-        focus.located(id, token)
     }
     LaunchedEffect(focus, focus.highlightedId, token) {
         if (focus.highlightedId != null) {
@@ -79,13 +100,13 @@ internal fun LocateBrowseFocus(positions: Map<String, Int>, firstVisible: () -> 
 internal fun Modifier.browseFocus(id: String): Modifier = composed {
     val focus = LocalBrowseFocus.current
     val highlighted = focus?.highlightedId == id
-    val strength by animateFloatAsState(if (highlighted) 1f else 0f, tween(if (highlighted) 140 else 220), label = "Return highlight")
+    val strength by animateFloatAsState(if (highlighted) 1f else 0f, tween(if (highlighted) 240 else 420), label = "Return highlight")
     val color = MaterialTheme.colorScheme.primary
     onGloballyPositioned { coordinates -> if (focus?.pendingId == id) focus.targetBounds = Rect(coordinates.positionInRoot(), androidx.compose.ui.geometry.Size(coordinates.size.width.toFloat(), coordinates.size.height.toFloat())) }.drawWithContent {
         drawContent()
         if (strength > 0f) {
-            drawRoundRect(color.copy(alpha = .14f * strength), cornerRadius = CornerRadius(4.dp.toPx()))
-            drawRoundRect(color.copy(alpha = .9f * strength), cornerRadius = CornerRadius(4.dp.toPx()), style = Stroke(3.dp.toPx()))
+            drawRoundRect(color.copy(alpha = .09f * strength), cornerRadius = CornerRadius(4.dp.toPx()))
+            drawRoundRect(color.copy(alpha = .72f * strength), cornerRadius = CornerRadius(4.dp.toPx()), style = Stroke(2.dp.toPx()))
         }
     }
 }

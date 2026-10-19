@@ -4,6 +4,18 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class BrowsePositionSafetyTest {
+    @Test fun disablingLocationStartsAtPhotosWithoutAnOldFolderOrTarget() {
+        val saved = BrowsePosition(tab = "LIBRARY", libraryPath = "Documents", index = 30, focusId = "file")
+        assertEquals(BrowsePosition(), BrowseResumeOptions(location = false).restore(saved))
+    }
+
+    @Test fun disablingItemReturnStillRestoresTheNormalFolderAndScroll() {
+        val saved = BrowsePosition(tab = "GALLERY", folder = "Camera", index = 40, focusId = "video")
+        assertEquals(saved.copy(focusId = ""), BrowseResumeOptions(item = false).restore(saved))
+        assertEquals(saved, BrowseResumeOptions().restore(saved))
+        assertEquals(BrowsePosition(tab = "GALLERY", section = "Albums"), BrowseResumeOptions().restore(BrowsePosition(tab = "VAULT", focusId = "private")))
+    }
+
     @Test fun privateVaultCannotPersistOrRestoreAnItemTarget() {
         val safe = BrowsePosition(tab = "VAULT", folder = "private", focusId = "private-item").safe()
         assertEquals("GALLERY", safe.tab)

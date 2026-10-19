@@ -23,6 +23,7 @@ import app.televault.crypto.RecoveryEnvelope
 import app.televault.crypto.VaultCrypto
 import app.televault.domain.AdaptiveMediaPolicy
 import app.televault.domain.AuthProtocol
+import app.televault.domain.AutomaticBackupPolicy
 import app.televault.domain.BackedCopyVerifier
 import app.televault.domain.BackupBadge
 import app.televault.domain.BackupIdentity
@@ -1383,19 +1384,21 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
     private fun putUploadTicket(task: CacheRow, key: ByteArray, manual: Boolean, wifi: Boolean) {
         val id = "upload-queue:${task.id}"
         val previous = dao.get(id)?.let { payload(it, key) }
-        val data = JSONObject().put("job", task.id).put("manual", manual || previous?.optBoolean("manual") == true)
+        val source = payload(task, key)
+        val mime = source.optJSONObject("metadata")?.optString("mime")?.takeIf { it.isNotBlank() } ?: source.optString("sourceMime").ifBlank { MediaTools.mime(app, Uri.parse(source.getString("uri"))) }
+        val data = JSONObject().put("mime", mime).put("camera", source.optString("backupId") == "camera:${task.account}:${task.vault}").put("duration", source.optLong("sourceDuration")).put("job", task.id).put("manual", manual || previous?.optBoolean("manual") == true)
             .put("wifi", wifi && previous?.optBoolean("manual") != true).put("requestedAt", if (manual && previous?.optBoolean("manual") != true) System.currentTimeMillis() else previous?.optLong("requestedAt") ?: System.currentTimeMillis())
         dao.put(row(id, "upload-queue", data, key))
         uploadQueueChanges.incrementAndGet()
     }
-    private fun scheduleUploadQueue(task: CacheRow, manual: Boolean, wifi: Boolean = false, delaySeconds: Long = 0): Operation {
+    private fun scheduleUploadQueue(task: CacheRow, manual: Boolean, wifi: Boolean = false, delaySeconds: Long = 0, daily: Boolean = false): Operation {
         val builder = OneTimeWorkRequestBuilder<UploadQueueWorker>().setInputData(workDataOf("job" to task.id, "queueDelay" to delaySeconds))
             .setConstraints(Constraints.Builder().setRequiredNetworkType(if (wifi) NetworkType.UNMETERED else NetworkType.CONNECTED).apply { if (!manual && !BackgroundBattery.backup(app)) setRequiresCharging(true) }.build())
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).addTag("tgdrive").addTag("tgdrive-transfer")
         if (manual && delaySeconds == 0L) builder.setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
         if (delaySeconds > 0) builder.setInitialDelay(delaySeconds, TimeUnit.SECONDS)
-        val lane = UploadQueuePolicy.lane(manual, wifi, delaySeconds)
-        return work.enqueueUniqueWork("upload-queue:${task.account}:${task.vault}:$lane", ExistingWorkPolicy.APPEND_OR_REPLACE, builder.build())
+        val lane = if (daily) "daily:${java.time.LocalDate.now().plusDays(1)}" else UploadQueuePolicy.lane(manual, wifi, delaySeconds)
+        return work.enqueueUniqueWork("upload-queue:${task.account}:${task.vault}:$lane", if (daily) ExistingWorkPolicy.KEEP else ExistingWorkPolicy.APPEND_OR_REPLACE, builder.build())
     }
     suspend fun deferUploads(seed: String, previousDelay: Long) = withContext(Dispatchers.IO) {
         dao.get(seed)?.let { task ->
@@ -1448,6 +1451,8 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
                 val next = pending.firstOrNull { (task, ticket) -> task.id !in attempted && uploadEligible(task, ticket) } ?: break
                 attempted += next.first.id
                 executeJob(next.first.id)
+                // Completion/failure can release photo priority without changing the ticket generation.
+                pending = pendingUploads(selected, key)
                 completed++
             }
             true
@@ -1465,6 +1470,10 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
                             scheduleUploadQueue(ready.first, ready.second.optBoolean("manual"), delaySeconds = wait)
                         } else {
                             pending.firstOrNull { it.first.phase != "FAILED" && (it.second.optBoolean("wifi") || it.first.phase in setOf("DAILY_PHOTO_LIMIT", "MOBILE_VIDEO_DISABLED")) }?.let { scheduleUploadQueue(it.first, manual = false, wifi = true) }
+                            if (pending.any { it.first.phase == "DAILY_PHOTO_LIMIT" }) {
+                                val midnight = java.time.LocalDate.now().plusDays(1).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+                                scheduleUploadQueue(pending.first().first, manual = false, delaySeconds = ((midnight - System.currentTimeMillis()) / 1000 + 1).coerceAtLeast(1), daily = true)
+                            }
                             pending.filter { it.first.phase != "FAILED" && it.first.retryAt > System.currentTimeMillis() }.minByOrNull { it.first.retryAt }?.let {
                                 scheduleUploadQueue(it.first, manual = false, delaySeconds = ((it.first.retryAt - System.currentTimeMillis()) / 1000 + 1).coerceAtLeast(30))
                             }
@@ -1476,22 +1485,42 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
             }
         }
     }
-    private fun pendingUploads(anchor: CacheRow, key: ByteArray): List<Pair<CacheRow, JSONObject>> = dao.list(anchor.account, anchor.vault, "upload-queue").mapNotNull { ticket ->
-        val data = payload(ticket, key)
-        val task = dao.get(data.getString("job"))
-        if (task == null || task.account != anchor.account || task.vault != anchor.vault || task.phase in setOf("COMPLETE", "CANCELLED")) {
-            dao.remove(ticket.id)
-            null
-        } else {
-            task to data
-        }
-    }.sortedWith { a, b -> UploadQueuePolicy.compare(a.second.optBoolean("manual"), a.second.optLong("requestedAt"), a.first.id, b.second.optBoolean("manual"), b.second.optLong("requestedAt"), b.first.id) }
-    private fun uploadEligible(task: CacheRow, ticket: JSONObject): Boolean {
-        if (!ticket.optBoolean("manual") && !BackgroundBattery.backup(app)) return false
+    private fun pendingUploads(anchor: CacheRow, key: ByteArray): List<Pair<CacheRow, JSONObject>> {
         val settings = policy.settings()
+        val pending = dao.list(anchor.account, anchor.vault, "upload-queue").mapNotNull { ticket ->
+            val data = payload(ticket, key)
+            val task = dao.get(data.getString("job"))
+            if (task == null || task.account != anchor.account || task.vault != anchor.vault || task.phase in setOf("COMPLETE", "CANCELLED")) {
+                dao.remove(ticket.id)
+                null
+            } else {
+                if (!data.has("mime")) {
+                    val source = payload(task, key)
+                    data.put("mime", source.optJSONObject("metadata")?.optString("mime") ?: source.optString("sourceMime").ifBlank { MediaTools.mime(app, Uri.parse(source.getString("uri"))) })
+                    data.put("camera", source.optString("backupId") == "camera:${task.account}:${task.vault}").put("duration", source.optLong("sourceDuration"))
+                }
+                task to data
+            }
+        }
+        val photosPending = settings.photosFirst && pending.any { it.first.phase != "FAILED" && AutomaticBackupPolicy.priority(it.second.optString("mime")) == 0 }
+        pending.forEach { it.second.put("photosPending", photosPending) }
+        return pending.sortedWith { a, b ->
+            val manualA = a.second.optBoolean("manual")
+            val manualB = b.second.optBoolean("manual")
+            AutomaticBackupPolicy.compare(manualA, a.second.optString("mime"), a.second.optLong("requestedAt"), a.first.id, manualB, b.second.optString("mime"), b.second.optLong("requestedAt"), b.first.id, settings.photosFirst)
+        }
+    }
+    private fun uploadEligible(task: CacheRow, ticket: JSONObject): Boolean {
+        val manual = ticket.optBoolean("manual")
+        if (!manual && !BackgroundBattery.backup(app)) return false
+        val settings = policy.settings()
+        val video = ticket.optString("mime").startsWith("video/")
+        if (!manual && video && ticket.optBoolean("photosPending")) return false
+        if (!manual && task.phase == "CAMERA_VIDEO_LIMIT" && !AutomaticBackupPolicy.cameraVideoAllowed(ticket.optLong("duration"), settings.cameraVideoMinutes, settings.mobileVideos, settings.unlimited, policy.cellular())) return false
         val required = if (task.total >= 0) VaultCrypto.encryptedLength(task.total) + 1024 * 1024 else -1L
-        val phase = if (task.phase == "DAILY_PHOTO_LIMIT" && UploadQueuePolicy.photoAllowance(settings.photoLimitMb * 1024 * 1024, settings.usedBytes, required, settings.overrideToday)) "WAITING" else task.phase
-        return UploadQueuePolicy.eligible(phase, task.retryAt, System.currentTimeMillis(), task.id in runningTransfers, ticket.optBoolean("manual"), ticket.optBoolean("wifi"), policy.cellular(), settings.dataSaver, settings.mobileVideos, AutomaticVideoNotice.available(app))
+        val allowed = manual || settings.unlimited || video && settings.mobileVideos || UploadQueuePolicy.photoAllowance(settings.dailyLimitBytes, settings.usedBytes, required, false)
+        val phase = if (task.phase == "DAILY_PHOTO_LIMIT" && allowed || task.phase == "CAMERA_VIDEO_LIMIT") "WAITING" else task.phase
+        return UploadQueuePolicy.eligible(phase, task.retryAt, System.currentTimeMillis(), task.id in runningTransfers, manual, ticket.optBoolean("wifi"), policy.cellular() && !manual, settings.dataSaver, settings.mobileVideos || settings.unlimited || ticket.optBoolean("camera"), AutomaticVideoNotice.available(app))
     }
     private fun schedule(task: CacheRow, wifi: Boolean = false, download: Boolean = false, restart: Boolean = false) {
         if (!download && dao.get("upload-queue:${task.id}") != null) {
@@ -1768,6 +1797,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
         if (!BackgroundBattery.backup(app)) throw DataPolicyBlocked("WAITING")
         val settings = policy.settings()
         if (!MediaBackupPolicy.automaticAllowed(settings.dataSaver, data.getString("backupId") == "camera:$account:$vault", mime, data.optLong("capturedAt", Long.MIN_VALUE), settings.saverSince)) throw DataPolicyBlocked("DATA_SAVER_AUTO_PAUSED")
+        if (data.getString("backupId") == "camera:$account:$vault" && mime.startsWith("video/") && !AutomaticBackupPolicy.cameraVideoAllowed(data.optLong("sourceDuration"), settings.cameraVideoMinutes, settings.mobileVideos, settings.unlimited, policy.cellular())) throw DataPolicyBlocked("CAMERA_VIDEO_LIMIT")
     }
     private suspend fun upload(task: CacheRow, data: JSONObject, masterKey: ByteArray) {
         var contentGate: Mutex? = null
@@ -1778,6 +1808,14 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
             val bytes = checkpoint?.getLong("size") ?: size(uri)
             VaultCrypto.encryptedLength(bytes)
             val detectedMime = checkpoint?.getString("mime") ?: MediaTools.mime(app, uri)
+            if (data.optString("backupId") == "camera:$account:$vault" && !data.optBoolean("manualRequested") && detectedMime.startsWith("video/") && data.optLong("sourceDuration") <= 0) {
+                data.put("sourceDuration", MediaFacts.read(app, uri, detectedMime).durationMs)
+                savePayload(task, data, masterKey)
+                dao.get("upload-queue:${task.id}")?.let { ticket ->
+                    val value = payload(ticket, masterKey).put("duration", data.optLong("sourceDuration"))
+                    dao.put(row(ticket.id, "upload-queue", value, masterKey))
+                }
+            }
             enforceAutomaticPolicy(data, detectedMime)
             if (data.has("backupId") && !data.optBoolean("manualRequested") && detectedMime.startsWith("video/") && !data.optBoolean("videoNoticeAcknowledged")) {
                 if (!AutomaticVideoNotice.post(app)) {
@@ -1933,7 +1971,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
                         var reservedMobile = policy.cellular()
                         if (reconciled == null) {
                             enforceAutomaticPolicy(data, mime)
-                            policy.reserve(mime, count)
+                            policy.reserve(mime, count, data.optString("backupId") == "camera:$account:$vault", !data.has("backupId") || data.optBoolean("manualRequested"))
                         }
                         stage(task, "UPLOADING", offset, content.length())
                         var last = 0L
@@ -1941,10 +1979,10 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
                         val reference = reconciled ?: telegram.sendDocument(piece, partMarker) { done, _ ->
                             enforceAutomaticPolicy(data, mime)
                             if (policy.cellular()) {
-                                if (mime.startsWith("video/") && !policy.settings().mobileVideos) throw DataPolicyBlocked("MOBILE_VIDEO_DISABLED")
+                                if (data.has("backupId") && !data.optBoolean("manualRequested") && mime.startsWith("video/") && data.optString("backupId") != "camera:$account:$vault" && !policy.settings().let { it.mobileVideos || it.unlimited }) throw DataPolicyBlocked("MOBILE_VIDEO_DISABLED")
                                 if (!reservedMobile) {
                                     enforceAutomaticPolicy(data, mime)
-                                    policy.reserve(mime, count)
+                                    policy.reserve(mime, count, data.optString("backupId") == "camera:$account:$vault", !data.has("backupId") || data.optBoolean("manualRequested"))
                                     reservedMobile = true
                                 }
                             }
@@ -1973,7 +2011,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
                 metadata.put("backedUpAt", System.currentTimeMillis())
                 manifest.writeBytes(sealJson(masterKey, metadata, context("manifest")))
                 enforceAutomaticPolicy(data, metadata.getString("mime"))
-                policy.reserve(metadata.getString("mime"), manifest.length())
+                policy.reserve(metadata.getString("mime"), manifest.length(), data.optString("backupId") == "camera:$account:$vault", !data.has("backupId") || data.optBoolean("manualRequested"))
                 val committed = telegram.sendDocument(manifest, "TGDRIVE_V1_FILE:${task.vault}:${task.id}") { _, _ -> }
                 metadata.put("catalogMessage", committed.messageId).put("backedUpAt", BackupBadge.completedAt(System.currentTimeMillis(), committed.confirmedAtMillis))
                 dao.put(row("file:${task.id}", "file", metadata, masterKey))
@@ -2213,20 +2251,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
             try {
                 val data = payload(record, key)
                 val saver = policy.settings()
-                // Resume eligible durable automatic jobs even after a cold worker-only startup.
-                // No UI unlock or master-key storage is required; backgroundKey already checked
-                // account/vault, unlocked phone and transport protection for this encrypted row.
-                val noticesAllowed = AutomaticVideoNotice.available(app)
-                activeJobs(record.account, record.vault).filter {
-                    it.id !in runningTransfers && it.retryAt <= System.currentTimeMillis() && MediaBackupPolicy.retryEligible(it.phase, saver.dataSaver, saver.mobileVideos, noticesAllowed)
-                }.forEach { task ->
-                    val pending = payload(task, key)
-                    if (pending.optString("action") == "upload" && pending.optString("backupId") == id) {
-                        task.phase = "WAITING"
-                        dao.updateTransfer(task.id, task.phase, task.progress, task.total, task.retryAt)
-                        schedule(task, restart = true)
-                    }
-                }
+                // Reconsider the durable queue once, retaining limits, notices and retry timestamps.
                 pendingUploads(record, key).firstOrNull { uploadEligible(it.first, it.second) }?.let { scheduleUploadQueue(it.first, it.second.optBoolean("manual")) }
                 if (saver.dataSaver && !id.startsWith("camera:")) return@withLock
                 if (data.optString("uri") == "camera" || data.has("deviceFolder")) {
@@ -2239,7 +2264,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
                         coroutineContext.ensureActive()
                         if (dao.get(id) == null) return@withLock
                         val jobId = UUID.randomUUID().toString()
-                        val job = JSONObject().put("action", "upload").put("uri", item.uri.toString()).put("name", item.name).put("album", data.getString("name")).put("source", item.fingerprint).put("backupId", id).put("capturedAt", item.date).put("sourceAddedAt", item.addedAt).put("sourceModifiedAt", CaptureTime.milliseconds(item.modified))
+                        val job = JSONObject().put("action", "upload").put("uri", item.uri.toString()).put("name", item.name).put("album", data.getString("name")).put("source", item.fingerprint).put("backupId", id).put("sourceMime", item.mime).put("sourceDuration", item.durationMs).put("capturedAt", item.date).put("sourceAddedAt", item.addedAt).put("sourceModifiedAt", CaptureTime.milliseconds(item.modified))
                         val task = row(jobId, "job", job, key, "WAITING")
                         task.total = item.size
                         candidates += task
@@ -2270,7 +2295,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
                         if (token in known) continue
                         val jobId = UUID.randomUUID().toString()
                         val jobData = JSONObject().put("action", "upload").put("uri", entry.uri.toString()).put("name", entry.name ?: "File")
-                            .put("album", data.getString("name")).put("source", token).put("backupId", id).put("sourceModifiedAt", entry.lastModified())
+                            .put("album", data.getString("name")).put("sourceMime", MediaTools.mime(app, entry.uri)).put("source", token).put("backupId", id).put("sourceModifiedAt", entry.lastModified())
                         val task = row(jobId, "job", jobData, key, "WAITING")
                         task.total = length
                         candidates += task
@@ -3333,15 +3358,32 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
     }
     suspend fun overrideMobileLimit() = withContext(Dispatchers.IO) {
         policy.overrideToday()
-        dao.list(account, vault, "job").filter { it.phase == "DAILY_PHOTO_LIMIT" }.forEach { retry(it.id) }
+        resumeAutomaticUploads()
+        refreshLocal()
+        notice("Added 200 MB for today. Today’s allowance is ${policy.settings().dailyLimitBytes / AutomaticBackupPolicy.MIB} MB.")
+    }
+    suspend fun saveBackupOptions(limit: Long, minutes: Int, photosFirst: Boolean) = withContext(Dispatchers.IO) {
+        policy.saveOptions(limit, minutes, photosFirst)
+        resumeAutomaticUploads()
+        refreshLocal()
+    }
+    suspend fun setUnlimitedBackup(enabled: Boolean) = withContext(Dispatchers.IO) {
+        policy.setUnlimited(enabled)
+        resumeAutomaticUploads()
         refreshLocal()
     }
     suspend fun resumeAutomaticUploads() = withContext(Dispatchers.IO) {
         if (state.value.stage != VaultStage.READY || state.value.indexNeedsRepair) return@withContext
         BackupScheduling.request(app)
-        val settings = policy.settings()
-        val notices = AutomaticVideoNotice.available(app)
-        activeJobs(account, vault).filter { MediaBackupPolicy.retryEligible(it.phase, settings.dataSaver, settings.mobileVideos, notices) }.forEach { retry(it.id) }
+        val anchor = activeJobs(account, vault).firstOrNull { it.phase != "FAILED" } ?: return@withContext
+        val key = unlockedKey()
+        try {
+            uploadQueue.withLock {
+                pendingUploads(anchor, key).firstOrNull { uploadEligible(it.first, it.second) }?.let { scheduleUploadQueue(it.first, it.second.optBoolean("manual")) }
+            }
+        } finally {
+            key.fill(0)
+        }
     }
     suspend fun watchCamera(id: String, rearm: Boolean = false) = withContext(Dispatchers.IO) {
         val record = dao.get(id) ?: return@withContext
@@ -3405,7 +3447,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
         }
         cloudExports.restoreScheduled(owner, scope)
     }
-    suspend fun waitingForOwner(id: String): Boolean = withContext(Dispatchers.IO) { dao.get(id)?.phase in setOf("DATA_SAVER_AUTO_PAUSED", "VIDEO_NOTICE_REQUIRED") }
+    suspend fun waitingForOwner(id: String): Boolean = withContext(Dispatchers.IO) { dao.get(id)?.phase in setOf("DATA_SAVER_AUTO_PAUSED", "VIDEO_NOTICE_REQUIRED", "CAMERA_VIDEO_LIMIT") }
     suspend fun waitingForWifi(id: String): Boolean = withContext(Dispatchers.IO) { dao.get(id)?.phase in setOf("DAILY_PHOTO_LIMIT", "MOBILE_VIDEO_DISABLED") }
     suspend fun continueOnWifi(id: String) = withContext(Dispatchers.IO) {
         val request = OneTimeWorkRequestBuilder<TransferWorker>().setInputData(workDataOf("job" to id, "wifiContinuation" to true))

@@ -4,6 +4,18 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class BrowseFocusStateTest {
+    @Test fun cancelledScrollCannotHighlightOrCancelANewerTarget() {
+        val focus = BrowseFocusState()
+        focus.request("first")
+        val first = focus.revision
+        focus.cancel("first", first)
+        focus.located("first", first)
+        assertNull(focus.highlightedId)
+        focus.request("new")
+        focus.cancel("first", first)
+        assertEquals("new", focus.pendingId)
+    }
+
     @Test fun highlightRequiresTheCurrentLocatedTarget() {
         val focus = BrowseFocusState()
         focus.request("photo")

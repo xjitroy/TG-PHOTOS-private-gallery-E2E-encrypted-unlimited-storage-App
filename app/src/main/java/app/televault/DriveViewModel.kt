@@ -262,6 +262,7 @@ class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
     fun finishDeviceCleanup(ids: Set<String>) = action { repository.finishDeviceCleanup(ids) }
     fun localFavorite(uri: String, value: Boolean) = action { repository.localFavorite(uri, value) }
     internal val browsePositions = app.televault.data.BrowsePositionStore(repository.localMediaContext(), repository)
+    internal val memorySeen = app.televault.data.MemorySeenStore(repository.localMediaContext(), repository)
     private var browseSaveJob: Job? = null
     internal fun saveBrowsePosition(position: app.televault.data.BrowsePosition, epoch: Long) {
         browseSaveJob?.cancel()
@@ -344,7 +345,9 @@ class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
     fun dataSaver(enabled: Boolean) = action { repository.setDataSaver(enabled) }
     fun clearMediaCache() = action { repository.clearMediaCache() }
     fun rotateDeviceKey() = action { repository.rotateDeviceKey() }
-    fun overrideLimit() = action { repository.overrideMobileLimit() }
+    suspend fun overrideLimit() = repository.overrideMobileLimit()
+    suspend fun saveBackupOptions(limit: Long, minutes: Int, photosFirst: Boolean) = repository.saveBackupOptions(limit, minutes, photosFirst)
+    suspend fun setUnlimitedBackup(enabled: Boolean) = repository.setUnlimitedBackup(enabled)
     fun addDeviceDocumentFolder(uri: Uri) = action { repository.addDeviceDocumentFolder(uri) }
     suspend fun reconcileDeviceMedia(items: List<app.televault.data.LocalMedia>): Boolean = try {
         repository.reconcileDeviceMedia(items)

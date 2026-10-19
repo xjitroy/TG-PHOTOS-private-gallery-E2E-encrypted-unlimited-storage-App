@@ -24,7 +24,7 @@ import app.televault.data.TransferOverview
 
 /** Confirmed batch counts, one current folder and an opt-in compact queue. */
 @Composable
-internal fun BackupStatusCard(model: DriveViewModel, sync: () -> Unit, close: () -> Unit) {
+internal fun BackupStatusCard(model: DriveViewModel, sync: () -> Unit, close: () -> Unit, enable: () -> Unit, manage: () -> Unit) {
     val state by model.contentState.collectAsStateWithLifecycle()
     val overview by model.backupOverview.collectAsStateWithLifecycle()
     var expanded by rememberSaveable { mutableStateOf(false) }
@@ -45,6 +45,12 @@ internal fun BackupStatusCard(model: DriveViewModel, sync: () -> Unit, close: ()
                 Text(label("Backup status", "ব্যাকআপের অবস্থা"), Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 IconButton(close) { Icon(Icons.Outlined.Close, label("Close status", "স্ট্যাটাস বন্ধ")) }
             }
+            val automatic = state.uploadSettings.cameraBackup || state.backups.isNotEmpty()
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(if (automatic) label("Auto backup is on", "অটো ব্যাকআপ চালু") else label("Auto backup is off", "অটো ব্যাকআপ বন্ধ"), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                TextButton(if (automatic) manage else enable) { Text(if (automatic) label("Settings", "সেটিংস") else label("Turn on", "চালু করুন")) }
+            }
+            if (automatic) Text(label("Manage folders or turn automatic backup off in Settings → Backup & Sync.", "ফোল্ডার বদলাতে বা অটো ব্যাকআপ বন্ধ করতে Settings → Backup & Sync খুলুন।"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (overview.count > 0) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -76,7 +82,7 @@ internal fun BackupStatusCard(model: DriveViewModel, sync: () -> Unit, close: ()
                     }
                 }
             } else {
-                Text(if (state.uploadSettings.cameraBackup || state.backups.isNotEmpty()) label("No queued uploads", "কোনো আপলোড অপেক্ষায় নেই") else label("Auto backup is off", "অটো ব্যাকআপ বন্ধ"), style = MaterialTheme.typography.bodyMedium)
+                Text(label("No queued uploads", "কোনো আপলোড অপেক্ষায় নেই"), style = MaterialTheme.typography.bodyMedium)
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("$confirmed " + label("photos / videos in cloud", "ছবি / ভিডিও ক্লাউডে"), Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

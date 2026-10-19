@@ -171,6 +171,7 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
     val guidanceEnabled by model.preferences.guidanceEnabled.collectAsStateWithLifecycle(initialValue = true)
     val mosaicLayout by model.preferences.mosaicLayout.collectAsStateWithLifecycle(initialValue = true)
     val returnToViewedItem by model.preferences.returnToViewedItem.collectAsStateWithLifecycle(initialValue = true)
+    val resumeLastLocation by model.preferences.resumeLastLocation.collectAsStateWithLifecycle(initialValue = true)
     val tapToRevealControls by model.preferences.tapToRevealControls.collectAsStateWithLifecycle(initialValue = false)
     val animationMode by model.preferences.animationMode.collectAsStateWithLifecycle(initialValue = 0)
     val launcherName by model.preferences.launcherName.collectAsStateWithLifecycle(initialValue = app.televault.LauncherName.DEFAULT)
@@ -195,19 +196,21 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
         return
     }
     val restoredPosition by produceState<app.televault.data.BrowsePosition?>(null, model.playbackEpoch) {
-        value = model.browsePositions.load(model.playbackEpoch)
+        // Read both switches before restoring anything: Off cannot briefly redirect first.
+        val options = model.preferences.browseResumeOptions.first()
+        value = options.restore(if (options.location) model.browsePositions.load(model.playbackEpoch) else app.televault.data.BrowsePosition())
     }
     val initialPosition = restoredPosition
     if (initialPosition == null) {
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
         return
     }
-    val telegramWarningSeen by model.preferences.telegramStorageWarningSeen.collectAsStateWithLifecycle(initialValue = true)
+    val telegramWarningSeen by model.preferences.telegramStorageWarningSeen.collectAsStateWithLifecycle(initialValue = false)
     LaunchedEffect(model) { model.refreshCloudExports() }
     val cooldown by model.preferences.trashCooldownEnabled.collectAsStateWithLifecycle(initialValue = true)
     var settingsCategory by rememberSaveable { mutableStateOf("") }
     var tab by remember(model.playbackEpoch) { mutableStateOf(PhotoTab.valueOf(initialPosition.tab)) }
-    var galleryCloud by rememberSaveable { mutableStateOf(initialPosition.galleryCloud) }
+    var galleryCloud by remember(model.playbackEpoch) { mutableStateOf(initialPosition.galleryCloud) }
     var previousTab by rememberSaveable { mutableStateOf(PhotoTab.TIMELINE) }
     var rootBackPresses by remember { mutableIntStateOf(0) }
     val libraryStateHolder = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
@@ -217,7 +220,7 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
         tabEntrance.snapTo(.95f)
         tabEntrance.animateTo(1f, androidx.compose.animation.core.tween(260))
     }
-    var section by rememberSaveable { mutableStateOf(initialPosition.section) }
+    var section by remember(model.playbackEpoch) { mutableStateOf(initialPosition.section) }
     var search by remember { mutableStateOf("") }
     var folder by remember { mutableStateOf(initialPosition.folder) }
     var album by remember { mutableStateOf(initialPosition.album) }
@@ -300,6 +303,14 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
     var permissionFailures by remember { mutableIntStateOf(0) }
     var permissionsChanged by remember { mutableIntStateOf(0) }
     var mobileLimit by remember(state.uploadSettings.photoLimitMb) { mutableStateOf(state.uploadSettings.photoLimitMb.toString()) }
+    var backupVideoMinutes by remember(state.uploadSettings.cameraVideoMinutes) { mutableIntStateOf(state.uploadSettings.cameraVideoMinutes) }
+    var backupPhotosFirst by remember(state.uploadSettings.photosFirst) { mutableStateOf(state.uploadSettings.photosFirst) }
+    var backupSaving by remember { mutableStateOf(false) }
+    var backupSaved by remember { mutableStateOf(false) }
+    var unlimitedConfirmation by remember { mutableStateOf(false) }
+    var videoDataConfirmation by remember { mutableStateOf(false) }
+    var setupUnlimited by rememberSaveable { mutableStateOf(false) }
+    var setupCamera by rememberSaveable { mutableStateOf(true) }
     var pendingNewFolder by remember { mutableStateOf("") }
     var pendingLocalMove by remember { mutableStateOf<List<MediaEntry>>(emptyList()) }
     var localCopy by remember { mutableStateOf(false) }
@@ -310,10 +321,10 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
     var firstLoginPermissions by rememberSaveable { mutableStateOf(false) }
     var allFilesIntroduction by rememberSaveable { mutableStateOf(false) }
     var libraryFolders by rememberSaveable { mutableStateOf(true) }
-    var libraryDevice by rememberSaveable { mutableStateOf(initialPosition.device) }
-    var libraryPath by rememberSaveable { mutableStateOf(initialPosition.libraryPath) }
-    var libraryCategory by rememberSaveable { mutableStateOf(initialPosition.libraryCategory) }
-    var libraryRecent by rememberSaveable { mutableStateOf(initialPosition.libraryRecent) }
+    var libraryDevice by remember(model.playbackEpoch) { mutableStateOf(initialPosition.device) }
+    var libraryPath by remember(model.playbackEpoch) { mutableStateOf(initialPosition.libraryPath) }
+    var libraryCategory by remember(model.playbackEpoch) { mutableStateOf(initialPosition.libraryCategory) }
+    var libraryRecent by remember(model.playbackEpoch) { mutableStateOf(initialPosition.libraryRecent) }
     var trashScope by remember { mutableStateOf(TrashScope.DEVICE) }
     var trashFiles by remember { mutableStateOf(false) }
     var permanentDelete by remember { mutableStateOf<List<MediaEntry>?>(null) }
@@ -496,14 +507,14 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
         } else {
             arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
         }
-        LaunchedEffect(Unit) {
-            if (!model.preferences.mediaSetupSeen.first()) {
+        LaunchedEffect(telegramWarningSeen) {
+            if (telegramWarningSeen && !model.preferences.mediaSetupSeen.first()) {
                 firstLoginPermissions = true
                 galleryIntroduction = true
             }
         }
-        LaunchedEffect(tab) {
-            if (tab == PhotoTab.GALLERY && !model.preferences.galleryIntroductionSeen.first()) galleryIntroduction = true
+        LaunchedEffect(tab, telegramWarningSeen) {
+            if (telegramWarningSeen && tab == PhotoTab.GALLERY && !model.preferences.galleryIntroductionSeen.first()) galleryIntroduction = true
         }
         var enableSaverAfterPermission by remember { mutableStateOf(false) }
         var enableCameraAfterPermission by remember { mutableStateOf(false) }
@@ -983,7 +994,10 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
             }
             AnimatedVisibility(!isPhotoTimeline && tab == PhotoTab.TIMELINE && headerScroll.state.collapsedFraction < .5f && !backupStatusVisible) { CloudStorageCard(state, compact = true, onClick = { backupStatusVisible = true }) }
             AnimatedVisibility(!isPhotoTimeline && backupStatusVisible && tab == PhotoTab.TIMELINE) {
-                BackupStatusCard(model, { model.sync() }, { backupStatusVisible = false })
+                BackupStatusCard(model, { model.sync() }, { backupStatusVisible = false }, enable = { prompt = "camera" }, manage = {
+                    switchTab(PhotoTab.SETTINGS)
+                    settingsCategory = "Backup & Sync"
+                })
             }
             AnimatedVisibility(showSearch && tab != PhotoTab.LIBRARY) { OutlinedTextField(search, { search = it }, Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp), placeholder = { Text(label("Search photos, folders or files", "ছবি, ফোল্ডার বা ফাইল খুঁজুন")) }, singleLine = true, shape = RoundedCornerShape(28.dp), leadingIcon = { Icon(Icons.Outlined.Search, null) }) }
         }
@@ -992,7 +1006,14 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
                 mainHeader()
                 commonIntroduction()
                 if (isPhotoTimeline) {
-                    if (backupStatusVisible) BackupStatusCard(model, { model.sync() }, { backupStatusVisible = false }) else CloudStorageCard(state, compact = true, onClick = { backupStatusVisible = true }, minimal = true)
+                    if (backupStatusVisible) {
+                        BackupStatusCard(model, { model.sync() }, { backupStatusVisible = false }, enable = { prompt = "camera" }, manage = {
+                            switchTab(PhotoTab.SETTINGS)
+                            settingsCategory = "Backup & Sync"
+                        })
+                    } else {
+                        CloudStorageCard(state, compact = true, onClick = { backupStatusVisible = true }, minimal = true)
+                    }
                     MediaFilterBar(mediaFilters, Modifier.padding(top = 8.dp))
                     PhotoSectionPills(section, choosePhotoSection, Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
                     TimelineControls(density, { density = it }, visible.size, mosaicLayout, { enabled ->
@@ -1335,6 +1356,7 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
                                 if (settingsCategory == "About") item { Text("TG Photos ${app.televault.BuildConfig.VERSION_NAME}\nNative Android gallery. Encrypted Telegram backups. Independent Private Vault. Keep passwords and recovery keys safe.", style = MaterialTheme.typography.bodyMedium) }
                                 if (settingsCategory == "Player") item { Text("Set playback speed, audio language, subtitles and fit/fill from the video player's menu. Choose animation duration below.", style = MaterialTheme.typography.bodyMedium) }
                                 if (settingsCategory in setOf("Help")) {
+                                    item { TextButton({ savePreference { model.preferences.setFeatureIntroductionSeen(false) } }) { Text(label("Review app introduction", "অ্যাপের পরিচিতি আবার দেখুন")) } }
                                     item {
                                         AppSurface(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp), shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
                                             Column(Modifier.padding(20.dp)) {
@@ -1425,12 +1447,11 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
                                                         }
                                                     })
                                                 }, colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent))
-                                                ListItem(headlineContent = { Text(label("Camera auto backup", "ক্যামেরা অটো ব্যাকআপ")) }, supportingContent = { Text(label("Photos and videos · no app data cap on Wi-Fi", "ছবি ও ভিডিও · Wi-Fi-তে অ্যাপের ডেটা সীমা নেই")) }, trailingContent = { Switch(state.uploadSettings.cameraBackup, { if (it) prompt = "camera" else model.settings(state.uploadSettings.photoLimitMb, state.uploadSettings.mobileVideos, false) }) }, colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent))
-                                                ListItem(headlineContent = { Text(label("Videos on mobile data", "মোবাইল ডেটায় ভিডিও")) }, supportingContent = { Text(label("Off keeps videos waiting for Wi-Fi. Automatic videos are announced before upload.", "বন্ধ থাকলে ভিডিও Wi-Fi-এর অপেক্ষায় থাকবে। অটো ভিডিও আপলোডের আগে জানানো হবে")) }, trailingContent = {
-                                                    Switch(state.uploadSettings.mobileVideos, {
-                                                        model.settings(state.uploadSettings.photoLimitMb, it, state.uploadSettings.cameraBackup)
-                                                        if (it) notifyAccess()
-                                                    })
+                                                ListItem(headlineContent = { Text(label("Camera auto backup", "ক্যামেরা অটো ব্যাকআপ")) }, supportingContent = { Text(label("Photos first, then camera videos up to your chosen length. Wi-Fi has no daily data cap.", "আগে ছবি, তারপর নির্ধারিত দৈর্ঘ্যের ক্যামেরা ভিডিও। Wi-Fi-তে দৈনিক ডেটা সীমা নেই।")) }, trailingContent = { Switch(state.uploadSettings.cameraBackup, { if (it) prompt = "camera" else model.settings(state.uploadSettings.photoLimitMb, state.uploadSettings.mobileVideos, false) }) }, colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent))
+                                                ListItem(headlineContent = { Text(label("Videos on mobile data", "মোবাইল ডেটায় ভিডিও")) }, supportingContent = { Text(if (state.uploadSettings.unlimited) label("Included in Full backup. Switch back to limited data in Settings → Data Usage before changing this choice.", "Full backup-এ এটি চালু আছে। বদলাতে আগে Settings → Data Usage থেকে সীমিত ডেটায় ফিরুন।") else label("On allows videos of any length without the daily mobile allowance. Off uses limited Camera video backup; other videos wait for Wi-Fi. Automatic video notices remain.", "চালু করলে দৈর্ঘ্য বা দৈনিক মোবাইল ডেটা সীমা ছাড়া ভিডিও আপলোড হবে। বন্ধে ক্যামেরার সীমিত ভিডিও ব্যাকআপ হবে, অন্য ভিডিও Wi-Fi-এর অপেক্ষায় থাকবে। অটো ভিডিওর নোটিস থাকবে।")) }, trailingContent = {
+                                                    Switch(state.uploadSettings.mobileVideos || state.uploadSettings.unlimited, {
+                                                        if (it) videoDataConfirmation = true else model.settings(state.uploadSettings.photoLimitMb, false, state.uploadSettings.cameraBackup)
+                                                    }, enabled = !state.uploadSettings.unlimited)
                                                 }, colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent))
                                                 if (state.transfers.any { it.phase == "VIDEO_NOTICE_REQUIRED" }) {
                                                     Text(label("Automatic video backup is waiting for its notification. Enable notifications or acknowledge the video in Library → Transfers.", "অটো ভিডিও ব্যাকআপ জানানোর অনুমতির অপেক্ষায়। নোটিফিকেশন চালু করুন, অথবা Library → Transfers-এ ভিডিওর অনুমতি দিন।"), Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodySmall)
@@ -1452,13 +1473,59 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
                                     item {
                                         AppSurface(shape = RoundedCornerShape(26.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
                                             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                                Text(label("Mobile photo allowance", "মোবাইলে ছবির ডেটা সীমা"), style = MaterialTheme.typography.titleMedium)
-                                                OutlinedTextField(mobileLimit, { mobileLimit = it.filter(Char::isDigit).take(6) }, label = { Text(label("Daily limit (MB)", "দৈনিক সীমা (MB)")) }, singleLine = true, shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth())
-                                                Text(label("Used today: ", "আজ ব্যবহৃত: ") + sizeLabel(state.uploadSettings.usedBytes), style = MaterialTheme.typography.bodySmall)
-                                                Row {
-                                                    TextButton({ model.settings(mobileLimit.toLongOrNull() ?: 150, state.uploadSettings.mobileVideos, state.uploadSettings.cameraBackup) }) { Text(label("Save limit", "সীমা সেভ")) }
-                                                    TextButton({ model.overrideLimit() }) { Text(label("Allow more today", "আজ বেশি অনুমতি")) }
+                                                Text(label("Automatic backup allowance", "অটো ব্যাকআপের ডেটা সীমা"), style = MaterialTheme.typography.titleMedium)
+                                                Text(label("Mobile data: 250 MB/day by default, photos first, then Camera videos up to 2 minutes. Manual Upload has no app data or duration limit. Wi-Fi has no daily or video-length cap. Existing saved choices are preserved.", "মোবাইল ডেটায় ডিফল্ট দৈনিক ২৫০ MB, আগে ছবি তারপর ২ মিনিট পর্যন্ত ক্যামেরা ভিডিও। Manual Upload-এ অ্যাপের ডেটা বা দৈর্ঘ্যের সীমা নেই। Wi-Fi-তে দৈনিক বা ভিডিওর দৈর্ঘ্যের সীমা নেই। আগের সেভ করা পছন্দ থাকবে।"), style = MaterialTheme.typography.bodySmall)
+                                                OutlinedTextField(mobileLimit, {
+                                                    mobileLimit = it.filter(Char::isDigit).take(6)
+                                                    backupSaved = false
+                                                }, label = { Text(label("Daily limit (MB)", "দৈনিক সীমা (MB)")) }, supportingText = { Text("1–100000 MB") }, isError = mobileLimit.toLongOrNull() !in 1L..100000L, enabled = !backupSaving && !state.uploadSettings.unlimited, singleLine = true, shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth())
+                                                Text(label("Camera videos on mobile data", "মোবাইল ডেটায় ক্যামেরা ভিডিও"), style = MaterialTheme.typography.titleSmall)
+                                                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                    listOf(1, 2, 5, 10, 0).forEach { minutes ->
+                                                        FilterChip(backupVideoMinutes == minutes, {
+                                                            backupVideoMinutes = minutes
+                                                            backupSaved = false
+                                                        }, enabled = !backupSaving && !state.uploadSettings.unlimited && !state.uploadSettings.mobileVideos, label = { Text(if (minutes == 0) label("Any length", "সব দৈর্ঘ্য") else "$minutes min") })
+                                                    }
                                                 }
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Text(label("Photos before automatic videos", "অটো ভিডিওর আগে ছবি"), Modifier.weight(1f))
+                                                    Switch(backupPhotosFirst, {
+                                                        backupPhotosFirst = it
+                                                        backupSaved = false
+                                                    }, enabled = !backupSaving)
+                                                }
+                                                Text(label("Used today: ", "আজ ব্যবহৃত: ") + sizeLabel(state.uploadSettings.usedBytes) + if (state.uploadSettings.unlimited) label(" · No limit", " · সীমা নেই") else " / " + sizeLabel(state.uploadSettings.dailyLimitBytes), style = MaterialTheme.typography.bodySmall)
+                                                if (state.uploadSettings.extraTodayMb > 0) Text(label("Extra today: ", "আজ অতিরিক্ত: ") + "${state.uploadSettings.extraTodayMb} MB", style = MaterialTheme.typography.bodySmall)
+                                                Button({
+                                                    val limit = mobileLimit.toLongOrNull() ?: return@Button
+                                                    backupSaving = true
+                                                    scope.launch {
+                                                        try {
+                                                            model.saveBackupOptions(limit, backupVideoMinutes, backupPhotosFirst)
+                                                            backupSaved = true
+                                                        } catch (cancel: CancellationException) {
+                                                            throw cancel
+                                                        } catch (_: Exception) {
+                                                            model.report("Backup settings could not be saved. Try again.")
+                                                        } finally {
+                                                            backupSaving = false
+                                                        }
+                                                    }
+                                                }, enabled = !backupSaving && mobileLimit.toLongOrNull() in 1L..100000L) {
+                                                    Text(
+                                                        if (backupSaving) {
+                                                            label("Saving…", "সেভ হচ্ছে…")
+                                                        } else if (backupSaved) {
+                                                            label("Saved ✓", "সেভ হয়েছে ✓")
+                                                        } else {
+                                                            label("Save backup settings", "ব্যাকআপ সেটিংস সেভ করুন")
+                                                        }
+                                                    )
+                                                }
+                                                androidx.compose.animation.AnimatedVisibility(backupSaved) { Text(label("Saved on this phone. Your choices will stay after restarting the app.", "এই ফোনে সেভ হয়েছে। অ্যাপ আবার খুললেও আপনার পছন্দ থাকবে।"), color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall) }
+                                                TextButton({ savePreference { model.overrideLimit() } }, enabled = !backupSaving && !state.uploadSettings.unlimited) { Text(label("Allow extra today · +200 MB", "আজ অতিরিক্ত · +২০০ MB")) }
+                                                OutlinedButton({ if (state.uploadSettings.unlimited) savePreference { model.setUnlimitedBackup(false) } else unlimitedConfirmation = true }, enabled = !backupSaving) { Text(if (state.uploadSettings.unlimited) label("Use limited data again", "আবার সীমিত ডেটা ব্যবহার") else label("No limit · Unlimited internet", "সীমা নেই · আনলিমিটেড ইন্টারনেট")) }
                                             }
                                         }
                                     }
@@ -1507,7 +1574,12 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
                                 if (settingsCategory in setOf("Player")) {
                                     item {
                                         AppSurface(shape = RoundedCornerShape(26.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
-                                            ListItem(headlineContent = { Text(label("Return to the viewed item", "দেখা ফাইলের অবস্থানে ফিরুন")) }, supportingContent = { Text(label("Return to the last viewed photo, video, audio or document in its list and briefly highlight it. Also applies after reopening the app. Private Vault is excluded.", "তালিকায় শেষ দেখা ফটো, ভিডিও, অডিও বা ডকুমেন্টে ফিরে হালকা চিহ্ন দেখাবে। অ্যাপ আবার খুললেও কাজ করবে। Private Vault বাদ থাকবে।")) }, trailingContent = { Switch(returnToViewedItem, { enabled -> savePreference { model.preferences.setReturnToViewedItem(enabled) } }) })
+                                            ListItem(headlineContent = { Text(label("Resume last location", "শেষ অবস্থানে আবার খুলুন")) }, supportingContent = { Text(label("Reopen your last normal tab and folder. Turn off to start at Photos next time; your current screen stays in place. Private Vault never reopens.", "শেষ সাধারণ ট্যাব ও ফোল্ডারে আবার খুলবে। বন্ধ করলে পরের বার Photos-এ শুরু হবে; বর্তমান স্ক্রিন সরবে না। Private Vault আবার খুলবে না।")) }, trailingContent = { Switch(resumeLastLocation, { enabled -> savePreference { model.preferences.setResumeLastLocation(enabled) } }) })
+                                        }
+                                    }
+                                    item {
+                                        AppSurface(shape = RoundedCornerShape(26.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+                                            ListItem(headlineContent = { Text(label("Return to the viewed item", "দেখা ফাইলের অবস্থানে ফিরুন")) }, supportingContent = { Text(label("Return to the last viewed photo, video, audio or document in its list and briefly highlight it. After reopening, this also needs Resume last location. Private Vault is excluded.", "তালিকায় শেষ দেখা ফটো, ভিডিও, অডিও বা ডকুমেন্টে ফিরে হালকা চিহ্ন দেখাবে। অ্যাপ আবার খুললে শেষ অবস্থানে খোলার সেটিংটিও চালু থাকতে হবে। Private Vault বাদ থাকবে।")) }, trailingContent = { Switch(returnToViewedItem, { enabled -> savePreference { model.preferences.setReturnToViewedItem(enabled) } }) })
                                         }
                                     }
                                     item {
@@ -1889,19 +1961,32 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
                 Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(label("Allow photos, videos and audio to browse your phone. On Android you can allow all photos or selected photos, and decline any permission.", "ফোনের ছবি, ভিডিও ও অডিও দেখতে অনুমতি দিন। Android-এ সব ছবি বা বাছাই করা ছবি দেখার অনুমতি দিতে পারেন; যেকোনো অনুমতি না-ও দিতে পারেন।"))
                     Text(label("Documents need a separate Android folder-selection grant in Library.", "ডকুমেন্টের জন্য Library থেকে আলাদাভাবে Android-এর ফোল্ডার বাছতে হবে।"), style = MaterialTheme.typography.bodySmall)
-                    Text(label("Browsing and folder scanning never upload files. Cloud upload happens only when you choose Upload or explicitly enable automatic backup. Files are end-to-end encrypted on your phone before upload; only your vault key can open them.", "গ্যালারি দেখা বা ফোল্ডার স্ক্যান করলে ফাইল আপলোড হয় না। আপনি Upload করলে বা নিজে অটো-ব্যাকআপ চালু করলেই আপলোড হবে। আপলোডের আগে ফোনেই ফাইল এন্ড-টু-এন্ড এনক্রিপ্ট হয়; আপনার ভল্ট কী ছাড়া খোলা যায় না।"))
+                    if (firstLoginPermissions) {
+                        Text(label("Turn on automatic Camera backup?", "Camera অটো ব্যাকআপ চালু করবেন?"), style = MaterialTheme.typography.titleMedium)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(setupCamera, { setupCamera = it })
+                            Text(label("Back up Camera automatically after permission", "অনুমতি পেলে Camera অটো ব্যাকআপ করুন"), Modifier.weight(1f))
+                        }
+                        androidx.compose.animation.AnimatedVisibility(setupCamera) { BackupPlanChoices(setupUnlimited, { setupUnlimited = it }) }
+                        Text(label("Manual Upload and downloads have no daily app data cap. Change automatic backup later in Settings → Backup & Sync / Data Usage.", "Manual Upload ও ডাউনলোডে অ্যাপের দৈনিক ডেটা সীমা নেই। পরে Settings → Backup & Sync / Data Usage থেকে অটো ব্যাকআপ বদলাতে পারবেন।"), style = MaterialTheme.typography.bodySmall)
+                    }
                     if (state.backups.isNotEmpty()) Text(label("You already have automatic backup enabled for selected folders. Manage it in Settings.", "আগে থেকে কিছু ফোল্ডারের অটো-ব্যাকআপ চালু আছে। Settings থেকে বন্ধ বা পরিবর্তন করতে পারেন।"), style = MaterialTheme.typography.bodySmall)
                 }
             }, confirmButton = {
                 TextButton({
-                    galleryIntroduction = false
+                    val firstSetup = firstLoginPermissions
                     savePreference {
+                        if (firstSetup && setupCamera) {
+                            model.setUnlimitedBackup(setupUnlimited)
+                            enableCameraAfterPermission = setupCamera
+                        }
                         model.preferences.markGalleryIntroductionSeen()
                         model.preferences.markMediaSetupSeen()
+                        galleryIntroduction = false
+                        permission.launch(permissions() + if (firstSetup && Build.VERSION.SDK_INT >= 33) arrayOf(Manifest.permission.POST_NOTIFICATIONS) else emptyArray())
+                        firstLoginPermissions = false
                     }
-                    permission.launch(permissions() + if (firstLoginPermissions && Build.VERSION.SDK_INT >= 33) arrayOf(Manifest.permission.POST_NOTIFICATIONS) else emptyArray())
-                    firstLoginPermissions = false
-                }) { Text(label("Choose permissions", "অনুমতি বাছুন")) }
+                }) { Text(if (firstLoginPermissions) if (setupCamera) label("Enable Camera backup & continue", "Camera ব্যাকআপ চালু করে এগোন") else label("Browse without auto backup", "অটো ব্যাকআপ ছাড়া দেখুন") else label("Choose permissions", "অনুমতি বাছুন")) }
             }, dismissButton = {
                 TextButton({
                     galleryIntroduction = false
@@ -1912,7 +1997,27 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
                 }) { Text(label("Not now", "এখন নয়")) }
             })
         }
+        if (videoDataConfirmation) {
+            AlertDialog(onDismissRequest = { videoDataConfirmation = false }, title = { Text(label("Unlimited mobile video backup?", "সীমাহীন মোবাইল ভিডিও ব্যাকআপ?")) }, text = { Box(Modifier.verticalScroll(rememberScrollState())) { Text(label("This permits videos of any length without the app's daily mobile-data allowance. Confirm that your internet plan supports these uploads. Photos keep their own daily allowance unless No limit is enabled.", "এতে দৈর্ঘ্য ও অ্যাপের দৈনিক ডেটা সীমা ছাড়া মোবাইল ডেটায় ভিডিও আপলোড হবে। আপনার ইন্টারনেট প্ল্যানে এই আপলোড করা যাবে বলে নিশ্চিত করুন। No limit চালু না করলে ছবির দৈনিক সীমা থাকবে।")) } }, confirmButton = {
+                TextButton({
+                    model.settings(state.uploadSettings.photoLimitMb, true, state.uploadSettings.cameraBackup)
+                    notifyAccess()
+                    videoDataConfirmation = false
+                }) { Text(label("My plan supports this · Enable", "আমার প্ল্যানে চলবে · চালু করুন")) }
+            }, dismissButton = { TextButton({ videoDataConfirmation = false }) { Text(label("Keep limited backup", "সীমিত ব্যাকআপ রাখুন")) } })
+        }
+        if (unlimitedConfirmation) {
+            AlertDialog(onDismissRequest = { unlimitedConfirmation = false }, icon = { Icon(Icons.Outlined.CloudUpload, null) }, title = { Text(label("Use unlimited internet?", "আনলিমিটেড ইন্টারনেট ব্যবহার করবেন?")) }, text = { Box(Modifier.verticalScroll(rememberScrollState())) { Text(label("Full backup removes the app's daily mobile-data and Camera video-length limits for your enabled backup folders. Large videos can use a lot of data. Confirm that your plan has unlimited data. Permissions, selected folders, Data Saver and battery protection still apply.", "Full backup-এ চালু ব্যাকআপ ফোল্ডারের দৈনিক মোবাইল ডেটা ও ক্যামেরা ভিডিওর দৈর্ঘ্যের সীমা থাকবে না। বড় ভিডিওতে অনেক ডেটা লাগতে পারে। আপনার আনলিমিটেড ডেটা আছে বলে নিশ্চিত করুন। পারমিশন, বাছাই করা ফোল্ডার, Data Saver ও ব্যাটারি সুরক্ষা কার্যকর থাকবে।")) } }, confirmButton = {
+                TextButton({
+                    savePreference {
+                        model.setUnlimitedBackup(true)
+                        unlimitedConfirmation = false
+                    }
+                }) { Text(label("I have unlimited internet · Enable", "আমার আনলিমিটেড নেট আছে · চালু করুন")) }
+            }, dismissButton = { TextButton({ unlimitedConfirmation = false }) { Text(label("Keep limited backup", "সীমিত ব্যাকআপ রাখুন")) } })
+        }
         if (changePassword) PasswordChangeDialog(model) { changePassword = false }
+        LaunchedEffect(prompt) { if (prompt == "camera") setupUnlimited = state.uploadSettings.unlimited }
         if (prompt.isNotEmpty()) {
             when (prompt) {
                 "logout" -> AlertDialog(onDismissRequest = { prompt = "" }, title = { Text(label("Log out?", "লগআউট করবেন?")) }, text = { Text(label("Your encrypted cloud files stay. Keep the recovery phrase before ending this app's Telegram session.", "এনক্রিপ্টেড ক্লাউড ফাইল থাকবে। Telegram সেশন বন্ধের আগে রিকভারি পাসফ্রেজ রাখুন।")) }, confirmButton = {
@@ -1930,18 +2035,28 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
                 "trash-all-cloud" -> PasswordTrashConfirmation(model, state.files.count { it.trashedAt == 0L }, cancel = { prompt = "" }, confirmed = {
                     prompt = ""
                 }, allCloud = true)
-                "camera", "folder-backup" -> AlertDialog(onDismissRequest = { prompt = "" }, title = { Text(label("Enable automatic backup?", "অটো ব্যাকআপ চালু করবেন?")) }, text = { Text(label("Backup continues with the protected device key while your phone is unlocked. Default camera photos have a 150 MB/day cellular budget; videos are Wi-Fi only unless allowed.", "ফোন আনলক থাকলে device key দিয়ে ব্যাকআপ চলবে। মোবাইলে ছবির দৈনিক সীমা ১৫০ MB; অনুমতি ছাড়া ভিডিও শুধু Wi-Fi-এ।")) }, confirmButton = {
+                "camera", "folder-backup" -> AlertDialog(onDismissRequest = { prompt = "" }, title = { Text(label("Enable automatic backup?", "অটো ব্যাকআপ চালু করবেন?")) }, text = {
+                    Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(label("Choose your backup plan before enabling it. Only folders you enable and grant access to are backed up. Turn it off later in Settings → Backup & Sync.", "চালু করার আগে ব্যাকআপের পছন্দ বাছুন। আপনি চালু করা ও অনুমতি দেওয়া ফোল্ডারই ব্যাকআপ হবে। পরে Settings → Backup & Sync থেকে বন্ধ করবেন।"))
+                        if (prompt == "camera") BackupPlanChoices(setupUnlimited, { setupUnlimited = it })
+                        Text(label("Manual Upload and downloads have no daily app data limit. Android access, network availability and battery protections still apply.", "Manual Upload ও ডাউনলোডে অ্যাপের দৈনিক ডেটা সীমা নেই। Android-এর অনুমতি, নেটওয়ার্ক ও ব্যাটারির সুরক্ষা কার্যকর থাকবে।"), style = MaterialTheme.typography.bodySmall)
+                    }
+                }, confirmButton = {
                     TextButton({
                         val camera = prompt == "camera"
-                        prompt = ""
                         if (camera) {
-                            enableCameraAfterPermission = true
-                            permission.launch(permissions())
-                            notifyAccess()
+                            savePreference {
+                                model.setUnlimitedBackup(setupUnlimited)
+                                prompt = ""
+                                enableCameraAfterPermission = true
+                                permission.launch(permissions())
+                                notifyAccess()
+                            }
                         } else {
+                            prompt = ""
                             backupPicker.launch(null)
                         }
-                    }) { Text(label("Enable", "চালু করুন")) }
+                    }) { Text(if (prompt == "camera") label("Enable Camera backup", "Camera ব্যাকআপ চালু করুন") else label("Choose folder", "ফোল্ডার বাছুন")) }
                 }, dismissButton = { TextButton({ prompt = "" }) { Text(label("Cancel", "বাতিল")) } })
                 else -> AlertDialog(onDismissRequest = { prompt = "" }, title = {
                     Text(
@@ -1984,12 +2099,13 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
                 }, dismissButton = { TextButton({ prompt = "" }) { Text(label("Cancel", "বাতিল")) } })
             }
         }
-        if (!budgetDismissed && !state.uploadSettings.overrideToday && (state.uploadSettings.usedBytes >= state.uploadSettings.photoLimitMb * 1024 * 1024 || state.transfers.any { it.phase == "DAILY_PHOTO_LIMIT" })) {
-            AlertDialog(onDismissRequest = { budgetDismissed = true }, title = { Text(label("Daily photo data limit reached", "ছবির দৈনিক ডেটার সীমা শেষ")) }, text = { Text(label("Uploads will wait for Wi-Fi or tomorrow. You can allow more mobile data for today.", "Wi-Fi বা আগামীকাল পর্যন্ত অপেক্ষা করবে। আজ অতিরিক্ত মোবাইল ডেটার অনুমতি দিতে পারেন।")) }, confirmButton = {
+        LaunchedEffect(state.uploadSettings.dailyLimitBytes) { budgetDismissed = false }
+        if (!budgetDismissed && !state.uploadSettings.unlimited && (state.uploadSettings.usedBytes >= state.uploadSettings.dailyLimitBytes || state.transfers.any { it.phase == "DAILY_PHOTO_LIMIT" })) {
+            AlertDialog(onDismissRequest = { budgetDismissed = true }, title = { Text(label("Automatic backup data limit reached", "অটো ব্যাকআপের ডেটা সীমা শেষ")) }, text = { Text(label("Automatic backup waits for Wi-Fi or tomorrow. Add 200 MB for today; manual Upload is always available without this limit.", "অটো ব্যাকআপ Wi-Fi বা আগামীকাল পর্যন্ত অপেক্ষা করবে। আজ ২০০ MB বাড়াতে পারেন; Manual Upload-এ এই সীমা প্রযোজ্য নয়।")) }, confirmButton = {
                 TextButton({
-                    model.overrideLimit()
+                    savePreference { model.overrideLimit() }
                     budgetDismissed = true
-                }) { Text(label("Allow extra today", "আজ অতিরিক্ত অনুমতি")) }
+                }) { Text(label("Allow extra today · +200 MB", "আজ অতিরিক্ত · +২০০ MB")) }
             }, dismissButton = { TextButton({ budgetDismissed = true }) { Text(label("Keep limit", "সীমা রাখুন")) } })
         }
         permanentDelete?.let { captured ->
@@ -2162,6 +2278,7 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
 
 @Composable internal fun transferLabel(phase: String): String = when (phase) {
     "DAILY_PHOTO_LIMIT" -> label("Waiting for Wi-Fi or today's extra-data permission", "Wi-Fi বা আজ অতিরিক্ত ডেটার অনুমতির অপেক্ষায়")
+    "CAMERA_VIDEO_LIMIT" -> label("Camera video exceeds your automatic limit · manual Upload is available", "ক্যামেরা ভিডিও অটো সীমার বেশি · Manual Upload করতে পারেন")
     "MOBILE_VIDEO_DISABLED" -> label("Video waiting for Wi-Fi", "ভিডিও Wi-Fi-এর অপেক্ষায়")
     "COMPLETE" -> label("Completed", "সম্পূর্ণ")
     "WAITING_TRASH_COOLDOWN" -> label("Waiting for 24-hour Trash protection", "ট্র্যাশের ২৪ ঘণ্টার সুরক্ষার অপেক্ষা")

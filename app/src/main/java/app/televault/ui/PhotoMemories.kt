@@ -1,5 +1,7 @@
 package app.televault.ui
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -14,6 +16,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -27,6 +31,7 @@ import java.util.Locale
 import kotlinx.coroutines.delay
 
 internal data class PhotoMemory(val key: String, val years: Int, val date: LocalDate, val entries: List<MediaEntry>, val title: String? = null)
+internal fun PhotoMemory.receipt() = memoryReceipt(key, entries.map { Triple(it.local?.fingerprint ?: it.cloud?.hash ?: it.id, it.date, it.size) })
 
 @Composable
 internal fun rememberPhotoMemories(files: List<MediaEntry>, scope: Any, people: List<app.televault.people.PersonCard> = emptyList(), selfId: String? = null, scenes: Map<String, String> = emptyMap(), deviceLinks: Map<String, String> = emptyMap()): List<PhotoMemory> {
@@ -93,6 +98,8 @@ internal fun rememberPhotoMemories(files: List<MediaEntry>, scope: Any, people: 
 
 @Composable
 internal fun PhotoMemories(cards: List<PhotoMemory>, model: DriveViewModel, open: (PhotoMemory) -> Unit) {
+    val revision by model.memorySeen.revision.collectAsState()
+    val watched by produceState(emptySet<String>(), model.playbackEpoch, revision) { value = model.memorySeen.load(model.playbackEpoch) }
     var settings by remember { mutableStateOf(false) }
     if (settings) {
         AlertDialog(onDismissRequest = { settings = false }, title = { Text("Memories & suggestions") }, text = {
@@ -110,14 +117,19 @@ internal fun PhotoMemories(cards: List<PhotoMemory>, model: DriveViewModel, open
         if (cards.isEmpty()) Text("Your moments will appear as your photo library grows.", Modifier.padding(horizontal = 20.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             items(cards, key = { it.key }) { card ->
+                val seen = remember(card, watched) { card.receipt() in watched }
+                val dim by animateFloatAsState(if (seen) .22f else 0f, tween(280), label = "Watched memory")
+                val watchDescription = if (seen) label("Viewed", "দেখা হয়েছে") else label("Not viewed", "এখনও দেখা হয়নি")
                 val title = card.title ?: if (card.years > 0) label(if (card.years == 1) "1 year ago" else "${card.years} years ago", "${card.years} বছর আগে") else label("A day to remember", "মনে রাখার একটি দিন")
-                Box(Modifier.width(152.dp).height(168.dp).clip(RoundedCornerShape(26.dp)).clickable { open(card) }) {
+                Box(Modifier.width(152.dp).height(168.dp).clip(RoundedCornerShape(26.dp)).semantics { stateDescription = watchDescription }.clickable { open(card) }) {
                     MediaThumbnail(card.entries.first(), model, Modifier.fillMaxSize(), pixels = 384, adaptive = true)
+                    if (dim > 0) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = dim)))
                     Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color.Transparent, .35f to Color.Transparent, 1f to Color.Black.copy(alpha = .82f))))
                     Column(Modifier.align(Alignment.BottomStart).padding(14.dp)) {
                         Text(title, color = Color.White, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         Spacer(Modifier.height(4.dp))
                         Text(card.date.format(DateTimeFormatter.ofPattern("d MMM yyyy", Locale.getDefault())), color = Color.White.copy(alpha = .9f), style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                        if (seen) Text(label("Viewed", "দেখা হয়েছে"), color = Color.White.copy(alpha = .85f), style = MaterialTheme.typography.labelSmall)
                     }
                 }
             }

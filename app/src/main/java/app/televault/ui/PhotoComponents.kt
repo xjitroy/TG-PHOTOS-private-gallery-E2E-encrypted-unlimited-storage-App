@@ -9,6 +9,7 @@ import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.*
@@ -310,7 +311,7 @@ internal fun MediaGrid(files: List<MediaEntry>, selected: Set<String>, model: Dr
             }
         }
     }
-    LocateBrowseFocus(keyPositions, { grid.firstVisibleItemIndex }, { grid.scrollToItem(it) }, { grid.animateScrollBy(it, tween(180)) })
+    LocateBrowseFocus(keyPositions, { grid.firstVisibleItemIndex }, { grid.scrollToItem(it) }, { distance, duration -> if (duration == 0) grid.scrollBy(distance) else grid.animateScrollBy(distance, tween(duration, easing = androidx.compose.animation.core.FastOutSlowInEasing)) })
     val focusPending = LocalBrowseFocus.current?.pendingId
     val geometry = remember(grid) { intArrayOf(columns, if (useMosaic) 1 else 0) }
     var touched by remember(grid) { mutableStateOf(false) }
@@ -459,7 +460,7 @@ internal fun DocumentTimeline(files: List<MediaEntry>, selected: Set<String>, mo
             }
         }
     }
-    LocateBrowseFocus(positions, { scroll.firstVisibleItemIndex }, { scroll.scrollToItem(it) }, { scroll.animateScrollBy(it, tween(180)) })
+    LocateBrowseFocus(positions, { scroll.firstVisibleItemIndex }, { scroll.scrollToItem(it) }, { distance, duration -> if (duration == 0) scroll.scrollBy(distance) else scroll.animateScrollBy(distance, tween(duration, easing = androidx.compose.animation.core.FastOutSlowInEasing)) })
     LazyColumn(Modifier.fillMaxSize().browseFocusViewport().timelinePinch(density, changed), state = scroll, contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = browseFocusBottom(110.dp)), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (leadingContent != null) item(key = "browse-introduction") { leadingContent() }
         groups.forEach { (date, entries) ->

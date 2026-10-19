@@ -23,6 +23,11 @@ enum class InterfaceStyle { GLASS, MATERIAL_YOU }
 class PreferencesRepository(context: Context) {
     private val store = context.applicationContext.preferences
     private val telegramStorageWarning = booleanPreferencesKey("telegram_storage_warning_seen_v2")
+    private val featureIntroduction = booleanPreferencesKey("feature_introduction_seen_v1")
+    internal val firstOpenProgress = store.data.catch { error -> if (error is IOException) emit(emptyPreferences()) else throw error }.map { app.televault.data.FirstOpenProgress.resolve(it[featureIntroduction], it[telegramStorageWarning] ?: false) }
+    suspend fun setFeatureIntroductionSeen(seen: Boolean) {
+        store.edit { it[featureIntroduction] = seen }
+    }
     val telegramStorageWarningSeen = store.data.catch { error -> if (error is IOException) emit(emptyPreferences()) else throw error }.map { it[telegramStorageWarning] ?: false }
     suspend fun markTelegramStorageWarningSeen() {
         store.edit { it[telegramStorageWarning] = true }
@@ -54,6 +59,12 @@ class PreferencesRepository(context: Context) {
         store.edit { it[exploreIntroKey] = true }
     }
     private val returnFocusKey = booleanPreferencesKey("return_to_viewed_item")
+    private val resumeLocationKey = booleanPreferencesKey("resume_last_location")
+    internal val browseResumeOptions = store.data.catch { error -> if (error is IOException) emit(emptyPreferences()) else throw error }.map { app.televault.data.BrowseResumeOptions(it[resumeLocationKey] ?: true, it[returnFocusKey] ?: true) }
+    val resumeLastLocation = browseResumeOptions.map { it.location }
+    suspend fun setResumeLastLocation(enabled: Boolean) {
+        store.edit { it[resumeLocationKey] = enabled }
+    }
     val returnToViewedItem = store.data.catch { error -> if (error is IOException) emit(emptyPreferences()) else throw error }.map { it[returnFocusKey] ?: true }
     suspend fun setReturnToViewedItem(enabled: Boolean) {
         store.edit { it[returnFocusKey] = enabled }

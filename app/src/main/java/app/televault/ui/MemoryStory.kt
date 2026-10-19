@@ -34,6 +34,16 @@ internal fun MemoryStory(card: PhotoMemory, model: DriveViewModel, close: () -> 
     val lifecycleState by lifecycle.currentStateFlow.collectAsState()
     val latestClose by rememberUpdatedState(close)
     val item = card.entries[page.coerceIn(card.entries.indices)]
+    val epoch = model.playbackEpoch
+    val receipt = remember(card) { card.receipt() }
+    val watch = remember(receipt) { MemoryWatchState(card.entries.mapTo(hashSetOf()) { it.id }) }
+    LaunchedEffect(receipt, item.id, loaded, lifecycleState, epoch) {
+        if (loaded && lifecycleState.isAtLeast(Lifecycle.State.RESUMED)) {
+            // Merely opening/skipping a card does not mark unseen photos as watched.
+            delay(700)
+            if (watch.viewed(item.id)) model.memorySeen.mark(receipt, epoch)
+        }
+    }
     LaunchedEffect(card.key, page) {
         while (elapsed < 6000) {
             delay(50)

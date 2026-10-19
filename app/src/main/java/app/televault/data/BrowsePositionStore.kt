@@ -12,6 +12,10 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 /** Normal-library location only: never a viewer, grant, password, or Private Vault path. */
+internal data class BrowseResumeOptions(val location: Boolean = true, val item: Boolean = true) {
+    fun restore(position: BrowsePosition): BrowsePosition = if (!location) BrowsePosition() else position.safe().let { if (item) it else it.copy(focusId = "") }
+}
+
 internal data class BrowsePosition(
     val tab: String = "TIMELINE",
     val section: String = "All",

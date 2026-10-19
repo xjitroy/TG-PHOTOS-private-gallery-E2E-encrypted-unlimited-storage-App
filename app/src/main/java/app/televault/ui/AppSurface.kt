@@ -12,10 +12,13 @@ import androidx.compose.material3.Surface as MaterialSurface
 import androidx.compose.material3.contentColorFor
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.Dp
@@ -30,9 +33,26 @@ private fun surfaceSkin(color: Color, shape: Shape, border: BorderStroke?, press
     val colors = MaterialTheme.colorScheme
     val dark = colors.background.luminance() < .5f
     return remember(color, shape, border, pressed, colors) {
-        val edge = border ?: BorderStroke(.8.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = if (dark) .25f else .66f), colors.outlineVariant.copy(alpha = .3f), Color.White.copy(alpha = if (dark) .07f else .26f))))
-        val light = if (dark) .09f else .28f
-        edge to Brush.linearGradient(listOf(Color.White.copy(alpha = light + if (pressed) .08f else 0f), colors.primary.copy(alpha = .025f), Color.Transparent, colors.primary.copy(alpha = if (dark) .04f else .025f)))
+        val edge = border ?: BorderStroke(1.dp, Brush.linearGradient(listOf(Color.White.copy(alpha = if (dark) .46f else .86f), colors.outlineVariant.copy(alpha = .14f), Color.White.copy(alpha = if (dark) .18f else .56f))))
+        val light = if (dark) .11f else .24f
+        edge to Brush.linearGradient(listOf(Color.White.copy(alpha = light + if (pressed) .08f else 0f), Color.White.copy(alpha = .025f), Color.Transparent, colors.primary.copy(alpha = if (dark) .06f else .04f)))
+    }
+}
+
+/** A clipped, size-cached lens highlight; no backdrop copies, blur passes or idle animation. */
+@Composable
+private fun glassLens(pressure: Float = 0f): Modifier {
+    val dark = MaterialTheme.colorScheme.background.luminance() < .5f
+    val tint = MaterialTheme.colorScheme.primary
+    return Modifier.drawWithCache {
+        val light = Brush.radialGradient(listOf(Color.White.copy(alpha = (if (dark) .12f else .2f) + pressure * .08f), Color.Transparent), center = Offset(size.width * (.18f + pressure * .5f), -size.height * .2f), radius = maxOf(size.width * .85f, size.height).coerceAtLeast(1f))
+        val lower = Brush.linearGradient(listOf(Color.Transparent, tint.copy(alpha = if (dark) .045f else .025f)), start = Offset.Zero, end = Offset(size.width, size.height))
+        val rim = Brush.verticalGradient(listOf(Color.White.copy(alpha = if (dark) .1f else .3f), Color.Transparent, Color.White.copy(alpha = if (dark) .06f else .16f)))
+        onDrawBehind {
+            drawRect(lower)
+            drawRect(light)
+            drawRect(rim, style = Stroke(2.dp.toPx()))
+        }
     }
 }
 
@@ -44,7 +64,7 @@ internal fun AppSurface(modifier: Modifier = Modifier, shape: Shape = RectangleS
             content()
         } else {
             Box(propagateMinConstraints = true) {
-                Box(Modifier.matchParentSize().background(sheen))
+                Box(Modifier.matchParentSize().background(sheen).then(glassLens()))
                 content()
             }
         }
@@ -57,6 +77,7 @@ internal fun AppSurface(onClick: () -> Unit, modifier: Modifier = Modifier, enab
     val pressed by interactions.collectIsPressedAsState()
     val glass = LocalInterfaceStyle.current == app.televault.InterfaceStyle.GLASS
     val scale by animateFloatAsState(if (glass && pressed) .985f else 1f, tween(100), label = "Surface press")
+    val pressure by animateFloatAsState(if (glass && pressed) 1f else 0f, tween(180), label = "Glass light")
     val (edge, sheen) = surfaceSkin(color, shape, border, pressed)
     MaterialSurface(
         onClick,
@@ -70,7 +91,7 @@ internal fun AppSurface(onClick: () -> Unit, modifier: Modifier = Modifier, enab
             content()
         } else {
             Box(propagateMinConstraints = true) {
-                Box(Modifier.matchParentSize().background(sheen))
+                Box(Modifier.matchParentSize().background(sheen).then(glassLens(pressure)))
                 content()
             }
         }
@@ -81,5 +102,5 @@ internal fun AppSurface(onClick: () -> Unit, modifier: Modifier = Modifier, enab
 internal fun chromeColor(media: Boolean = false): Color = when {
     LocalInterfaceStyle.current != app.televault.InterfaceStyle.GLASS -> if (media) Color.Black.copy(alpha = .72f) else MaterialTheme.colorScheme.surfaceContainerHigh
     media -> Color.Black.copy(alpha = .62f)
-    else -> MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = .88f)
+    else -> MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = .82f)
 }

@@ -35,6 +35,7 @@ import app.televault.domain.MediaCategories
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -384,7 +385,34 @@ internal fun CloudExportCompletion(model: DriveViewModel) {
 
 @Composable
 internal fun TelegramStorageFirstOpen(preferences: app.televault.PreferencesRepository) {
-    val seen by preferences.telegramStorageWarningSeen.collectAsStateWithLifecycle(initialValue = true)
+    val progress by preferences.firstOpenProgress.collectAsStateWithLifecycle(initialValue = null)
     val scope = rememberCoroutineScope()
-    if (!seen) AlertDialog(onDismissRequest = {}, title = { Text(label("Keep Telegram backup files", "Telegram-এর ব্যাকআপ ফাইল রাখুন")) }, text = { Box(Modifier.verticalScroll(rememberScrollState())) { TelegramStorageWarning() } }, confirmButton = { TextButton({ scope.launch { preferences.markTelegramStorageWarningSeen() } }) { Text(label("I understand", "বুঝেছি")) } })
+    var saving by remember { mutableStateOf(false) }
+    var saveError by remember { mutableStateOf(false) }
+    val current = progress ?: return
+    if (!current.featuresSeen) {
+        FeatureIntroduction { preferences.setFeatureIntroductionSeen(true) }
+    } else if (!current.warningSeen) {
+        AlertDialog(onDismissRequest = {}, title = { Text(label("Keep Telegram backup files", "Telegram-এর ব্যাকআপ ফাইল রাখুন")) }, text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                TelegramStorageWarning()
+                if (saveError) Text(label("Could not save. Check available storage and try again.", "সেভ হয়নি। খালি স্টোরেজ দেখে আবার চেষ্টা করুন।"), color = MaterialTheme.colorScheme.error)
+            }
+        }, confirmButton = {
+            TextButton({
+                saving = true
+                scope.launch {
+                    try {
+                        preferences.markTelegramStorageWarningSeen()
+                    } catch (cancel: CancellationException) {
+                        throw cancel
+                    } catch (_: Exception) {
+                        saveError = true
+                    } finally {
+                        saving = false
+                    }
+                }
+            }, enabled = !saving) { Text(if (saving) label("Saving…", "সেভ হচ্ছে…") else label("I understand", "বুঝেছি")) }
+        })
+    }
 }

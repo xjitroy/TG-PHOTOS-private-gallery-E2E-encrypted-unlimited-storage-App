@@ -2,6 +2,8 @@ package app.televault.ui
 
 import android.os.SystemClock
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.*
@@ -19,6 +21,19 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.televault.DriveViewModel
 import kotlin.math.abs
 import kotlinx.coroutines.delay
+
+@Composable
+internal fun AnimatedGuideHand(modifier: Modifier = Modifier) {
+    val lift = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        repeat(3) {
+            lift.animateTo(-5f, tween(260))
+            lift.animateTo(0f, tween(260))
+            delay(240)
+        }
+    }
+    Icon(Icons.Outlined.TouchApp, null, modifier.offset(y = lift.value.dp), tint = MaterialTheme.colorScheme.primary)
+}
 
 /** Observes unsupported gestures without consuming a valid pager or control gesture. */
 internal fun Modifier.observeWrongSwipe(vertical: Boolean, failed: () -> Unit): Modifier = pointerInput(vertical) {
@@ -53,7 +68,14 @@ internal fun UsageGuidance(model: DriveViewModel, topic: String, failures: Int, 
         if (failures < 2 || failures % 2 != 0 || visible) return@LaunchedEffect
         val now = SystemClock.elapsedRealtime()
         if (lastAt != 0L && now - lastAt < 30_000) return@LaunchedEffect
-        if (model.preferences.claimGuide(model.guidanceScope, topic)) {
+        val claimed = try {
+            model.preferences.claimGuide(model.guidanceScope, topic)
+        } catch (cancel: kotlinx.coroutines.CancellationException) {
+            throw cancel
+        } catch (_: Exception) {
+            false
+        }
+        if (claimed) {
             lastAt = now
             visible = true
         }
@@ -67,7 +89,7 @@ internal fun UsageGuidance(model: DriveViewModel, topic: String, failures: Int, 
     AnimatedVisibility(visible && enabled, modifier) {
         AppSurface(shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp), tonalElevation = 4.dp) {
             Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.TouchApp, null, Modifier.size(28.dp), tint = MaterialTheme.colorScheme.primary)
+                AnimatedGuideHand(Modifier.size(28.dp))
                 Text(label(english, bengali), Modifier.weight(1f).padding(12.dp), style = MaterialTheme.typography.bodySmall)
                 IconButton({ visible = false }) { Icon(Icons.Outlined.Close, label("Dismiss guide", "নির্দেশনা বন্ধ")) }
             }
