@@ -1,3 +1,23 @@
+# TG Photos1.20.35
+
+TG Photos1.20.35 reduces short startup/discovery/receipt/key-loading flashes without delaying completed work or bypassing verification. The first restored page avoids stacked entrance fades; deliberate navigation retains motion. Real errors/retry/password paths remain.
+
+Default-on Settings → Player → Resume last location now also offers a small section-start arrow for ten foreground seconds after restoring a positioned normal collection. It keeps the current folder/tab/filter, uses bounded native scroll, clears the return highlight and saves the new position. It expires or dismisses on use, navigation/background/viewer changes and never restores Private Vault. Already-top lists need no arrow.
+
+The large restore explanation no longer uses a window Popup in a scrolling header. A small themed bottom overlay appears only during sustained restoration, at most once per foreground visit and three times using an atomic persisted counter. Closing suppresses future explanations. Restore progress remains available and background work is unchanged.
+
+Mosaic snapshots preserve painted block geometry as new/older media arrives, date/id ordering is deterministic, and timeline grouping runs off the main thread. Automatic placement springs are removed. Memories reserves a consistent slot on the main Photos timeline and retains cards while People/subject metadata is recomputed. Image quality, manual navigation/zoom and prior features remain.
+
+Wide-video controls use a thin3dp seek track, a small round thumb and native48dp touch/accessibility behavior. Play/Pause, previous/next and ten-second skips sit in the video centre; elapsed/total time and selection position stay below. Controls hide after four seconds of inactivity; held gestures/scrubbing suspend hiding. Shorts keep their existing hidden/default behavior and three-second timeout.
+
+Left-side vertical video drags control this viewer's brightness; right-side drags control media volume up to200percent. The centre retains fullscreen swipe, horizontal paging/multi-touch zoom stay separate, and small finite indicators show changes. Brightness restores on viewer exit without writing global settings. The normal MODIFY_AUDIO_SETTINGS permission supports media-volume changes; Android route/DND/fixed-volume rules remain.
+
+An in-memory PCM processor supplies at most2x software gain above100percent with a soft peak knee;100percent is bit-exact. Actual perceived loudness/output depends on the phone/source. It supports16-bit/float decoder PCM, bypasses unsupported raw formats, preserves buffer lengths, and resets boost for a different file. No recording, original edits or second video engine are introduced.
+
+Selecting another normal video pauses the prior source, uses that file's saved position and preserves wide fullscreen intent without an intermediate forced-portrait request. Photos/reels/exit keep their existing orientation rules. Existing encryption, sessions, keys, Room1, model pins, package/signer, all ABIs and prior artifacts are preserved.
+
+Compatible public Universal1.20.35/code47, Android8+. Automated tests/static artifacts do not establish native Binder/FUSE/codec/audio-route/gesture/frame/biometric/OEM correctness. No runnable emulator/device/KVM is available here; no permanent no-crash, zero-latency or pixel-identical YouTube/iPhone guarantee is claimed.
+
 # TG Photos
 
 Native Android photo gallery, encrypted Telegram backups, media player, file management and an independent Private Vault. Android8.0+; One Universal APK includes ARM64, ARMv7, x86 and x86_64 with the same app and signing identity.

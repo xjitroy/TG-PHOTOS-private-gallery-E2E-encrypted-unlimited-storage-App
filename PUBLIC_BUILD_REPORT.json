@@ -1,11 +1,11 @@
 {
-  "version": "1.20.34",
-  "code": 46,
+  "version": "1.20.35",
+  "code": 47,
   "checks": {
-    "distinctHostTests": 527,
+    "distinctHostTests": 553,
     "suites": {
       "domain": {
-        "tests": 301,
+        "tests": 316,
         "failures": 0,
         "errors": 0,
         "skipped": 0
@@ -23,7 +23,7 @@
         "skipped": 0
       },
       "app": {
-        "tests": 159,
+        "tests": 170,
         "failures": 0,
         "errors": 0,
         "skipped": 0
@@ -32,23 +32,22 @@
     "lintErrors": 0,
     "lintWarnings": 105,
     "localChecks": 8,
-    "nativeAcceptance": "Unavailable: native Android onboarding, permission/backup scheduling/transport, gesture/layout/FPS and exact affected-phone crash/ANR, provider, codec and Keystore behavior",
-    "otpRootCauseVerified": false,
+    "nativeAcceptance": "Unavailable: Android/OEM/gesture/layout/frame/audio-route/brightness/codec/biometric and affected-phone crash/ANR/account acceptance",
     "runtimeModelPins": "Existing face/OCR/subject/runtime models preserved",
     "privateDataReset": false,
     "privateApkBuilt": false,
-    "regressions": "Startup switches read before bookmark use; disabled resume and Private Vault fallback; bounded soft scroll and cancellation; automatic Camera video budget/duration boundaries, repeated200MB additions, manual/unlimited overrides, photo priority; watched story completeness and changed-content receipts; foreground one-second tour gating, double taps/background/stale callbacks and legacy/replay first-open sequencing; prior regressions retained"
+    "regressions": "Stable mosaic append/prepend/removal and geometry; restore hint allowance; ten-second section shortcut ownership/expiry; four-second normal-video hide with existing held-touch regressions; PCM bit-exact default, bounded gain/soft peaks/format bypass and gain reset; gesture zones and levels; fullscreen orientation handover; prior regressions retained"
   },
   "artifact": {
-    "apk": "TG-Photos-1.20.34-universal.apk",
-    "bytes": 88338966,
-    "sha256": "5b5ad33f00f09728113526068dc7df7ebe7aeb5a9f32827a424c8283af1804bc",
-    "versionCode": 46,
-    "versionName": "1.20.34",
+    "apk": "TG-Photos-1.20.35-universal.apk",
+    "bytes": 88360814,
+    "sha256": "fe1e5e6cfb3b76451c00ec5e3f70ec1aeb6cc9cb83f3012e01db130d32b76035",
+    "versionCode": 47,
+    "versionName": "1.20.35",
     "package": "app.televault.photos",
     "distribution": "public",
-    "sourceCommit": "d2cf98c30711e3ff8dc3f70c3d4282216ac2ceb6",
-    "sourceTree": "6d4ce33d1e1c9409baeacdc8f0ab842f8d8a4c7e",
+    "sourceCommit": "e9bdfef22010419fe91baf2ef2bef8337f0d7ef2",
+    "sourceTree": "01fbe3be538596ed91ecadb788aa4661a5605cfa",
     "certificateSHA256": "3e7c1029cb5e2da80026758abd483b5bd7f0551b6a56bee6b21640b8ae774559",
     "debuggable": false,
     "productionVerified": false,

@@ -4,6 +4,43 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ViewerOrientationLeaseTest {
+    @Test fun thumbnailScrubbingPausesOwnershipWithoutRotatingThenResolvesTheSettledKind() {
+        var current = -1
+        val changes = mutableListOf<Int>()
+        val lease = ViewerOrientationLease(-1, 1, 0, { current }, {
+            current = it
+            changes.add(it)
+        })
+        lease.select("movie", true)
+        lease.suspendSelection()
+        lease.request("movie", false, false)
+        assertEquals(0, current)
+        lease.select("next-movie", true)
+        assertEquals(listOf(0), changes)
+        lease.suspendSelection()
+        lease.select(null)
+        assertEquals(1, current)
+        lease.close()
+        assertEquals(-1, current)
+    }
+
+    @Test fun switchingBetweenWideFullscreenVideosNeverRequestsPortraitInBetween() {
+        var current = -1
+        val changes = mutableListOf<Int>()
+        val lease = ViewerOrientationLease(-1, 1, 0, { current }, {
+            current = it
+            changes.add(it)
+        })
+        lease.select("first", true)
+        lease.request("first", true, false)
+        lease.select("second", true)
+        lease.request("first", false, false)
+        lease.request("second", true, false)
+        assertEquals(listOf(0), changes)
+        lease.select("photo")
+        assertEquals(1, current)
+    }
+
     @Test fun outgoingPageCannotRotateNewPortraitPage() {
         var current = -1
         val lease = ViewerOrientationLease(-1, 1, 0, { current }, { current = it })

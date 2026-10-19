@@ -32,6 +32,7 @@ import kotlinx.coroutines.delay
 
 internal data class PhotoMemory(val key: String, val years: Int, val date: LocalDate, val entries: List<MediaEntry>, val title: String? = null)
 internal fun PhotoMemory.receipt() = memoryReceipt(key, entries.map { Triple(it.local?.fingerprint ?: it.cloud?.hash ?: it.id, it.date, it.size) })
+private data class MemoryProjectionInput(val files: List<MediaEntry>, val people: List<app.televault.people.PersonCard>, val named: List<Triple<String, String, Set<String>>>, val scenes: Map<String, String>, val deviceLinks: Map<String, String>)
 
 @Composable
 internal fun rememberPhotoMemories(files: List<MediaEntry>, scope: Any, people: List<app.televault.people.PersonCard> = emptyList(), selfId: String? = null, scenes: Map<String, String> = emptyMap(), deviceLinks: Map<String, String> = emptyMap()): List<PhotoMemory> {
@@ -45,9 +46,14 @@ internal fun rememberPhotoMemories(files: List<MediaEntry>, scope: Any, people: 
     val you = label("You", "আপনি")
     val ownTitle = label("Your moments", "আপনার মুহূর্তগুলো")
     val named = people.filter { it.name.isNotBlank() || it.id == selfId }.map { Triple(it.id, if (it.id == selfId) you else it.name, it.members) }
-    return rememberBackgroundProjection(listOf(scope, today, named, selfId, you, ownTitle, scenes, deviceLinks), files, emptyList<PhotoMemory>()) { input ->
+    val input = MemoryProjectionInput(files, people, named, scenes, deviceLinks)
+    return rememberBackgroundProjection(listOf(scope, today, selfId, you, ownTitle), input, emptyList<PhotoMemory>()) { source ->
+        val people = source.people
+        val named = source.named
+        val scenes = source.scenes
+        val deviceLinks = source.deviceLinks
         val hidden = Category.SCREENSHOTS.mask or Category.SCREEN_RECORDINGS.mask or Category.DOCUMENTS.mask
-        val eligible = input.filter { it.mime.startsWith("image/") && it.mediaCategories and hidden == 0 }
+        val eligible = source.files.filter { it.mime.startsWith("image/") && it.mediaCategories and hidden == 0 }
         fun canonical(photo: MediaEntry) = photo.local?.let { deviceLinks[it.fingerprint] } ?: photo.id
         val byId = eligible.associateBy { it.id }
         val canonicalIds = eligible.mapTo(hashSetOf()) { canonical(it) }
@@ -114,22 +120,25 @@ internal fun PhotoMemories(cards: List<PhotoMemory>, model: DriveViewModel, open
             Text(label("Memories", "স্মৃতি"), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             TextButton({ settings = true }) { Text("Personalize") }
         }
-        if (cards.isEmpty()) Text("Your moments will appear as your photo library grows.", Modifier.padding(horizontal = 20.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            items(cards, key = { it.key }) { card ->
-                val seen = remember(card, watched) { card.receipt() in watched }
-                val dim by animateFloatAsState(if (seen) .22f else 0f, tween(280), label = "Watched memory")
-                val watchDescription = if (seen) label("Viewed", "দেখা হয়েছে") else label("Not viewed", "এখনও দেখা হয়নি")
-                val title = card.title ?: if (card.years > 0) label(if (card.years == 1) "1 year ago" else "${card.years} years ago", "${card.years} বছর আগে") else label("A day to remember", "মনে রাখার একটি দিন")
-                Box(Modifier.width(152.dp).height(168.dp).clip(RoundedCornerShape(26.dp)).semantics { stateDescription = watchDescription }.clickable { open(card) }) {
-                    MediaThumbnail(card.entries.first(), model, Modifier.fillMaxSize(), pixels = 384, adaptive = true)
-                    if (dim > 0) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = dim)))
-                    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color.Transparent, .35f to Color.Transparent, 1f to Color.Black.copy(alpha = .82f))))
-                    Column(Modifier.align(Alignment.BottomStart).padding(14.dp)) {
-                        Text(title, color = Color.White, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        Spacer(Modifier.height(4.dp))
-                        Text(card.date.format(DateTimeFormatter.ofPattern("d MMM yyyy", Locale.getDefault())), color = Color.White.copy(alpha = .9f), style = MaterialTheme.typography.labelSmall, maxLines = 1)
-                        if (seen) Text(label("Viewed", "দেখা হয়েছে"), color = Color.White.copy(alpha = .85f), style = MaterialTheme.typography.labelSmall)
+        // The photo grid keeps the same origin before and after asynchronous suggestions arrive.
+        Box(Modifier.fillMaxWidth().height(168.dp), contentAlignment = Alignment.CenterStart) {
+            if (cards.isEmpty()) Text("Your moments will appear as your photo library grows.", Modifier.padding(horizontal = 20.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            LazyRow(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                items(cards, key = { it.key }) { card ->
+                    val seen = remember(card, watched) { card.receipt() in watched }
+                    val dim by animateFloatAsState(if (seen) .22f else 0f, tween(280), label = "Watched memory")
+                    val watchDescription = if (seen) label("Viewed", "দেখা হয়েছে") else label("Not viewed", "এখনও দেখা হয়নি")
+                    val title = card.title ?: if (card.years > 0) label(if (card.years == 1) "1 year ago" else "${card.years} years ago", "${card.years} বছর আগে") else label("A day to remember", "মনে রাখার একটি দিন")
+                    Box(Modifier.width(152.dp).height(168.dp).clip(RoundedCornerShape(26.dp)).semantics { stateDescription = watchDescription }.clickable { open(card) }) {
+                        MediaThumbnail(card.entries.first(), model, Modifier.fillMaxSize(), pixels = 384, adaptive = true)
+                        if (dim > 0) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = dim)))
+                        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color.Transparent, .35f to Color.Transparent, 1f to Color.Black.copy(alpha = .82f))))
+                        Column(Modifier.align(Alignment.BottomStart).padding(14.dp)) {
+                            Text(title, color = Color.White, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            Spacer(Modifier.height(4.dp))
+                            Text(card.date.format(DateTimeFormatter.ofPattern("d MMM yyyy", Locale.getDefault())), color = Color.White.copy(alpha = .9f), style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                            if (seen) Text(label("Viewed", "দেখা হয়েছে"), color = Color.White.copy(alpha = .85f), style = MaterialTheme.typography.labelSmall)
+                        }
                     }
                 }
             }

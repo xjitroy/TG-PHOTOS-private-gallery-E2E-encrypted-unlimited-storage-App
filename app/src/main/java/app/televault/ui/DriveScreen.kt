@@ -399,6 +399,11 @@ fun DriveScreen(model: DriveViewModel, dynamicColor: Boolean, changeDynamicColor
 
 @Composable
 internal fun VaultForm(state: DriveSnapshot, model: DriveViewModel, unlocked: ((Boolean) -> Unit)? = null) {
+    PasswordScreenProtection()
+    if (state.stage == VaultStage.DISCOVERING) {
+        QuietStartupGate()
+        return
+    }
     val passwordContext = LocalContext.current
     val passwordScope = rememberCoroutineScope()
     var phrase by remember(state.stage, state.vaultId) { mutableStateOf("") }
@@ -407,7 +412,6 @@ internal fun VaultForm(state: DriveSnapshot, model: DriveViewModel, unlocked: ((
     val create = state.stage == VaultStage.CREATE
     val choices by model.vaultChoices.collectAsStateWithLifecycle()
     var vaultName by remember(create) { mutableStateOf(if (create) model.newVaultName() else "") }
-    PasswordScreenProtection()
     Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Image(androidx.compose.ui.res.painterResource(app.televault.R.drawable.tg_photos_logo), null, Modifier.size(48.dp))

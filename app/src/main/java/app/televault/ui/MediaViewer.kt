@@ -230,8 +230,9 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
         }
     }
     LaunchedEffect(pager.settledPage, scrubbing) {
-        videoSession.visible(if (!scrubbing && current.mime.startsWith("video/")) "${current.id}|${current.size}|${current.date}" else null)
-        if (!scrubbing) videoFullscreen = current.mime.startsWith("video/") && !exploreMovie && app.televault.domain.VideoPresentation.shortLayout(current.cloud?.facts?.width ?: current.local?.width ?: 0, current.cloud?.facts?.height ?: current.local?.height ?: 0, 1f)
+        val shortVideo = !exploreMovie && app.televault.domain.VideoPresentation.shortLayout(current.cloud?.facts?.width ?: current.local?.width ?: 0, current.cloud?.facts?.height ?: current.local?.height ?: 0, 1f)
+        videoSession.visible(if (!scrubbing && current.mime.startsWith("video/")) "${current.id}|${current.size}|${current.date}" else null, !shortVideo && videoSession.wideFullscreen, preserveOrientation = scrubbing)
+        if (!scrubbing) videoFullscreen = current.mime.startsWith("video/") && (shortVideo || videoSession.wideFullscreen)
         menu = false
         details = false
     }
@@ -358,7 +359,7 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
     LaunchedEffect(viewerChrome.revision, viewerChrome.visible, viewerChrome.held, current.id, current.mime, vertical, scrubbing) {
         if (!viewerChrome.visible || viewerChrome.held || scrubbing || !(viewerChrome.tapOnly || current.mime.startsWith("video/"))) return@LaunchedEffect
         val revision = viewerChrome.revision
-        delay(if (vertical) 3000 else 5000)
+        delay(viewerChromeHideDelay(current.mime.startsWith("video/"), vertical))
         viewerChrome.expire(revision)
     }
     val inlineFilmstrip = current.mime.startsWith("video/") && !vertical && !videoFullscreen

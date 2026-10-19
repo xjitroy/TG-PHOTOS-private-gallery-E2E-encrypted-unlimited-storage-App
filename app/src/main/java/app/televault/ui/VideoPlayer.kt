@@ -24,9 +24,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -71,6 +73,7 @@ internal fun VideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>, cho
 @Composable
 private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>, choose: (MediaEntry) -> Unit, model: DriveViewModel, current: MediaEntry, modifier: Modifier, session: ViewerPlaybackSession, fullScreenChanged: (Boolean) -> Unit, adjacent: (Int) -> Unit, verticalPaging: Boolean, portraitChanged: (Boolean) -> Unit, openWith: () -> Unit, fullscreenExit: Int, favorite: () -> Unit, share: () -> Unit, backup: (Boolean) -> Unit, removeDevice: () -> Unit, profile: () -> Unit, identity: String, epoch: Long, resume: Long, closeViewer: () -> Unit, movieDetails: @Composable () -> Unit, chrome: ViewerChromeState) {
     val context = LocalContext.current
+    val fullscreenSwipeThreshold = with(LocalDensity.current) { 72.dp.toPx() }
     val exploreFeed = LocalExploreFeed.current
     val exploreMovie = LocalExploreMode.current in setOf("Movies", "Normal videos")
     val owner = LocalLifecycleOwner.current
@@ -145,15 +148,21 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
         }
         onDispose {}
     }
-    var fullscreen by remember(identity) { mutableStateOf(short) }
+    var fullscreen by remember(identity) { mutableStateOf(short || session.wideFullscreen) }
+    fun changeFullscreen(value: Boolean) {
+        fullscreen = value
+        if (!short) session.fullscreen(identity, value)
+        fullScreenChanged(value || short)
+    }
     var repeat by remember { mutableStateOf(player.repeatMode == Player.REPEAT_MODE_ONE) }
     var fit by remember { mutableStateOf(false) }
     var speed by remember { mutableFloatStateOf(player.playbackParameters.speed) }
     var playerError by remember { mutableStateOf("") }
     var buffering by remember { mutableStateOf(true) }
     var showBuffering by remember(uri) { mutableStateOf(false) }
-    LaunchedEffect(fullscreenExit) { if (fullscreenExit > 0 && !short) fullscreen = false }
-    BackHandler(fullscreen && !short) { fullscreen = false }
+    val initialExitToken = remember(identity) { fullscreenExit }
+    LaunchedEffect(fullscreenExit) { if (fullscreenExit != initialExitToken && !short) changeFullscreen(false) }
+    BackHandler(fullscreen && !short) { changeFullscreen(false) }
     var settings by remember { mutableStateOf(false) }
     var quality by remember { mutableStateOf("") }
     var badge by remember { mutableStateOf(true) }
@@ -174,6 +183,19 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
     var seekDraft by remember(uri) { mutableStateOf<Float?>(null) }
     var seekNotice by remember(uri) { mutableStateOf("") }
     var seekNoticeEpoch by remember(uri) { mutableIntStateOf(0) }
+    var gestureZone by remember(identity) { mutableStateOf(app.televault.domain.VideoGesturePolicy.Zone.FULLSCREEN) }
+    var gesturePercent by remember(identity) { mutableStateOf<Int?>(null) }
+    var gestureActive by remember(identity) { mutableStateOf(false) }
+    var gestureInitial by remember(identity) { mutableIntStateOf(0) }
+    var gestureHeight by remember(identity) { mutableFloatStateOf(1f) }
+    var gestureDistance by remember(identity) { mutableFloatStateOf(0f) }
+    LaunchedEffect(gestureActive) {
+        if (!gestureActive) {
+            delay(800)
+            gesturePercent = null
+        }
+    }
+    val videoIndex = remember(videos, current.id) { videos.indexOfFirst { it.id == current.id } }
     val seekUnavailable = label("This video is still preparing, or its format has no seek index.", "ভিডিও এখনও প্রস্তুত হচ্ছে, অথবা এই ফরম্যাটে seek index নেই।")
     val seekPositionLabel = label("Position: ", "সময়: ")
     fun seekVideo(target: Long) {
@@ -213,7 +235,7 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
                     duration = player.duration.coerceAtLeast(0)
                 }
                 if (current.cloud != null) model.videoWindow(current.id, player.currentPosition, player.duration)
-                if (buffering) bufferedPercent = player.bufferedPercentage.coerceIn(0, 100)
+                if (controls || buffering) bufferedPercent = player.bufferedPercentage.coerceIn(0, 100)
                 playing = player.isPlaying
                 delay(if (controls || buffering) 250 else 1000)
             }
@@ -221,12 +243,15 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
     }
     LaunchedEffect(short) {
         onPortraitChanged(short)
-        if (short) fullscreen = true
+        if (short) changeFullscreen(true)
         chrome.interact(current.id)
     }
-    LaunchedEffect(fullscreen, short) { fullScreenChanged(fullscreen || short) }
+    LaunchedEffect(fullscreen, short) {
+        if (!short) session.fullscreen(identity, fullscreen)
+        fullScreenChanged(fullscreen || short)
+    }
     LaunchedEffect(identity, fullscreen, short, verticalPaging, frameKnown, pipVisible) {
-        session.orientation(identity, VideoPresentation.landscapePlayback(verticalPaging, short, fullscreen, frameKnown), pipVisible)
+        if (frameKnown || !fullscreen || short) session.orientation(identity, VideoPresentation.landscapePlayback(verticalPaging, short, fullscreen, frameKnown), pipVisible)
     }
     var tracks by remember { mutableStateOf(Tracks.EMPTY) }
     DisposableEffect(player, owner, identity) {
@@ -296,6 +321,7 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
     val detailsScroll = rememberLazyListState()
     val insets = if (fullscreen || short) WindowInsets(0, 0, 0, 0) else WindowInsets.safeDrawing
     BoxWithConstraints(modifier.fillMaxSize().windowInsetsPadding(insets)) {
+        val videoWidthPx = constraints.maxWidth.coerceAtLeast(1).toFloat()
         val compactHeight by animateDpAsState(VideoPresentation.compactHeight(maxWidth.value, maxHeight.value, frameRatio).dp, tween(220), label = "Compact video size")
         Column(Modifier.fillMaxSize()) {
             Box((if (fullscreen || short) Modifier.weight(1f).fillMaxWidth() else Modifier.fillMaxWidth().height(if (video) compactHeight else 120.dp)).clipToBounds()) {
@@ -305,7 +331,7 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
                             this.player = player
                             useController = false
                             setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
-                            controllerShowTimeoutMs = 6000
+                            controllerShowTimeoutMs = 4000
                             setShowNextButton(false)
                             setShowPreviousButton(false)
                             setShowFastForwardButton(true)
@@ -332,16 +358,38 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
                             chrome.show(current.id)
                             chrome.interact(current.id)
                         })
-                    }.pointerInput(short, verticalPaging, current.id, fullscreen, frameKnown) {
-                        if (verticalPaging) return@pointerInput
+                    }.videoControlGestures(video && !short, identity, begin = { point, height ->
+                        gestureZone = app.televault.domain.VideoGesturePolicy.zone(point.x / videoWidthPx)
+                        gestureHeight = height.coerceAtLeast(1f)
+                        gestureDistance = 0f
+                        gestureInitial = when (gestureZone) {
+                            app.televault.domain.VideoGesturePolicy.Zone.BRIGHTNESS -> session.brightnessPercent()
+                            app.televault.domain.VideoGesturePolicy.Zone.VOLUME -> session.volumePercent()
+                            else -> 0
+                        }
+                        gesturePercent = if (gestureZone == app.televault.domain.VideoGesturePolicy.Zone.FULLSCREEN) null else gestureInitial
+                        gestureActive = true
+                        chrome.interact(current.id)
+                    }, drag = { distance ->
+                        gestureDistance = distance
+                        when (gestureZone) {
+                            app.televault.domain.VideoGesturePolicy.Zone.BRIGHTNESS -> gesturePercent = session.brightness(identity, app.televault.domain.VideoGesturePolicy.level(gestureInitial, distance, gestureHeight, false))
+                            app.televault.domain.VideoGesturePolicy.Zone.VOLUME -> gesturePercent = session.volume(identity, app.televault.domain.VideoGesturePolicy.level(gestureInitial, distance, gestureHeight, true))
+                            else -> Unit
+                        }
+                    }, end = { completed ->
+                        if (completed && gestureZone == app.televault.domain.VideoGesturePolicy.Zone.FULLSCREEN && frameKnown) {
+                            changeFullscreen(VideoPresentation.fullscreenAfterSwipe(fullscreen, gestureDistance, fullscreenSwipeThreshold))
+                            chrome.show(current.id)
+                        }
+                        gestureActive = false
+                        chrome.interact(current.id)
+                    }).pointerInput(short, verticalPaging, current.id, fullscreen, frameKnown) {
+                        if (verticalPaging || !short) return@pointerInput
                         var dragged = 0f
                         detectVerticalDragGestures(onDragStart = { dragged = 0f }, onDragEnd = {
                             if (short && !verticalPaging && kotlin.math.abs(dragged) > 80.dp.toPx()) {
                                 onAdjacent(if (dragged < 0) 1 else -1)
-                            } else if (!short && frameKnown) {
-                                fullscreen = VideoPresentation.fullscreenAfterSwipe(fullscreen, dragged, 72.dp.toPx())
-                                chrome.show(current.id)
-                                chrome.interact(current.id)
                             }
                         }) { change, amount ->
                             if (!verticalPaging) {
@@ -351,6 +399,39 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
                         }
                     }
                 )
+                VideoGestureIndicator(gestureZone == app.televault.domain.VideoGesturePolicy.Zone.VOLUME, gesturePercent, gesturePercent != null, Modifier.align(if (gestureZone == app.televault.domain.VideoGesturePolicy.Zone.VOLUME) Alignment.CenterEnd else Alignment.CenterStart).padding(horizontal = 12.dp))
+                androidx.compose.animation.AnimatedVisibility(controls && !short, Modifier.align(Alignment.Center).padding(bottom = 10.dp), enter = fadeIn(tween(120)), exit = fadeOut(tween(100))) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        IconButton({
+                            videos.getOrNull(videoIndex - 1)?.let(choose)
+                            chrome.interact(current.id)
+                        }, enabled = videoIndex > 0) { Icon(Icons.Outlined.SkipPrevious, label("Previous video", "আগের ভিডিও"), tint = Color.White.copy(alpha = if (videoIndex > 0) 1f else .35f)) }
+                        IconButton({
+                            seekVideo(player.currentPosition - 10000)
+                            chrome.interact(current.id)
+                        }) { Icon(Icons.Outlined.Replay10, label("Back 10 seconds", "১০ সেকেন্ড পেছনে"), tint = Color.White, modifier = Modifier.size(22.dp)) }
+                        IconButton({
+                            if (player.isPlaying) {
+                                player.pause()
+                            } else {
+                                if (player.playbackState == Player.STATE_ENDED) {
+                                    session.restartCycle(identity)
+                                    player.seekTo(0)
+                                }
+                                player.play()
+                            }
+                            chrome.interact(current.id)
+                        }, Modifier.size(56.dp).background(Color.Black.copy(alpha = .24f), androidx.compose.foundation.shape.CircleShape)) { Icon(if (playing) Icons.Outlined.Pause else Icons.Outlined.PlayArrow, label("Play / pause", "চালান / থামান"), tint = Color.White, modifier = Modifier.size(34.dp)) }
+                        IconButton({
+                            seekVideo(player.currentPosition + 10000)
+                            chrome.interact(current.id)
+                        }) { Icon(Icons.Outlined.Forward10, label("Forward 10 seconds", "১০ সেকেন্ড এগিয়ে"), tint = Color.White, modifier = Modifier.size(22.dp)) }
+                        IconButton({
+                            videos.getOrNull(videoIndex + 1)?.let(choose)
+                            chrome.interact(current.id)
+                        }, enabled = videoIndex >= 0 && videoIndex < videos.lastIndex) { Icon(Icons.Outlined.SkipNext, label("Next video", "পরের ভিডিও"), tint = Color.White.copy(alpha = if (videoIndex >= 0 && videoIndex < videos.lastIndex) 1f else .35f)) }
+                    }
+                }
                 UsageGuidance(model, "reels-swipe", wrongSwipes, "Swipe up or down for the next photo or video. Tap to show controls.", "পরের ছবি বা ভিডিওর জন্য উপরে বা নিচে সোয়াইপ করুন। কন্ট্রোল দেখতে ট্যাপ করুন।", Modifier.align(Alignment.BottomCenter).padding(horizontal = 20.dp, vertical = 110.dp))
                 if (showBuffering && current.local == null && playerError.isBlank()) Box(Modifier.align(Alignment.Center).clip(RoundedCornerShape(24.dp)).background(Color.Black.copy(alpha = .65f)).padding(10.dp)) { CircularProgressIndicator(Modifier.size(30.dp), strokeWidth = 2.dp) }
                 if (seekNotice.isNotBlank()) Text(seekNotice, Modifier.align(Alignment.Center).clip(RoundedCornerShape(16.dp)).background(Color.Black.copy(alpha = .65f)).padding(12.dp), color = Color.White, style = MaterialTheme.typography.labelLarge)
@@ -367,37 +448,44 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
                     }
                 }
                 androidx.compose.animation.AnimatedVisibility(controls, modifier = Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom)), enter = fadeIn(tween(120)), exit = fadeOut(tween(100))) {
-                    Column(Modifier.fillMaxWidth().background(chromeColor(media = true)).padding(horizontal = 12.dp)) {
-                        Slider(seekDraft ?: if (duration > 0) (playbackPosition.toDouble() / duration).toFloat().coerceIn(0f, 1f) else 0f, {
+                    Column(Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .72f)))).padding(horizontal = 12.dp)) {
+                        VideoSeekBar(seekDraft ?: if (duration > 0) (playbackPosition.toDouble() / duration).toFloat().coerceIn(0f, 1f) else 0f, bufferedPercent / 100f, duration > 0, changed = {
                             seekDraft = it
                             chrome.interact(current.id)
-                        }, onValueChangeFinished = {
+                        }, finished = {
                             seekDraft?.let { seekVideo((it.toDouble() * player.duration.coerceAtLeast(0)).toLong()) }
                             seekDraft = null
                             chrome.interact(current.id)
-                        }, enabled = duration > 0, valueRange = 0f..1f)
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton({
-                                seekVideo(player.currentPosition - 10000)
-                                chrome.interact(current.id)
-                            }) { Icon(Icons.Outlined.Replay10, label("Back 10 seconds", "১০ সেকেন্ড পেছনে"), tint = androidx.compose.ui.graphics.Color.White) }
-                            IconButton({
-                                if (player.isPlaying) {
-                                    player.pause()
-                                } else {
-                                    if (player.playbackState == Player.STATE_ENDED) {
-                                        session.restartCycle(identity)
-                                        player.seekTo(0)
+                        })
+                        if (short) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton({
+                                    seekVideo(player.currentPosition - 10000)
+                                    chrome.interact(current.id)
+                                }) { Icon(Icons.Outlined.Replay10, label("Back 10 seconds", "১০ সেকেন্ড পেছনে"), tint = androidx.compose.ui.graphics.Color.White) }
+                                IconButton({
+                                    if (player.isPlaying) {
+                                        player.pause()
+                                    } else {
+                                        if (player.playbackState == Player.STATE_ENDED) {
+                                            session.restartCycle(identity)
+                                            player.seekTo(0)
+                                        }
+                                        player.play()
                                     }
-                                    player.play()
-                                }
-                                chrome.interact(current.id)
-                            }) { Icon(if (playing)Icons.Outlined.Pause else Icons.Outlined.PlayArrow, label("Play / pause", "চালান / থামান"), tint = androidx.compose.ui.graphics.Color.White) }
-                            IconButton({
-                                seekVideo(player.currentPosition + 10000)
-                                chrome.interact(current.id)
-                            }) { Icon(Icons.Outlined.Forward10, label("Forward 10 seconds", "১০ সেকেন্ড এগিয়ে"), tint = androidx.compose.ui.graphics.Color.White) }
-                            Text("${playbackTime(seekDraft?.let { (it.toDouble() * duration).toLong() } ?: playbackPosition)} / ${playbackTime(duration)}", modifier = Modifier.weight(1f), color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    chrome.interact(current.id)
+                                }) { Icon(if (playing)Icons.Outlined.Pause else Icons.Outlined.PlayArrow, label("Play / pause", "চালান / থামান"), tint = androidx.compose.ui.graphics.Color.White) }
+                                IconButton({
+                                    seekVideo(player.currentPosition + 10000)
+                                    chrome.interact(current.id)
+                                }) { Icon(Icons.Outlined.Forward10, label("Forward 10 seconds", "১০ সেকেন্ড এগিয়ে"), tint = androidx.compose.ui.graphics.Color.White) }
+                                Text("${playbackTime(seekDraft?.let { (it.toDouble() * duration).toLong() } ?: playbackPosition)} / ${playbackTime(duration)}", modifier = Modifier.weight(1f), color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                        } else {
+                            Row(Modifier.padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text("${playbackTime(seekDraft?.let { (it.toDouble() * duration).toLong() } ?: playbackPosition)} / ${playbackTime(duration)}", Modifier.weight(1f), color = Color.White, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                                if (videoIndex >= 0) Text("${videoIndex + 1}/${videos.size}", color = Color.White.copy(alpha = .8f), style = MaterialTheme.typography.labelSmall)
+                            }
                         }
                     }
                 }
@@ -450,7 +538,7 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
                 }
                 if (badge && video && short && controls && quality.isNotBlank()) Text(quality, Modifier.align(Alignment.TopStart).safeDrawingPadding().padding(start = 60.dp, top = 14.dp).clip(RoundedCornerShape(10.dp)).background(Color.Black.copy(alpha = .50f)).padding(horizontal = 8.dp, vertical = 4.dp), color = Color.White, style = MaterialTheme.typography.labelSmall)
                 androidx.compose.animation.AnimatedVisibility(controls, modifier = Modifier.align(Alignment.TopStart).windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top)), enter = fadeIn(), exit = fadeOut()) {
-                    IconButton({ if (fullscreen && !short) fullscreen = false else closeViewer() }) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, label("Back", "ফিরুন"), tint = Color.White) }
+                    IconButton({ if (fullscreen && !short) changeFullscreen(false) else closeViewer() }) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, label("Back", "ফিরুন"), tint = Color.White) }
                 }
                 androidx.compose.animation.AnimatedVisibility(controls, modifier = Modifier.align(Alignment.TopEnd).windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top)), enter = fadeIn(tween(120)), exit = fadeOut(tween(100))) {
                     Row(Modifier.background(Color.Black.copy(alpha = .45f), RoundedCornerShape(18.dp))) {
@@ -460,7 +548,12 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
                             }) { Icon(Icons.Outlined.PictureInPictureAlt, label("Picture-in-Picture", "ছোট উইন্ডোতে ভিডিও"), tint = Color.White) }
                         }
                         IconButton({ settings = true }) { Icon(Icons.Outlined.Settings, label("Playback settings", "প্লেব্যাক সেটিংস"), tint = Color.White) }
-                        if (!short) IconButton({ fullscreen = !fullscreen }) { Icon(if (fullscreen)Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen, label("Full screen", "ফুল স্ক্রিন"), tint = Color.White) }
+                        if (!short) {
+                            IconButton({
+                                changeFullscreen(!fullscreen)
+                                chrome.interact(current.id)
+                            }) { Icon(if (fullscreen) Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen, label("Full screen", "ফুল স্ক্রিন"), tint = Color.White) }
+                        }
                     }
                 }
             }

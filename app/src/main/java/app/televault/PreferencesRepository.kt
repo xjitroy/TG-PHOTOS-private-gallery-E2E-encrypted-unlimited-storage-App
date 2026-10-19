@@ -58,6 +58,21 @@ class PreferencesRepository(context: Context) {
     suspend fun markExploreIntroSeen() {
         store.edit { it[exploreIntroKey] = true }
     }
+    private val restoreHintCount = intPreferencesKey("restore_hint_count_v2")
+    internal suspend fun claimRestoreHint(): Boolean {
+        var admitted = false
+        store.edit { values ->
+            val count = values[restoreHintCount] ?: 0
+            if (app.televault.domain.RestoreHintPolicy.canShow(count)) {
+                values[restoreHintCount] = count + 1
+                admitted = true
+            }
+        }
+        return admitted
+    }
+    internal suspend fun dismissRestoreHints() {
+        store.edit { it[restoreHintCount] = app.televault.domain.RestoreHintPolicy.MAX_SHOWS }
+    }
     private val returnFocusKey = booleanPreferencesKey("return_to_viewed_item")
     private val resumeLocationKey = booleanPreferencesKey("resume_last_location")
     internal val browseResumeOptions = store.data.catch { error -> if (error is IOException) emit(emptyPreferences()) else throw error }.map { app.televault.data.BrowseResumeOptions(it[resumeLocationKey] ?: true, it[returnFocusKey] ?: true) }

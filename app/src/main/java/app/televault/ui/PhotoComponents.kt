@@ -118,13 +118,13 @@ internal fun AlbumsGrid(device: List<AlbumTile>, cloud: List<AlbumTile>, model: 
     // Async device albums prepend before cloud albums. Lazy key anchoring must not
     // keep the initial cloud-title at the top before the user has actually scrolled.
     LaunchedEffect(grid, device.firstOrNull()?.id, cloud.firstOrNull()?.id) {
-        if (!touched) grid.requestScrollToItem(0)
+        if (!touched && !grid.canScrollBackward) grid.requestScrollToItem(0)
     }
     LazyVerticalGrid(columns = if (LocalConfiguration.current.screenWidthDp >= 600) GridCells.Adaptive(144.dp) else GridCells.Fixed(2), state = grid, modifier = modifier.then(Modifier.nestedScroll(input)), contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
         if (leadingContent != null) item(key = "browse-introduction", span = { GridItemSpan(maxLineSpan) }) { leadingContent() }
         if (device.isNotEmpty()) {
             item(key = "device-title", span = { GridItemSpan(maxLineSpan) }) { SectionTitle(label("On this device", "এই ডিভাইসে"), label("View all", "সব দেখুন")) { device.firstOrNull { it.section == "All" && it.collage }?.let(open) } }
-            items(device, key = { it.id }) { tile -> AlbumCover(tile, model, Modifier.animateItem()) { open(tile) } }
+            items(device, key = { it.id }) { tile -> AlbumCover(tile, model, Modifier.animateItem(placementSpec = null)) { open(tile) } }
         }
         item(key = "cloud-title", span = { GridItemSpan(maxLineSpan) }) { SectionTitle(label("Cloud albums", "ক্লাউড অ্যালবাম"), label("Create", "তৈরি"), create) }
         if (cloud.isEmpty()) {
@@ -141,7 +141,7 @@ internal fun AlbumsGrid(device: List<AlbumTile>, cloud: List<AlbumTile>, model: 
                 }
             }
         } else {
-            items(cloud, key = { "remote:${it.id}" }) { tile -> AlbumCover(tile, model, Modifier.animateItem()) { open(tile) } }
+            items(cloud, key = { "remote:${it.id}" }) { tile -> AlbumCover(tile, model, Modifier.animateItem(placementSpec = null)) { open(tile) } }
         }
         if (peopleContent != null) item(key = "people", span = { GridItemSpan(maxLineSpan) }) { peopleContent() }
         item(key = "bottom-gap", span = { GridItemSpan(maxLineSpan) }) { Spacer(Modifier.height(140.dp)) }
@@ -278,7 +278,7 @@ internal fun timeGroups(files: List<MediaEntry>, density: Float): Map<String, Li
         TimelineZoom.Period.MONTH -> "MMMM yyyy"
     }
     val format = java.time.format.DateTimeFormatter.ofPattern(pattern, Locale.getDefault())
-    return files.sortedByDescending { it.date }.groupBy { TimelineZoom.periodStart(it.date, density, zone) }.mapKeys { (date, _) ->
+    return files.sortedWith(compareByDescending<MediaEntry> { it.date }.thenBy { it.id }).groupBy { TimelineZoom.periodStart(it.date, density, zone) }.mapKeys { (date, _) ->
         if (period == TimelineZoom.Period.WEEK) format.format(date) + " – " + java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy", Locale.getDefault()).format(date.plusDays(6)) else format.format(date)
     }
 }
@@ -288,12 +288,23 @@ internal fun MediaGrid(files: List<MediaEntry>, selected: Set<String>, model: Dr
     val snapshot by model.contentState.collectAsStateWithLifecycle()
     var anchor by remember { mutableStateOf<String?>(null) }
     val columns = TimelineZoom.columns(density)
-    val groups = remember(files, TimelineZoom.period(density)) { timeGroups(files, density) }
+    val layoutScope = listOf(model.playbackEpoch, LocalBrowseFocus.current ?: grid, TimelineZoom.period(density), java.time.ZoneId.systemDefault(), Locale.getDefault())
+    val groups = rememberBackgroundProjection(layoutScope, files, emptyMap<String, List<MediaEntry>>()) { timeGroups(it, density) }.value
     val dragIds = remember(groups) { groups.values.flatten().map { it.id } }
     val (drag, dragModifier) = rememberGridDragSelection(grid, dragIds, selected, selectionChanged)
     val guardedHold: (MediaEntry) -> Unit = { if (!drag.active) hold(it) }
     val useMosaic = mosaic && columns in 3..4
-    val blocks = remember(groups, useMosaic) { if (useMosaic) groups.mapValues { (_, entries) -> MosaicLayout.plan(entries.size) { entries[it].mime.startsWith("image/") } } else emptyMap() }
+    val mosaicPlans = remember(grid, TimelineZoom.period(density), useMosaic) { mutableMapOf<String, app.televault.domain.StableMosaicPlan.Snapshot>() }
+    val blocks = remember(groups, useMosaic) {
+        mosaicPlans.keys.retainAll(groups.keys)
+        if (useMosaic) {
+            groups.mapValues { (date, entries) ->
+                app.televault.domain.StableMosaicPlan.update(mosaicPlans[date], entries.map { it.id }) { entries[it].mime.startsWith("image/") }.also { mosaicPlans[date] = it }.blocks()
+            }
+        } else {
+            emptyMap()
+        }
+    }
     val keyPositions = remember(groups, blocks, leadingContent != null) {
         buildMap<String, Int> {
             var position = 0
@@ -325,8 +336,8 @@ internal fun MediaGrid(files: List<MediaEntry>, selected: Set<String>, model: Dr
     }
     val browseFocus = LocalBrowseFocus.current
     LaunchedEffect(browseFocus?.highlightedId) { if (browseFocus?.highlightedId != null) touched = true }
-    LaunchedEffect(grid, files.firstOrNull()?.id) {
-        if (!touched && focusPending == null) grid.requestScrollToItem(0)
+    LaunchedEffect(grid, groups.values.firstOrNull()?.firstOrNull()?.id) {
+        if (!touched && focusPending == null && !grid.canScrollBackward) grid.requestScrollToItem(0)
     }
     LaunchedEffect(grid, columns, useMosaic) {
         val next = if (useMosaic) 1 else 0
@@ -361,7 +372,7 @@ internal fun MediaGrid(files: List<MediaEntry>, selected: Set<String>, model: Dr
             }
             if (useMosaic) {
                 items(blocks.getValue(date), key = { group[it.cells().first().index()].id }, span = { GridItemSpan(maxLineSpan) }) { block ->
-                    MosaicPhotoBlock(group, block, selected, snapshot, model, click, guardedHold, drag, Modifier.animateItem(fadeInSpec = null, fadeOutSpec = null))
+                    MosaicPhotoBlock(group, block, selected, snapshot, model, click, guardedHold, drag, Modifier)
                 }
             } else {
                 items(group, key = { it.id }) { entry ->
@@ -373,7 +384,7 @@ internal fun MediaGrid(files: List<MediaEntry>, selected: Set<String>, model: Dr
                         ThumbnailQuality.gridPixels(columns, false),
                         click,
                         guardedHold,
-                        Modifier.aspectRatio(1f).animateItem().dragSelectionTile(entry.id, drag)
+                        Modifier.aspectRatio(1f).animateItem(placementSpec = null).dragSelectionTile(entry.id, drag)
                     )
                 }
             }
@@ -450,7 +461,8 @@ private fun MediaGridCell(entry: MediaEntry, selected: Set<String>, snapshot: Dr
 
 @Composable
 internal fun DocumentTimeline(files: List<MediaEntry>, selected: Set<String>, model: DriveViewModel, density: Float, changed: (Float) -> Unit, open: (MediaEntry) -> Unit, hold: (MediaEntry) -> Unit, scroll: androidx.compose.foundation.lazy.LazyListState = androidx.compose.foundation.lazy.rememberLazyListState(), leadingContent: (@Composable () -> Unit)? = null, showDateHeaders: Boolean = true) {
-    val groups = remember(files, TimelineZoom.period(density)) { timeGroups(files, density) }
+    val layoutScope = listOf(model.playbackEpoch, LocalBrowseFocus.current ?: scroll, TimelineZoom.period(density), java.time.ZoneId.systemDefault(), Locale.getDefault())
+    val groups = rememberBackgroundProjection(layoutScope, files, emptyMap<String, List<MediaEntry>>()) { timeGroups(it, density) }.value
     val positions = remember(groups, leadingContent != null) {
         buildMap<String, Int> {
             var index = if (leadingContent != null) 1 else 0
@@ -468,7 +480,7 @@ internal fun DocumentTimeline(files: List<MediaEntry>, selected: Set<String>, mo
                 if (showDateHeaders) Text(date, Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).padding(top = if (leadingContent != null) WindowInsets.statusBars.asPaddingValues().calculateTopPadding() else 0.dp).padding(vertical = 12.dp), style = MaterialTheme.typography.titleSmall) else Spacer(Modifier.fillMaxWidth().height(0.dp))
             }
             items(entries, key = { it.id }) { entry ->
-                AppSurface(shape = RoundedCornerShape(22.dp), color = if (entry.id in selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.animateItem().browseFocus(entry.id).combinedClickable(onClick = { open(entry) }, onLongClick = { hold(entry) })) {
+                AppSurface(shape = RoundedCornerShape(22.dp), color = if (entry.id in selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.animateItem(placementSpec = null).browseFocus(entry.id).combinedClickable(onClick = { open(entry) }, onLongClick = { hold(entry) })) {
                     Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                         AppSurface(shape = RoundedCornerShape(16.dp), color = mediaAccentContainer(entry.mime)) { Icon(if (entry.mime.startsWith("audio/")) Icons.Outlined.AudioFile else Icons.Outlined.Description, null, Modifier.padding(14.dp).size(24.dp), tint = mediaAccent(entry.mime)) }
                         Spacer(Modifier.width(14.dp))
@@ -495,7 +507,7 @@ internal fun DeviceLibraryFolders(files: List<MediaEntry>, scroll: androidx.comp
         if (leadingContent != null) item(key = "browse-introduction") { leadingContent() }
         items(folders, key = { it.key }) { (path, entries) ->
             val colors = folderColors(path)
-            AppSurface(Modifier.animateItem().clickable { open(path) }, shape = RoundedCornerShape(24.dp), color = colors.container) {
+            AppSurface(Modifier.animateItem(placementSpec = null).clickable { open(path) }, shape = RoundedCornerShape(24.dp), color = colors.container) {
                 ListItem(headlineContent = { Text(path.substringAfterLast('/').ifBlank { path }) }, supportingContent = { Text("$path · ${entries.size} " + label("files", "ফাইল")) }, leadingContent = { Icon(Icons.Outlined.Folder, null, tint = colors.accent) }, trailingContent = { Icon(Icons.Outlined.ChevronRight, label("Open folder", "ফোল্ডার খুলুন")) }, colors = ListItemDefaults.colors(containerColor = Color.Transparent))
             }
         }

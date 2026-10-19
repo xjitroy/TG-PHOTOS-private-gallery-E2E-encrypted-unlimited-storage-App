@@ -100,7 +100,7 @@ private fun documentType(item: MediaEntry): String = when {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun ExploreCollection(mode: String, files: List<MediaEntry>, model: DriveViewModel, close: () -> Unit, open: (MediaEntry, List<MediaEntry>) -> Unit) {
+internal fun ExploreCollection(mode: String, files: List<MediaEntry>, model: DriveViewModel, close: () -> Unit, resumeAddress: Any = mode, clearReturnFocus: () -> Unit = {}, open: (MediaEntry, List<MediaEntry>) -> Unit) {
     var sort by remember(mode) { mutableStateOf("Newest") }
     var type by remember(mode) { mutableStateOf("All") }
     val projection = rememberBackgroundProjection(listOf(mode, sort, type), files, emptyList<MediaEntry>()) { all ->
@@ -122,46 +122,55 @@ internal fun ExploreCollection(mode: String, files: List<MediaEntry>, model: Dri
     }
     val items = projection.value
     val scroll = androidx.compose.foundation.lazy.rememberLazyListState()
+    val browseFocus = LocalBrowseFocus.current
+    RegisterBrowseStartTarget({ projection.ready && browseFocus?.pendingId == null }, { scroll.canScrollBackward }, { scroll.isScrollInProgress }, { scroll.softScrollToStart() })
     val focusPositions = remember(items) { items.mapIndexed { index, item -> item.id to index }.toMap() }
     LocateBrowseFocus(focusPositions, { scroll.firstVisibleItemIndex }, { scroll.scrollToItem(it) }, { distance, duration -> if (duration == 0) scroll.scrollBy(distance) else scroll.animateScrollBy(distance, tween(duration, easing = androidx.compose.animation.core.FastOutSlowInEasing)) })
     Dialog(close, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false, securePolicy = SecureFlagPolicy.SecureOn)) {
         AppSurface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-            Column(Modifier.fillMaxSize().safeDrawingPadding()) {
-                TopAppBar(title = { Text(mode) }, navigationIcon = { IconButton(close) { Icon(Icons.Outlined.ArrowBack, "Back") } })
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("Newest", "Oldest", "Name", "Largest").forEach { value -> FilterChip(sort == value, { sort = value }, label = { Text(value) }) }
-                }
-                if (mode == "Documents") {
+            Box(Modifier.fillMaxSize()) {
+                Column(Modifier.fillMaxSize().safeDrawingPadding()) {
+                    TopAppBar(title = { Text(mode) }, navigationIcon = { IconButton(close) { Icon(Icons.Outlined.ArrowBack, "Back") } })
                     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf("All", "PDF", "Documents", "Scans", "Spreadsheets", "Presentations", "Text", "Other").forEach { value -> FilterChip(type == value, { type = value }, label = { Text(value) }) }
+                        listOf("Newest", "Oldest", "Name", "Largest").forEach { value -> FilterChip(sort == value, { sort = value }, label = { Text(value) }) }
                     }
-                }
-                Text("${items.size} items · Device & encrypted cloud", Modifier.padding(horizontal = 20.dp, vertical = 8.dp), style = MaterialTheme.typography.labelMedium)
-                LazyColumn(Modifier.weight(1f).fillMaxWidth().browseFocusViewport(), state = scroll, contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = browseFocusBottom(16.dp)), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    if (items.isEmpty()) item { Text(if (projection.ready) "Nothing here yet. Your library updates automatically." else "Reading your library…", Modifier.padding(16.dp)) }
-                    items(items, key = { it.id }) { item ->
-                        AppSurface(onClick = { open(item, items) }, modifier = Modifier.browseFocus(item.id), shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
-                            if (mode == "Documents") {
-                                Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                                    Box(Modifier.size(64.dp)) { MediaThumbnail(item, model, Modifier.fillMaxSize(), 192) }
-                                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        Text(item.name, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
-                                        Text(documentType(item) + " · " + sizeLabel(item.size), style = MaterialTheme.typography.bodySmall)
+                    if (mode == "Documents") {
+                        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf("All", "PDF", "Documents", "Scans", "Spreadsheets", "Presentations", "Text", "Other").forEach { value -> FilterChip(type == value, { type = value }, label = { Text(value) }) }
+                        }
+                    }
+                    Text("${items.size} items · Device & encrypted cloud", Modifier.padding(horizontal = 20.dp, vertical = 8.dp), style = MaterialTheme.typography.labelMedium)
+                    LazyColumn(Modifier.weight(1f).fillMaxWidth().browseFocusViewport(), state = scroll, contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = browseFocusBottom(16.dp)), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        if (items.isEmpty()) {
+                            item {
+                                if (projection.ready || rememberLoadingFeedback(!projection.ready, mode)) Text(if (projection.ready) "Nothing here yet. Your library updates automatically." else "Reading your library…", Modifier.padding(16.dp))
+                            }
+                        }
+                        items(items, key = { it.id }) { item ->
+                            AppSurface(onClick = { open(item, items) }, modifier = Modifier.browseFocus(item.id), shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+                                if (mode == "Documents") {
+                                    Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                                        Box(Modifier.size(64.dp)) { MediaThumbnail(item, model, Modifier.fillMaxSize(), 192) }
+                                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                            Text(item.name, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
+                                            Text(documentType(item) + " · " + sizeLabel(item.size), style = MaterialTheme.typography.bodySmall)
+                                        }
+                                        Icon(Icons.Outlined.ChevronRight, "Open")
                                     }
-                                    Icon(Icons.Outlined.ChevronRight, "Open")
-                                }
-                            } else {
-                                Column {
-                                    Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
-                                        MediaThumbnail(item, model, Modifier.fillMaxSize(), 768, ContentScale.Crop)
-                                        Icon(Icons.Outlined.PlayCircle, "Play video", Modifier.align(Alignment.Center).size(46.dp), tint = Color.White)
+                                } else {
+                                    Column {
+                                        Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
+                                            MediaThumbnail(item, model, Modifier.fillMaxSize(), 768, ContentScale.Crop)
+                                            Icon(Icons.Outlined.PlayCircle, "Play video", Modifier.align(Alignment.Center).size(46.dp), tint = Color.White)
+                                        }
+                                        Text(item.name, Modifier.padding(horizontal = 16.dp, vertical = 12.dp), maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
                                     }
-                                    Text(item.name, Modifier.padding(horizontal = 16.dp, vertical = 12.dp), maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
                                 }
                             }
                         }
                     }
                 }
+                ResumeStartButton(resumeAddress, true, clearReturnFocus, Modifier.align(Alignment.BottomEnd).safeDrawingPadding().padding(20.dp))
             }
         }
     }

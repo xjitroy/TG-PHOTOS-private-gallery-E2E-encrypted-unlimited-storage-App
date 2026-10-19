@@ -406,8 +406,15 @@ class MainActivity : ComponentActivity() {
                     grantChecked.value = true
                 }
             }
-            LaunchedEffect(authenticated.value, driveState.stage, auth.stage, discoveredSession) {
-                if (discoveredSession && authenticated.value && auth.stage == AuthProtocol.State.READY && driveState.stage == app.televault.data.VaultStage.LOCKED) drive.quickUnlock()
+            var quietUnlockFinished by remember(grantScope, authenticated.value) { mutableStateOf(false) }
+            LaunchedEffect(authenticated.value, driveState.stage, auth.stage, discoveredSession, grantScope) {
+                if (discoveredSession && authenticated.value && auth.stage == AuthProtocol.State.READY && driveState.stage == app.televault.data.VaultStage.LOCKED) {
+                    try {
+                        drive.quickUnlock().join()
+                    } finally {
+                        quietUnlockFinished = true
+                    }
+                }
             }
             LaunchedEffect(auth.stage, protectionReason) {
                 if (auth.stage == AuthProtocol.State.READY && !protection.blocked()) {
@@ -433,10 +440,7 @@ class MainActivity : ComponentActivity() {
                             // Initial login/discovery/recovery never depends on this phone's biometric key.
                             TeleVaultRoot(auth, model::submit, dynamicColor, preferences::setDynamicColor, phoneCountries, model::preparePhoneCountries) {
                                 if (!discoveredSession) {
-                                    Column(Modifier.fillMaxSize().safeDrawingPadding(), horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                                        app.televault.ui.SecureLoader()
-                                        Text(label("Finding your encrypted Drive…", "আপনার এনক্রিপ্টেড Drive খোঁজা হচ্ছে…"))
-                                    }
+                                    app.televault.ui.QuietStartupGate()
                                 } else {
                                     val setupGeneration = verification.generation
                                     VaultForm(driveState, drive) { verified ->
@@ -449,6 +453,10 @@ class MainActivity : ComponentActivity() {
                             }
                         } else if (authenticated.value) {
                             TeleVaultRoot(auth, model::submit, dynamicColor, preferences::setDynamicColor, phoneCountries, model::preparePhoneCountries) {
+                                if (driveState.stage == app.televault.data.VaultStage.LOCKED && driveState.quickUnlockAvailable && !quietUnlockFinished) {
+                                    app.televault.ui.QuietStartupGate()
+                                    return@TeleVaultRoot
+                                }
                                 PhotosScreen(drive, dynamicColor, preferences::setDynamicColor, appearanceMode, preferences::setAppearanceMode, interfaceStyle, preferences::setInterfaceStyle, lockGraceMinutes, { minutes ->
                                     val token = appLock.generation()
                                     appLock.save(drive.guidanceScope, LockGrace.minutes(minutes), token)
@@ -471,7 +479,7 @@ class MainActivity : ComponentActivity() {
                                 if (!grantChecked.value && !passwordRequested.value) {
                                     // Keep a quiet theme-matched gate while the encrypted receipt
                                     // is checked; valid Off/daily grants never flash password UI.
-                                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { app.televault.ui.SecureLoader(Modifier.size(24.dp)) }
+                                    app.televault.ui.QuietStartupGate()
                                 } else if (passwordRequested.value) {
                                     val passwordGeneration = verification.generation
                                     Column(Modifier.fillMaxSize()) {

@@ -4,6 +4,12 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ViewerChromeStateTest {
+    @Test fun wideVideoControlsUseFourSecondsWithoutChangingShortsOrDocumentTimeouts() {
+        assertEquals(4000L, viewerChromeHideDelay(video = true, vertical = false))
+        assertEquals(3000L, viewerChromeHideDelay(video = true, vertical = true))
+        assertEquals(5000L, viewerChromeHideDelay(video = false, vertical = false))
+    }
+
     @Test fun shortsStartHiddenAndEveryNextReelStaysHidden() {
         val chrome = ViewerChromeState("first", true)
         assertFalse(chrome.visible)

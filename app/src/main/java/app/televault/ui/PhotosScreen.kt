@@ -215,11 +215,6 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
     var rootBackPresses by remember { mutableIntStateOf(0) }
     val libraryStateHolder = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     val tabStates = remember { mutableStateMapOf<PhotoTab, SavedTab>() }
-    val tabEntrance = remember { androidx.compose.animation.core.Animatable(1f) }
-    LaunchedEffect(tab) {
-        tabEntrance.snapTo(.95f)
-        tabEntrance.animateTo(1f, androidx.compose.animation.core.tween(260))
-    }
     var section by remember(model.playbackEpoch) { mutableStateOf(initialPosition.section) }
     var search by remember { mutableStateOf("") }
     var folder by remember { mutableStateOf(initialPosition.folder) }
@@ -349,6 +344,9 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
     val browseList = remember(model.playbackEpoch, tab, section, folder, album, libraryDevice) { androidx.compose.foundation.lazy.LazyListState() }
     val usesBrowseList = fileLibrary || section in setOf("Documents", "Audio", "All files") || section == "Trash" && trashFiles
     val resumeEpoch = model.playbackEpoch
+    val startHost = remember(resumeEpoch) { BrowseStartHost() }
+    var initialScrollApplied by remember(resumeEpoch) { mutableStateOf(false) }
+    var initialScrollInterrupted by remember(resumeEpoch) { mutableStateOf(false) }
     var lastViewedId by remember(model.playbackEpoch, tab, section, folder, album, galleryCloud, libraryDevice, libraryPath, libraryCategory, exploreMode) {
         mutableStateOf(if (tab.name == initialPosition.tab && section == initialPosition.section && folder == initialPosition.folder && album == initialPosition.album && libraryPath == initialPosition.libraryPath && exploreMode.orEmpty() == initialPosition.explore) initialPosition.focusId else "")
     }
@@ -356,7 +354,7 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
     LaunchedEffect(returnToViewedItem, opening == null, browseFocus, lastViewedId) {
         browseFocus.request(if (returnToViewedItem && opening == null && tab != PhotoTab.VAULT) lastViewedId else null)
     }
-    CompositionLocalProvider(LocalBrowseFocus provides (browseFocus.takeIf { exploreMode == null && !universalSearch && !showProfile && memoryStory == null })) {
+    CompositionLocalProvider(LocalBrowseFocus provides (browseFocus.takeIf { exploreMode == null && !universalSearch && !showProfile && memoryStory == null }), LocalBrowseStartHost provides startHost) {
         val positionReader by rememberUpdatedState({
             app.televault.data.BrowsePosition(
                 tab.name, section, folder, album, libraryDevice, galleryCloud, libraryPath, libraryCategory, libraryRecent,
@@ -381,19 +379,6 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
             resumeLifecycle.addObserver(observer)
             onDispose { resumeLifecycle.removeObserver(observer) }
         }
-        LaunchedEffect(resumeEpoch) {
-            if ((initialPosition.index > 0 || initialPosition.offset > 0) && (!returnToViewedItem || initialPosition.focusId.isBlank())) {
-                kotlinx.coroutines.withTimeoutOrNull(10_000) { snapshotFlow { if (initialPosition.tab == "GALLERY" && !initialPosition.galleryCloud || initialPosition.tab == "LIBRARY" && initialPosition.device) deviceIndexReady else state.indexLoaded }.first { it } }
-                val current = positionReader()
-                if (current.tab == initialPosition.tab && current.section == initialPosition.section && current.folder == initialPosition.folder && current.album == initialPosition.album) {
-                    val count = if (usesBrowseList) browseList.layoutInfo.totalItemsCount else timelineGrid.layoutInfo.totalItemsCount
-                    if (count > 0) {
-                        val index = initialPosition.index.coerceAtMost(count - 1)
-                        if (usesBrowseList) browseList.scrollToItem(index, initialPosition.offset) else timelineGrid.scrollToItem(index, initialPosition.offset)
-                    }
-                }
-            }
-        }
         val photoChrome = remember(tab, section, folder, album, libraryDevice, galleryCloud) { app.televault.domain.PhotoChromePolicy() }
         var photoChromeMode by remember(tab, section, folder, album, libraryDevice, galleryCloud) { mutableStateOf(app.televault.domain.PhotoChromePolicy.Mode.EXPANDED) }
         LaunchedEffect(timelineGrid, browseList, usesBrowseList, isBrowse) {
@@ -417,6 +402,7 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
                 override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
                     if (!isBrowse) return headerScroll.nestedScrollConnection.onPostScroll(consumed, available, source)
                     if (source == NestedScrollSource.UserInput) {
+                        if (consumed.y + available.y != 0f) initialScrollInterrupted = true
                         photoChromeMode = photoChrome.scroll((consumed.y + available.y) / context.resources.displayMetrics.density, (if (usesBrowseList) !browseList.canScrollBackward else !timelineGrid.canScrollBackward))
                         if (consumed.y + available.y < 0) backupStatusVisible = false
                         if (isPhotoTimeline && edgeReveal.pull(available.y, !timelineGrid.canScrollBackward)) backupStatusVisible = true
@@ -792,6 +778,45 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
         val device = projection.value.device
         val base = projection.value.base
         val visible = projection.value.visible
+        val resumeDataReady by rememberUpdatedState(projection.ready && (if (deviceContext) deviceIndexReady else state.indexLoaded))
+        LaunchedEffect(resumeEpoch) {
+            try {
+                if ((initialPosition.index > 0 || initialPosition.offset > 0) && initialPosition.explore.isBlank() && (!returnToViewedItem || initialPosition.focusId.isBlank())) {
+                    val ready = withTimeoutOrNull(10_000) { snapshotFlow { resumeDataReady }.first { it } }
+                    if (ready == true) {
+                        // The projected rows must be measured before clamping a saved index.
+                        withFrameNanos { }
+                        withFrameNanos { }
+                        withTimeoutOrNull(2000) { snapshotFlow { if (usesBrowseList) browseList.layoutInfo.totalItemsCount else timelineGrid.layoutInfo.totalItemsCount }.first { it > 1 || initialScrollInterrupted } }
+                        val current = positionReader()
+                        if (!initialScrollInterrupted && current.copy(index = 0, offset = 0, columns = 4f, focusId = "") == initialPosition.copy(index = 0, offset = 0, columns = 4f, focusId = "")) {
+                            val count = if (usesBrowseList) browseList.layoutInfo.totalItemsCount else timelineGrid.layoutInfo.totalItemsCount
+                            if (count > 0) {
+                                val index = initialPosition.index.coerceAtMost(count - 1)
+                                if (usesBrowseList) browseList.scrollToItem(index, initialPosition.offset) else timelineGrid.scrollToItem(index, initialPosition.offset)
+                            }
+                        }
+                    }
+                }
+            } finally {
+                initialScrollApplied = true
+            }
+        }
+        val waitingForLibrary = visible.isEmpty() && (!projection.ready || (if (deviceContext) !deviceIndexReady || scanningFiles else !state.indexLoaded))
+        val showLibraryFeedback = rememberLoadingFeedback(waitingForLibrary, projectionScope)
+        val resumeAddress = positionReader().copy(index = 0, offset = 0, columns = 4f, focusId = "")
+        val shortcutEligible = tab !in setOf(PhotoTab.VAULT, PhotoTab.SETTINGS) && section != "Transfers" && opening == null && !universalSearch && !showProfile && memoryStory == null && !allPeopleVisible && selected.isEmpty() && prompt.isBlank() && incomingMedia == null && !incomingBusy
+        ResumeStartOffers(startHost, resumeLastLocation, resumeAddress, shortcutEligible)
+        RegisterBrowseStartTarget(
+            ready = { exploreMode == null && initialScrollApplied && projection.ready && browseFocus.pendingId == null && (if (deviceContext) deviceIndexReady else state.indexLoaded) },
+            positioned = { if (usesBrowseList) browseList.canScrollBackward else timelineGrid.canScrollBackward },
+            scrolling = { if (usesBrowseList) browseList.isScrollInProgress else timelineGrid.isScrollInProgress },
+            start = { if (usesBrowseList) browseList.softScrollToStart() else timelineGrid.softScrollToStart() }
+        )
+        fun clearReturnFocus() {
+            lastViewedId = ""
+            browseFocus.request(null)
+        }
         val warmIds = remember(visible) { visible.asSequence().filter { it.cloud != null && it.mime.startsWith("image/") }.take(app.televault.domain.AdaptiveMediaPolicy.WARM_COUNT).map { it.id }.toList() }
         LaunchedEffect(local, warmIds, state.indexLoaded, deviceIndexReady, tab) {
             if (state.indexLoaded && deviceIndexReady) {
@@ -946,7 +971,6 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
                     }
                 })
                 Box(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)).padding(horizontal = 16.dp)) { HeaderActivity(model) }
-                CloudRestoreNotice(model)
                 UsageGuidance(model, "tab-navigation", rootBackPresses, "Use Photos, Albums, Files or Vault below to change sections. Back stays in this section.", "সেকশন বদলাতে নিচের Photos, Albums, Files বা Vault বোতামে ট্যাপ করুন। Back এই সেকশনেই রাখে।", Modifier.padding(horizontal = 16.dp))
                 UsageGuidance(model, "device-permissions", permissionFailures, "Open App permissions or Device file access and allow the category you want to browse. Cloud files need no device-file permission.", "App permissions বা Device file access খুলে প্রয়োজনীয় অনুমতি দিন। ক্লাউড ফাইলের জন্য ফোনের ফাইলের অনুমতি লাগে না।", Modifier.padding(horizontal = 16.dp))
             }
@@ -1020,8 +1044,10 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
                         scope.launch { model.preferences.setMosaicLayout(enabled) }
                         Unit
                     }, compact = true)
-                    PhotoMemories(memoryCards, model) { card ->
-                        memoryStory = card
+                    if (section == "All") {
+                        PhotoMemories(memoryCards, model) { card ->
+                            memoryStory = card
+                        }
                     }
                 } else if (!fileLibrary && tab != PhotoTab.VAULT) {
                     if (tab in setOf(PhotoTab.TIMELINE, PhotoTab.GALLERY) && section !in setOf("Trash", "Transfers")) MediaFilterBar(mediaFilters)
@@ -1309,14 +1335,17 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
                 }
             },
             floatingActionButton = {
-                if (tab == PhotoTab.TIMELINE && selected.isEmpty()) {
-                    PhotoExploreButton(model.preferences) { action ->
-                        when (action) {
-                            "Upload" -> upload.launch(arrayOf("image/*", "video/*", "audio/*", "application/*", "text/*"))
-                            "Profile" -> showProfile = true
-                            "All people" -> allPeopleVisible = true
-                            "Shorts" -> pendingShorts = true
-                            else -> exploreMode = action
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    ResumeStartButton(resumeAddress, shortcutEligible && exploreMode == null, ::clearReturnFocus)
+                    if (tab == PhotoTab.TIMELINE && selected.isEmpty()) {
+                        PhotoExploreButton(model.preferences) { action ->
+                            when (action) {
+                                "Upload" -> upload.launch(arrayOf("image/*", "video/*", "audio/*", "application/*", "text/*"))
+                                "Profile" -> showProfile = true
+                                "All people" -> allPeopleVisible = true
+                                "Shorts" -> pendingShorts = true
+                                else -> exploreMode = action
+                            }
                         }
                     }
                 }
@@ -1324,10 +1353,7 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
         ) { padding ->
             Box(Modifier.fillMaxSize()) {
                 Column(
-                    Modifier.graphicsLayer {
-                        alpha = tabEntrance.value
-                        translationY = (1f - tabEntrance.value) * 100f
-                    }.padding(if (isBrowse) PaddingValues() else padding).consumeWindowInsets(padding).fillMaxSize().pageEntrance(tab, section, folder, album)
+                    Modifier.padding(if (isBrowse) PaddingValues() else padding).consumeWindowInsets(padding).fillMaxSize().pageEntrance(tab, section, folder, album, animateInitial = false)
                 ) {
                     if (!isBrowse) commonIntroduction()
                     if (tab == PhotoTab.VAULT) {
@@ -1748,7 +1774,7 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
                             "Transfers" -> TransferQueue(model)
                             "Albums", "Folders" -> {
                                 if (tab == PhotoTab.GALLERY && local.isEmpty() && (!deviceIndexReady || scanningFiles || deviceScanFailed)) {
-                                    Text(if (deviceScanFailed) label("Device scan could not finish. Refresh to try again.", "ফোনের স্ক্যান শেষ হয়নি। রিফ্রেশ করে আবার চেষ্টা করুন।") else label("Reading device media…", "ফোনের মিডিয়া পড়ছে…"), Modifier.padding(horizontal = 20.dp, vertical = 8.dp), style = MaterialTheme.typography.bodySmall)
+                                    if (deviceScanFailed || showLibraryFeedback) Text(if (deviceScanFailed) label("Device scan could not finish. Refresh to try again.", "ফোনের স্ক্যান শেষ হয়নি। রিফ্রেশ করে আবার চেষ্টা করুন।") else label("Reading device media…", "ফোনের মিডিয়া পড়ছে…"), Modifier.padding(horizontal = 20.dp, vertical = 8.dp), style = MaterialTheme.typography.bodySmall)
                                 }
                                 AlbumsGrid(
                                     if (tab == PhotoTab.GALLERY && local.isEmpty() && (!deviceIndexReady || scanningFiles)) {
@@ -1793,19 +1819,21 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
                                 } else if (visible.isEmpty() && (!projection.ready || (if (deviceContext) !deviceIndexReady || scanningFiles else !state.indexLoaded))) {
                                     val failed = if (deviceContext) deviceScanFailed else state.indexFailed
                                     Column(Modifier.weight(1f).fillMaxWidth().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                                        if (!failed) SecureLoader(Modifier.padding(bottom = 16.dp).size(28.dp))
-                                        Text(
-                                            if (failed) {
-                                                label("Could not restore your index", "আপনার তালিকা ফেরানো যায়নি")
-                                            } else if (deviceContext) {
-                                                label("Reading your device library…", "ফোনের লাইব্রেরি পড়ছে…")
-                                            } else {
-                                                label("Restoring your encrypted library…", "আপনার এনক্রিপ্টেড লাইব্রেরি ফিরছে…")
-                                            },
-                                            style = MaterialTheme.typography.titleMedium
-                                        )
-                                        Text(label("Your files are kept. The local index opens before cloud sync finishes.", "আপনার ফাইল রয়েছে। ক্লাউড সিঙ্ক শেষ হওয়ার আগেই লোকাল তালিকা খুলবে।"), Modifier.padding(top = 8.dp))
-                                        TextButton({ if (deviceContext) permissionsChanged++ else model.restoreVisibleIndex() }) { Text(label("Retry", "আবার চেষ্টা")) }
+                                        if (failed || showLibraryFeedback) {
+                                            if (!failed) SecureLoader(Modifier.padding(bottom = 16.dp).size(28.dp))
+                                            Text(
+                                                if (failed) {
+                                                    label("Could not restore your index", "আপনার তালিকা ফেরানো যায়নি")
+                                                } else if (deviceContext) {
+                                                    label("Reading your device library…", "ফোনের লাইব্রেরি পড়ছে…")
+                                                } else {
+                                                    label("Restoring your encrypted library…", "আপনার এনক্রিপ্টেড লাইব্রেরি ফিরছে…")
+                                                },
+                                                style = MaterialTheme.typography.titleMedium
+                                            )
+                                            Text(label("Your files are kept. The local index opens before cloud sync finishes.", "আপনার ফাইল রয়েছে। ক্লাউড সিঙ্ক শেষ হওয়ার আগেই লোকাল তালিকা খুলবে।"), Modifier.padding(top = 8.dp))
+                                            TextButton({ if (deviceContext) permissionsChanged++ else model.restoreVisibleIndex() }) { Text(label("Retry", "আবার চেষ্টা")) }
+                                        }
                                     }
                                 } else if (visible.isEmpty()) {
                                     Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
@@ -1872,6 +1900,7 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
                         }
                     }
                 }
+                CloudRestoreNotice(model, eligible = shortcutEligible && exploreMode == null && telegramWarningSeen, modifier = Modifier.align(Alignment.BottomCenter).padding(start = 16.dp, end = 16.dp, bottom = padding.calculateBottomPadding() + 76.dp))
             }
         }
         pendingBackupFolder?.let { target ->
@@ -2170,7 +2199,7 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
         }
         exploreMode?.let { mode ->
             CompositionLocalProvider(LocalBrowseFocus provides browseFocus) {
-                ExploreCollection(mode, exploreFiles, model, { exploreMode = null }) { item, collection ->
+                ExploreCollection(mode, exploreFiles, model, { exploreMode = null }, resumeAddress, ::clearReturnFocus) { item, collection ->
                     exploreShorts = false
                     viewerEntries = collection
                     opening = item

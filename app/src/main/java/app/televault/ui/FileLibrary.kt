@@ -142,6 +142,8 @@ internal fun FileLibrary(files: List<MediaEntry>, cloud: Boolean, chooseCloud: (
     val projection = rememberBackgroundProjection(projectionScope, LibraryProjectionInput(files, cloudFolders), LibraryProjection()) { input -> projectLibrary(input, projectionScope) }
     val direct = projection.value.direct
     val directories = projection.value.directories
+    val pendingLibrary = loading || !projection.ready
+    val showLibraryFeedback = rememberLoadingFeedback(pendingLibrary, projectionScope)
     val flat = projectionScope.flat
     fun authoritativeFiles(ids: Set<String>? = null): Sequence<MediaEntry> = when {
         model == null -> files.asSequence().filter { ids == null || it.id in ids }
@@ -347,7 +349,7 @@ internal fun FileLibrary(files: List<MediaEntry>, cloud: Boolean, chooseCloud: (
                     }
                 }
             }
-            if (directories.isEmpty() && direct.isEmpty()) {
+            if (directories.isEmpty() && direct.isEmpty() && (!pendingLibrary || showLibraryFeedback || scanFailed)) {
                 item {
                     Text(
                         when {

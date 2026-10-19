@@ -8,6 +8,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 
+internal fun viewerChromeHideDelay(video: Boolean, vertical: Boolean): Long = if (vertical) {
+    3000L
+} else if (video) {
+    4000L
+} else {
+    5000L
+}
+
 /** One owner for filmstrip and playback chrome; neighbouring prepared players cannot reveal it. */
 internal class ViewerChromeState(initialId: String, initiallyTapOnly: Boolean) {
     private var selectedId = initialId

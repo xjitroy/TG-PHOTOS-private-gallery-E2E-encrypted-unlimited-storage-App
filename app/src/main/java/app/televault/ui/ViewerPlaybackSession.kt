@@ -8,12 +8,53 @@ import androidx.media3.exoplayer.ExoPlayer
 import app.televault.DriveViewModel
 import app.televault.data.MediaMemory
 import app.televault.domain.AdaptiveMediaPolicy
+import app.televault.domain.VideoVolume
 
 /** One lazy native video engine per viewer, not one engine per pager cell. Main-thread API only. */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 internal class ViewerPlaybackSession(context: Context, private val model: DriveViewModel) {
     private val app = context.applicationContext
     private val activity = videoActivity(context)
+    private val initialBrightness = activity?.window?.attributes?.screenBrightness
+    private var appliedBrightness: Float? = null
+    private val volumeProcessor = VideoVolumeProcessor()
+    var wideFullscreen: Boolean = false
+        private set
+    fun fullscreen(identity: String, value: Boolean) {
+        if (owns(identity)) wideFullscreen = value
+    }
+    fun brightness(identity: String, percent: Int): Int? {
+        if (!owns(identity)) return null
+        val window = activity?.window ?: return null
+        val value = percent.coerceIn(1, 100) / 100f
+        window.attributes = window.attributes.apply { screenBrightness = value }
+        appliedBrightness = value
+        return (value * 100).toInt()
+    }
+    fun brightnessPercent(): Int {
+        val value = activity?.window?.attributes?.screenBrightness ?: -1f
+        return if (value >= 0) (value * 100).toInt().coerceIn(1, 100) else runCatching { android.provider.Settings.System.getInt(app.contentResolver, android.provider.Settings.System.SCREEN_BRIGHTNESS) * 100 / 255 }.getOrDefault(50).coerceIn(1, 100)
+    }
+    fun volumePercent(): Int {
+        val audio = app.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+        val maximum = audio.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+        val current = audio.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
+        return (current * volumeProcessor.boostPercent / maximum).coerceIn(0, 200)
+    }
+    fun volume(identity: String, percent: Int): Int? {
+        if (!owns(identity)) return null
+        val audio = app.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+        val maximum = audio.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+        val bounded = VideoVolume.percent(percent)
+        return try {
+            audio.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, (maximum * bounded.coerceAtMost(100) / 100f).toInt(), 0)
+            val actual = audio.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
+            volumeProcessor.boostPercent = if (actual == maximum) bounded.coerceAtLeast(100) else 100
+            if (actual == maximum && bounded > 100) bounded else actual * 100 / maximum
+        } catch (_: SecurityException) {
+            null
+        }
+    }
     private val orientation = activity?.let { owner -> ViewerOrientationLease(owner.requestedOrientation, android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT, android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE, { owner.requestedOrientation }, { target -> runCatching { owner.requestedOrientation = target } }) }
     fun orientation(identity: String, landscape: Boolean, pip: Boolean) {
         if (owns(identity)) orientation?.request(identity, landscape, pip)
@@ -41,7 +82,11 @@ internal class ViewerPlaybackSession(context: Context, private val model: DriveV
     fun prepare(uri: Uri, identity: String, resume: Long): ExoPlayer {
         check(!released)
         val player = engine ?: ExoPlayer.Builder(app)
-            .setRenderersFactory(androidx.media3.exoplayer.DefaultRenderersFactory(app).setEnableDecoderFallback(true))
+            .setRenderersFactory(
+                object : androidx.media3.exoplayer.DefaultRenderersFactory(app) {
+                    override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): androidx.media3.exoplayer.audio.AudioSink = androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context).setAudioProcessors(arrayOf(volumeProcessor)).setEnableFloatOutput(false).setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams).build()
+                }.setEnableDecoderFallback(true).setEnableAudioFloatOutput(false)
+            )
             .setLoadControl(object : androidx.media3.exoplayer.DefaultLoadControl(androidx.media3.exoplayer.upstream.DefaultAllocator(true, androidx.media3.common.C.DEFAULT_BUFFER_SEGMENT_SIZE), 15000, 120000, 750, 1500, MediaMemory.budget(app, 48, 8), false, 0, false) {
                 override fun shouldContinueLoading(parameters: androidx.media3.exoplayer.LoadControl.Parameters): Boolean {
                     val duration = if (parameters.timeline.isEmpty) 0L else parameters.timeline.getWindow(0, androidx.media3.common.Timeline.Window()).durationMs
@@ -68,9 +113,11 @@ internal class ViewerPlaybackSession(context: Context, private val model: DriveV
             val switchingSource = currentIdentity == identity
             val start = if (switchingSource) player.currentPosition else resume
             saveCurrent()
+            player.pause()
             currentIdentity = identity
             currentSource = uri
             if (!switchingSource) {
+                volumeProcessor.boostPercent = 100
                 completedPlays = 0
                 endedCounted = false
                 player.repeatMode = Player.REPEAT_MODE_OFF
@@ -131,8 +178,8 @@ internal class ViewerPlaybackSession(context: Context, private val model: DriveV
             engine?.pause()
         }
     }
-    fun visible(identity: String?) {
-        orientation?.select(identity)
+    fun visible(identity: String?, wide: Boolean = false, preserveOrientation: Boolean = false) {
+        if (preserveOrientation) orientation?.suspendSelection() else orientation?.select(identity, wide)
         if (currentIdentity != identity) {
             saveCurrent()
             engine?.pause()
@@ -142,6 +189,10 @@ internal class ViewerPlaybackSession(context: Context, private val model: DriveV
         if (released) return
         saveCurrent()
         released = true
+        volumeProcessor.boostPercent = 100
+        activity?.window?.let { window ->
+            if (appliedBrightness != null && window.attributes.screenBrightness == appliedBrightness && initialBrightness != null) window.attributes = window.attributes.apply { screenBrightness = initialBrightness }
+        }
         orientation?.close()
         currentIdentity = null
         currentSource = null

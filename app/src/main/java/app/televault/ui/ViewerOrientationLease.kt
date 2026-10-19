@@ -5,10 +5,17 @@ internal class ViewerOrientationLease(private val original: Int, private val por
     private var selected: String? = null
     private var last: Int? = null
     private var closed = false
-    fun select(identity: String?) {
-        if (closed || selected == identity) return
+    private var suspended = false
+    fun suspendSelection() {
+        if (closed) return
+        selected = null
+        suspended = true
+    }
+    fun select(identity: String?, wide: Boolean = false) {
+        if (closed || selected == identity && !suspended) return
         selected = identity
-        set(portrait)
+        suspended = false
+        set(if (identity != null && wide) landscape else portrait)
     }
     fun request(identity: String, wide: Boolean, pip: Boolean) {
         if (closed || identity != selected) return
