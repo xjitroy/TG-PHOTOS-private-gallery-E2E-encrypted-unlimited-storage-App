@@ -81,6 +81,7 @@ private class PdfSession(context: Context, private val reads: app.televault.data
     } else if (DocumentPreviews.supported(item.name, item.mime)) {
         TextDocument(source, item, model, openWith)
     } else {
+        UnsupportedFormatFallback(source, true, openWith)
         Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text(item.name, style = MaterialTheme.typography.titleMedium)
             Text(label("Preview unavailable for this format", "এই ফরম্যাটের প্রিভিউ নেই"), Modifier.padding(vertical = 12.dp))

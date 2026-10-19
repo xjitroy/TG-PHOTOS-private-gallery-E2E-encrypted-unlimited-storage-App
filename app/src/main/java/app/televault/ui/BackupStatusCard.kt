@@ -23,11 +23,14 @@ import app.televault.DriveViewModel
 import app.televault.data.TransferOverview
 
 /** Confirmed batch counts, one current folder and an opt-in compact queue. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun BackupStatusCard(model: DriveViewModel, sync: () -> Unit, close: () -> Unit, enable: () -> Unit, manage: () -> Unit) {
     val state by model.contentState.collectAsStateWithLifecycle()
     val overview by model.backupOverview.collectAsStateWithLifecycle()
+    val verification by model.backupVerification.collectAsStateWithLifecycle()
     var expanded by rememberSaveable { mutableStateOf(false) }
+    var attention by remember { mutableStateOf(false) }
     var lastActiveId by rememberSaveable { mutableStateOf<String?>(null) }
     LaunchedEffect(overview.active?.id) { overview.active?.id?.let { lastActiveId = it } }
     // Keep the same detail slot through the brief hand-off between files; no fake activity.
@@ -37,6 +40,12 @@ internal fun BackupStatusCard(model: DriveViewModel, sync: () -> Unit, close: ()
     val confirmed = state.files.count { it.trashedAt == 0L && (it.mime.startsWith("image/") || it.mime.startsWith("video/")) }
     // Expanded queues never push the gallery/navigation off small or rotated screens.
     val maxHeight = (LocalConfiguration.current.screenHeightDp * .48f).coerceIn(160f, 440f).dp
+    if (attention) {
+        ModalBottomSheet(onDismissRequest = { attention = false }) {
+            Text(label("Files needing attention", "অপেক্ষায় থাকা ফাইলগুলি"), Modifier.padding(horizontal = 20.dp), style = MaterialTheme.typography.titleLarge)
+            TransferQueue(model, attentionOnly = true, modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp))
+        }
+    }
     AppSurface(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).heightIn(max = maxHeight), shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -51,15 +60,22 @@ internal fun BackupStatusCard(model: DriveViewModel, sync: () -> Unit, close: ()
                 TextButton(if (automatic) manage else enable) { Text(if (automatic) label("Settings", "সেটিংস") else label("Turn on", "চালু করুন")) }
             }
             if (automatic) Text(label("Manage folders or turn automatic backup off in Settings → Backup & Sync.", "ফোল্ডার বদলাতে বা অটো ব্যাকআপ বন্ধ করতে Settings → Backup & Sync খুলুন।"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            verification?.let { work ->
+                Text(label("Checking existing backups on this phone", "ফোনের ফাইল পুরোনো ব্যাকআপের সঙ্গে যাচাই হচ্ছে") + " · ${work.completed}/${work.total}", style = MaterialTheme.typography.bodySmall)
+            }
             if (overview.count > 0) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(label("Overall progress", "মোট অগ্রগতি"), Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
+                        Text(if (overview.bytes > 0) label("Overall progress · by data size", "মোট অগ্রগতি · ডেটার পরিমাণে") else label("Overall progress", "মোট অগ্রগতি"), Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
                         Text("${overview.percent.coerceAtLeast(0)}%", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
                     }
                     LinearProgressIndicator(progress = { overview.percent.coerceAtLeast(0) / 100f }, modifier = Modifier.fillMaxWidth().height(6.dp))
                     Text("${overview.completed} / ${overview.count} " + label("files backed up", "ফাইল ব্যাকআপ হয়েছে"), style = MaterialTheme.typography.bodyMedium)
-                    if (overview.blocked > 0) Text("${overview.blocked} " + label("files need attention", "ফাইলে আপনার সিদ্ধান্ত প্রয়োজন"), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                    if (overview.blocked > 0) {
+                        TextButton({ attention = true }) {
+                            Text("${overview.blocked} " + label("files need attention · view reasons", "ফাইল অপেক্ষায় · কারণ দেখুন"), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                        }
+                    }
                 }
                 if (active != null) {
                     AppSurface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.secondaryContainer) {

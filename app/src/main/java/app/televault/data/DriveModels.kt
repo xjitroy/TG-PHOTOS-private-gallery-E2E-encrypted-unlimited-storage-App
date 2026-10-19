@@ -52,6 +52,7 @@ data class DriveSnapshot(
     val backedDeviceFiles: Map<String, String> = emptyMap(),
     val deviceCleanupRequests: List<DeviceCleanupRequest> = emptyList(),
     val deviceCopyProgress: WorkProgress? = null,
+    val backupVerification: WorkProgress? = null,
     val deviceTrashDates: Map<String, Long> = emptyMap(),
     val deviceTrashOrigins: Map<String, String> = emptyMap(),
     val privateProfile: PrivateProfile? = null,

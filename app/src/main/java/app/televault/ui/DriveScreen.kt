@@ -308,7 +308,7 @@ fun DriveScreen(model: DriveViewModel, dynamicColor: Boolean, changeDynamicColor
                                             Text(transferPhase(transfer.phase), style = MaterialTheme.typography.bodySmall)
                                             if (transfer.total > 0) LinearProgressIndicator(progress = { (transfer.progress.toFloat() / transfer.total).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
                                             Text("${byteSize(transfer.progress)} / ${byteSize(transfer.total)}", style = MaterialTheme.typography.labelSmall)
-                                            if (transfer.phase in setOf("FAILED", "INTERRUPTED", "CANCELLED")) TextButton({ model.retry(transfer.id) }) { Text(words("Retry", "আবার চেষ্টা")) }
+                                            if (transfer.phase in setOf("FAILED", "INTERRUPTED", "CANCELLED", "SOURCE_UNAVAILABLE", "SOURCE_ACCESS_REQUIRED", "WAITING_STORAGE")) TextButton({ model.retry(transfer.id) }) { Text(words("Retry", "আবার চেষ্টা")) }
                                         }
                                     }
                                 }
@@ -546,6 +546,10 @@ private fun byteSize(bytes: Long): String = when {
 private fun transferPhase(phase: String) = when (phase) {
     "COMPLETE" -> words("Completed and verified", "সম্পন্ন ও যাচাইকৃত")
     "ENCRYPTING" -> words("Encrypting before upload", "আপলোডের আগে এনক্রিপশন")
+    "VERIFYING_DEVICE" -> words("Checking this phone's existing backup", "ফোনের পুরোনো ব্যাকআপ যাচাই")
+    "SOURCE_UNAVAILABLE" -> words("Original unavailable · restore access and Retry", "মূল ফাইল পাওয়া যায়নি · অনুমতি ফিরিয়ে Retry করুন")
+    "SOURCE_ACCESS_REQUIRED" -> words("Media permission required · grant access and Retry", "মিডিয়ার অনুমতি দিয়ে Retry করুন")
+    "WAITING_STORAGE" -> words("Free space is required · free storage and Retry", "খালি জায়গা প্রয়োজন · জায়গা খালি করে Retry করুন")
     "UPLOADING" -> words("Uploading ciphertext", "এনক্রিপ্টেড ফাইল আপলোড")
     "VERIFYING" -> words("Verifying remote file", "ক্লাউডের ফাইল যাচাই")
     "COMMITTING_INDEX" -> words("Saving encrypted index", "এনক্রিপ্টেড ইনডেক্স সংরক্ষণ")

@@ -634,6 +634,7 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
             error -> Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(label("Could not open. Check connection, space and file integrity.", "খোলা যায়নি। সংযোগ, জায়গা ও ফাইলের অখণ্ডতা পরীক্ষা করুন।"), color = if (nonVisual) MaterialTheme.colorScheme.onBackground else Color.White)
                 TextButton({ retry++ }) { Text(label("Retry", "আবার চেষ্টা করুন")) }
+                TextButton(openWith) { Text(label("Open with another app", "অন্য অ্যাপে খুলুন")) }
             }
             source == null || (!active && !item.mime.startsWith("image/")) -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 MediaThumbnail(item, model, Modifier.fillMaxSize(), 384, ContentScale.Fit)
@@ -645,8 +646,8 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
                     }
                 }
             }
-            item.mime.startsWith("image/") -> key(item.id, source, item.local?.fingerprint) { RegionImage(source, Modifier.fillMaxSize(), tap = tap, swipeUp = info, placeholder = { MediaThumbnail(item, model, Modifier.fillMaxSize(), 384, ContentScale.Fit) }, pixelsReady = pixelsReady, cache = model.photoPreviews, cacheKey = item.id + ":" + (item.local?.fingerprint ?: item.cloud?.hash.orEmpty()), longHold = if (active) longHold else null) }
-            item.mime.startsWith("audio/") -> AudioPlayer(source, item, model, editedCopy, share)
+            item.mime.startsWith("image/") -> key(item.id, source, item.local?.fingerprint) { RegionImage(source, Modifier.fillMaxSize(), tap = tap, swipeUp = info, placeholder = { MediaThumbnail(item, model, Modifier.fillMaxSize(), 384, ContentScale.Fit) }, pixelsReady = pixelsReady, cache = model.photoPreviews, cacheKey = item.id + ":" + (item.local?.fingerprint ?: item.cloud?.hash.orEmpty()), longHold = if (active) longHold else null, openWith = if (active) openWith else null) }
+            item.mime.startsWith("audio/") -> AudioPlayer(source, item, model, editedCopy, share, openWith)
             item.mime.startsWith("video/") -> VideoPlayer(source, true, videos, choose, model = model, current = item, session = videoSession, adjacent = adjacent, verticalPaging = verticalPaging, portraitChanged = portraitChanged, openWith = openWith, fullScreenChanged = fullScreenChanged, fullscreenExit = fullscreenExit, favorite = favorite, share = share, backup = backup, removeDevice = removeDevice, profile = profile, closeViewer = closeViewer, movieDetails = movieDetails, chrome = chrome)
             else -> DocumentViewer(source, item, model, openWith)
         }

@@ -37,7 +37,7 @@ import kotlinx.coroutines.isActive
     val privateUnlocked by privateVault.unlocked.collectAsStateWithLifecycle()
     val privateWork = vaultProgress.takeIf { privateUnlocked }
     val group = groups.firstOrNull { it.active }
-    val work = restore?.let { app.televault.data.WorkProgress(label("Restoring library & thumbnails", "লাইব্রেরি ও থাম্বনেইল ফিরছে"), it.completed, it.total) } ?: offlineWork ?: fileWork ?: state.deviceCopyProgress ?: state.syncProgress ?: exportWork
+    val work = restore?.let { app.televault.data.WorkProgress(label("Restoring library & thumbnails", "লাইব্রেরি ও থাম্বনেইল ফিরছে"), it.completed, it.total) } ?: offlineWork ?: fileWork ?: state.deviceCopyProgress ?: state.syncProgress ?: state.backupVerification ?: exportWork
     var retained by remember { mutableStateOf<TransferOverview?>(null) }
     LaunchedEffect(group) {
         if (group != null) {

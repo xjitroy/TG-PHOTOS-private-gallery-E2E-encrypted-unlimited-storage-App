@@ -26,6 +26,7 @@ import app.televault.domain.AuthProtocol
 import app.televault.domain.AutomaticBackupPolicy
 import app.televault.domain.BackedCopyVerifier
 import app.televault.domain.BackupBadge
+import app.televault.domain.BackupCopyIndex
 import app.televault.domain.BackupIdentity
 import app.televault.domain.CaptureTime
 import app.televault.domain.DeviceBackupFolder
@@ -92,6 +93,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
     private val cloudSync = Mutex()
     private val edits = Mutex()
     private val backupControl = Mutex()
+    private val backupScanning = Mutex()
     private val uploadQueue = Mutex()
     private val uploadRunner = Mutex()
     private val uploadQueueChanges = java.util.concurrent.atomic.AtomicLong()
@@ -1301,7 +1303,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
         uploadQueue.withLock {
             val key = unlockedKey()
             try {
-                val queued = activeJobs(account, vault).filter { it.phase != "FAILED" }.associateBy { payload(it, key).optString("source") }
+                val queued = activeJobs(account, vault).filter { !UploadQueuePolicy.terminalFailure(it.phase) }.associateBy { payload(it, key).optString("source") }
                 val promoted = mutableListOf<CacheRow>()
                 val tasks = uris.distinct().mapNotNull { uri ->
                     coroutineContext.ensureActive()
@@ -1351,18 +1353,129 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
             }
         }
     }
-    private suspend fun queueAutomaticBatch(candidates: List<CacheRow>, wifi: Boolean, key: ByteArray) = uploadQueue.withLock {
-        if (candidates.isEmpty()) return@withLock
+    private suspend fun queueAutomaticBatch(candidates: List<CacheRow>, wifi: Boolean, key: ByteArray) {
+        if (candidates.isEmpty()) return
+        val index = backupCopyIndex(key)
+        val epoch = accessEpoch.get()
+        val pending = mutableListOf<CacheRow>()
+        var linked = 0
+        try {
+            for ((position, task) in candidates.withIndex()) {
+                coroutineContext.ensureActive()
+                if (!BackgroundBattery.backup(app)) {
+                    BackupScheduling.whenCharging(app)
+                    throw DataPolicyBlocked("WAITING")
+                }
+                if (position % 16 == 0) publishUnlocked(epoch) { it.copy(backupVerification = WorkProgress("Checking existing backups on this phone", position.toLong(), candidates.size.toLong())) }
+                val matched = try {
+                    matchExistingBackup(task, payload(task, key), key, index)
+                } catch (_: java.io.IOException) {
+                    false // The durable upload job reports an unreadable source and offers Retry.
+                } catch (_: SecurityException) {
+                    false
+                }
+                if (matched) linked++ else pending += task
+                if ((position + 1) % 16 == 0) {
+                    enqueueAutomaticCandidates(pending, wifi, key)
+                    pending.clear()
+                }
+                yield()
+            }
+        } finally {
+            publishUnlocked(epoch) { it.copy(backupVerification = null) }
+            if (linked > 0) refreshLocal()
+        }
+        enqueueAutomaticCandidates(pending, wifi, key)
+    }
+    private suspend fun enqueueAutomaticCandidates(pending: List<CacheRow>, wifi: Boolean, key: ByteArray) = uploadQueue.withLock {
+        if (pending.isEmpty()) return@withLock
         // Cold workers and the UI use the same device-local content receipts.
         // Never import source tokens from restored cloud manifests as backup proof.
         val known = verifiedBackupSources(account, vault, key)
-        known += activeJobs(account, vault).filter { it.phase != "FAILED" }.map { payload(it, key).optString("source") }
-        val selected = candidates.filter { known.add(payload(it, key).optString("source")) }
+        known += activeJobs(account, vault).map { payload(it, key).optString("source") }
+        val selected = pending.filter { task ->
+            val data = payload(task, key)
+            val folder = dao.get(data.getString("backupId"))
+            folder != null && folder.kind == "backup" && folder.account == task.account && folder.vault == task.vault && known.add(data.optString("source"))
+        }
         if (selected.isEmpty()) return@withLock
-        // Discover and persist the whole folder plan before any worker starts.
+        // Each small admitted group has a durable, fixed count/byte plan.
         persistBatch(selected, key, manual = false, wifi = wifi)
         scheduleUploadQueue(selected.first(), manual = false)
         refreshTransfers()
+    }
+
+    /** Recovered manifests already contain authenticated names, lengths and hashes; no original
+     * cloud media is downloaded to decide whether this phone has the exact same bytes. */
+    private fun backupCopyIndex(key: ByteArray): BackupCopyIndex = BackupCopyIndex(
+        dao.ids(account, vault, "file").map { id ->
+            val item = file(payload(checkNotNull(dao.get(id)), key))
+            val props = dao.get("state:${item.id}")?.let { payload(it, key) }
+            BackupCopyIndex.Copy(item.id, item.name, item.size, item.hash, item.trashedAt == 0L && props?.optBoolean("purged") != true && (props?.optLong("trashedAt") ?: 0L) == 0L)
+        }
+    )
+    private suspend fun matchExistingBackup(task: CacheRow, data: JSONObject, key: ByteArray, index: BackupCopyIndex, display: Boolean = false): Boolean {
+        if (data.optBoolean("allowDuplicate") || data.has("metadata")) return false
+        check(task.account == account && task.vault == vault)
+        val uri = Uri.parse(data.getString("uri"))
+        val bytes = task.total.takeIf { it >= 0 } ?: size(uri)
+        if (!index.hasCandidates(bytes)) return false
+        if (display) stage(task, "VERIFYING_DEVICE", 0, bytes)
+        val before = sourceFingerprint(uri)
+        val scope = coroutineContext
+        val hash = app.contentResolver.openInputStream(uri)?.use { input ->
+            BackedCopyVerifier.digest(input, bytes) {
+                scope.ensureActive()
+                protection.requireAllowed()
+            }?.let(::encode)
+        } ?: return false
+        val match = index.match(data.getString("name"), bytes, hash) ?: return false
+        if (sourceFingerprint(uri) != before || size(uri) != bytes) return false
+        val current = dao.get("file:${match.id()}")?.let { file(payload(it, key)) } ?: return false
+        val props = dao.get("state:${current.id}")?.let { payload(it, key) }
+        if (!BackupIdentity.same(current.hash, current.size, hash, bytes, current.trashedAt == 0L && props?.optBoolean("purged") != true && (props?.optLong("trashedAt") ?: 0L) == 0L, false)) return false
+        protection.requireAllowed()
+        if (data.optString("source").isNotBlank()) saveSourceLink(data.getString("source"), current.id, key)
+        return true
+    }
+
+    /** Repair pre-update blocked automatic jobs too, without bypassing their upload policy. */
+    private suspend fun reconcileWaitingBackups(anchor: CacheRow, key: ByteArray) {
+        val index = backupCopyIndex(key)
+        var changed = false
+        val epoch = accessEpoch.get()
+        val candidates = activeJobs(anchor.account, anchor.vault).toList()
+        try {
+            for ((position, candidate) in candidates.withIndex()) {
+                publishUnlocked(epoch) { it.copy(backupVerification = WorkProgress("Checking existing backups on this phone", position.toLong(), candidates.size.toLong())) }
+                if (!BackgroundBattery.backup(app)) break
+                if (candidate.id in runningTransfers) continue
+                transferLocks[candidate.id.hashCode().ushr(1) % transferLocks.size].withLock {
+                    val task = dao.get(candidate.id) ?: return@withLock
+                    if (task.phase in setOf("COMPLETE", "CANCELLED") || task.id in runningTransfers) return@withLock
+                    val data = payload(task, key)
+                    if (data.optString("action") != "upload" || data.optString("backupId") != anchor.id || data.optBoolean("allowDuplicate") || data.has("metadata")) return@withLock
+                    val matched = try {
+                        matchExistingBackup(task, data, key, index)
+                    } catch (_: java.io.IOException) {
+                        false
+                    } catch (_: SecurityException) {
+                        false
+                    }
+                    if (matched && dao.get(task.id)?.phase != "CANCELLED") {
+                        task.phase = "COMPLETE"
+                        task.progress = task.total
+                        saveTransfer(task)
+                        dao.remove("upload-queue:${task.id}")
+                        changed = true
+                    }
+                }
+                yield()
+            }
+        } finally {
+            publishUnlocked(epoch) { it.copy(backupVerification = null) }
+            if (changed) refreshLocal()
+        }
     }
     suspend fun enqueueDownload(ids: Set<String>, destination: Uri) = withContext(Dispatchers.IO) {
         val key = unlockedKey()
@@ -1469,12 +1582,12 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
                             val wait = if (ready.first.phase in setOf("RETRYING", "WAITING_TELEGRAM", "INTERRUPTED")) 30L else 0L
                             scheduleUploadQueue(ready.first, ready.second.optBoolean("manual"), delaySeconds = wait)
                         } else {
-                            pending.firstOrNull { it.first.phase != "FAILED" && (it.second.optBoolean("wifi") || it.first.phase in setOf("DAILY_PHOTO_LIMIT", "MOBILE_VIDEO_DISABLED")) }?.let { scheduleUploadQueue(it.first, manual = false, wifi = true) }
+                            pending.firstOrNull { !UploadQueuePolicy.terminalFailure(it.first.phase) && (it.second.optBoolean("wifi") || it.first.phase in setOf("DAILY_PHOTO_LIMIT", "MOBILE_VIDEO_DISABLED")) }?.let { scheduleUploadQueue(it.first, manual = false, wifi = true) }
                             if (pending.any { it.first.phase == "DAILY_PHOTO_LIMIT" }) {
                                 val midnight = java.time.LocalDate.now().plusDays(1).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
                                 scheduleUploadQueue(pending.first().first, manual = false, delaySeconds = ((midnight - System.currentTimeMillis()) / 1000 + 1).coerceAtLeast(1), daily = true)
                             }
-                            pending.filter { it.first.phase != "FAILED" && it.first.retryAt > System.currentTimeMillis() }.minByOrNull { it.first.retryAt }?.let {
+                            pending.filter { !UploadQueuePolicy.terminalFailure(it.first.phase) && it.first.retryAt > System.currentTimeMillis() }.minByOrNull { it.first.retryAt }?.let {
                                 scheduleUploadQueue(it.first, manual = false, delaySeconds = ((it.first.retryAt - System.currentTimeMillis()) / 1000 + 1).coerceAtLeast(30))
                             }
                         }
@@ -1502,7 +1615,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
                 task to data
             }
         }
-        val photosPending = settings.photosFirst && pending.any { it.first.phase != "FAILED" && AutomaticBackupPolicy.priority(it.second.optString("mime")) == 0 }
+        val photosPending = settings.photosFirst && pending.any { !UploadQueuePolicy.terminalFailure(it.first.phase) && AutomaticBackupPolicy.priority(it.second.optString("mime")) == 0 }
         pending.forEach { it.second.put("photosPending", photosPending) }
         return pending.sortedWith { a, b ->
             val manualA = a.second.optBoolean("manual")
@@ -1719,7 +1832,12 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
             } catch (e: Exception) {
                 val temporary = (e is java.io.IOException && e !is java.io.FileNotFoundException) || e is java.security.ProviderException ||
                     e is java.security.KeyStoreException || e is android.security.keystore.UserNotAuthenticatedException
-                task.phase = if (temporary) "RETRYING" else "FAILED"
+                task.phase = when {
+                    e is java.io.FileNotFoundException -> "SOURCE_UNAVAILABLE"
+                    e is SecurityException -> "SOURCE_ACCESS_REQUIRED"
+                    temporary -> "RETRYING"
+                    else -> "FAILED"
+                }
                 saveTransfer(task)
                 refreshTransfers()
                 !temporary
@@ -1804,10 +1922,16 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
         try {
             val uri = Uri.parse(data.getString("uri"))
             if (uri.authority == "${app.packageName}.private-media" && state.value.stage != VaultStage.READY) throw DataPolicyBlocked("WAITING_UNLOCK")
+            if (data.has("backupId") && !data.optBoolean("manualRequested") && !BackgroundBattery.backup(app)) throw DataPolicyBlocked("WAITING")
             val checkpoint = data.optJSONObject("metadata")
             val bytes = checkpoint?.getLong("size") ?: size(uri)
             VaultCrypto.encryptedLength(bytes)
             val detectedMime = checkpoint?.getString("mime") ?: MediaTools.mime(app, uri)
+            if (!data.optBoolean("allowDuplicate")) {
+                val baseline = dao.get("cloud-baseline:$account:$vault")
+                if (baseline == null || !payload(baseline, masterKey).optBoolean("complete")) sync(requireComplete = true, backgroundTask = task)
+                if (checkpoint == null && matchExistingBackup(task, data, masterKey, backupCopyIndex(masterKey), display = true)) return
+            }
             if (data.optString("backupId") == "camera:$account:$vault" && !data.optBoolean("manualRequested") && detectedMime.startsWith("video/") && data.optLong("sourceDuration") <= 0) {
                 data.put("sourceDuration", MediaFacts.read(app, uri, detectedMime).durationMs)
                 savePayload(task, data, masterKey)
@@ -1825,44 +1949,13 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
                 data.put("videoNoticeAcknowledged", true)
                 savePayload(task, data, masterKey)
             }
-            if (!data.optBoolean("allowDuplicate")) {
-                val baseline = dao.get("cloud-baseline:$account:$vault")
-                if (baseline == null || !payload(baseline, masterKey).optBoolean("complete")) sync(requireComplete = true, backgroundTask = task)
-                // Match size/name as candidate hints, then read ALL bytes and compare SHA-256.
-                // This works for renamed media, documents/audio and restored source URIs.
-                // It avoids allocating GB of upload staging for an already-backed-up movie.
-                if (checkpoint == null) {
-                    val candidates = dao.ids(account, vault, "file").map { rowId ->
-                        metadataCache["$account:$vault:${rowId.removePrefix("file:")}"] ?: file(payload(checkNotNull(dao.get(rowId)), masterKey))
-                    }.filter { it.size == bytes }.sortedBy { if (it.name.equals(data.getString("name"), true)) 0 else 1 }
-                    if (candidates.isNotEmpty()) {
-                        stage(task, "ENCRYPTING", 0, bytes)
-                        val before = sourceFingerprint(uri)
-                        val scope = coroutineContext
-                        val hash = app.contentResolver.openInputStream(uri)?.use { input ->
-                            BackedCopyVerifier.digest(input, bytes) {
-                                scope.ensureActive()
-                                protection.requireAllowed()
-                            }?.let(::encode)
-                        }
-                        val match = candidates.firstOrNull { existing ->
-                            val props = dao.get("state:${existing.id}")?.let { payload(it, masterKey) }
-                            BackupIdentity.same(existing.hash, existing.size, hash, bytes, existing.trashedAt == 0L && props?.optBoolean("purged") != true && (props?.optLong("trashedAt") ?: 0L) == 0L, false)
-                        }
-                        if (match != null && sourceFingerprint(uri) == before && size(uri) == bytes) {
-                            if (data.optString("source").isNotBlank()) saveSourceLink(data.getString("source"), match.id, masterKey)
-                            return
-                        }
-                    }
-                }
-            }
             check(bytes <= 1536L * 1024 * 1024 || detectedMime.startsWith("video/")) { "Only video files support multipart upload above 1.5 GB" }
             val partBytes = minOf(1536L * 1024 * 1024, telegram.uploadLimit() - 1024)
             task.total = bytes
             val content = File(cache, "${task.id}.bin")
             if (!data.has("metadata") || (!content.exists() && (!data.getJSONObject("metadata").has("message") || data.getJSONObject("metadata").optBoolean("multipartPending")))) {
                 streamCache.makeRoom(VaultCrypto.encryptedLength(bytes) + minOf(partBytes, VaultCrypto.encryptedLength(bytes)) + 16L * 1024 * 1024)
-                check(app.noBackupFilesDir.usableSpace > VaultCrypto.encryptedLength(bytes) + minOf(partBytes, VaultCrypto.encryptedLength(bytes)) + 16L * 1024 * 1024) { "Not enough private staging space" }
+                if (app.noBackupFilesDir.usableSpace <= VaultCrypto.encryptedLength(bytes) + minOf(partBytes, VaultCrypto.encryptedLength(bytes)) + 16L * 1024 * 1024) throw DataPolicyBlocked("WAITING_STORAGE")
                 stage(task, "ENCRYPTING", 0, bytes)
                 val contentKey = VaultCrypto.randomKey()
                 try {
@@ -2162,7 +2255,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
             }
         }
     }
-    private suspend fun stopBackupLocked(id: String, key: ByteArray) {
+    private suspend fun stopBackupLocked(id: String, key: ByteArray) = uploadQueue.withLock {
         work.cancelUniqueWork("backup:$id")
         work.cancelUniqueWork("backup-now:$id")
         work.cancelUniqueWork("camera-watch:$id")
@@ -2245,12 +2338,15 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
             BackupScheduling.whenCharging(app)
             return@withContext
         }
-        backupControl.withLock {
+        backupScanning.withLock {
             val record = dao.get(id) ?: return@withLock
             val key = backgroundKey(record)
             try {
                 val data = payload(record, key)
                 val saver = policy.settings()
+                val baseline = dao.get("cloud-baseline:$account:$vault")
+                if (baseline == null || !payload(baseline, key).optBoolean("complete")) sync(requireComplete = true, backgroundTask = record)
+                reconcileWaitingBackups(record, key)
                 // Reconsider the durable queue once, retaining limits, notices and retry timestamps.
                 pendingUploads(record, key).firstOrNull { uploadEligible(it.first, it.second) }?.let { scheduleUploadQueue(it.first, it.second.optBoolean("manual")) }
                 if (saver.dataSaver && !id.startsWith("camera:")) return@withLock
@@ -2258,7 +2354,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
                     val legacyCamera = data.optString("uri") == "camera"
                     val media = backupMedia().filter { !it.trashed && DeviceBackupFolder.matches(it.folder, data.optString("deviceFolder"), legacyCamera) && (it.mime.startsWith("image/") || it.mime.startsWith("video/")) }
                     val known = verifiedBackupSources(record.account, record.vault, key)
-                    known += activeJobs(record.account, record.vault).filter { it.phase !in setOf("FAILED", "CANCELLED") }.map { payload(it, key).optString("source") }
+                    known += activeJobs(record.account, record.vault).map { payload(it, key).optString("source") }
                     val candidates = mutableListOf<CacheRow>()
                     media.filter { it.fingerprint !in known && MediaBackupPolicy.automaticAllowed(saver.dataSaver, id == "camera:$account:$vault", it.mime, it.date, saver.saverSince) }.forEach { item ->
                         coroutineContext.ensureActive()
@@ -2275,7 +2371,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
                 val directory = checkNotNull(DocumentFile.fromTreeUri(app, Uri.parse(data.getString("uri"))))
                 check(directory.canRead()) { "Folder permission lost" }
                 val known = verifiedBackupSources(record.account, record.vault, key)
-                known += activeJobs(record.account, record.vault).filter { it.phase !in setOf("FAILED", "CANCELLED") }.map { payload(it, key).optString("source") }
+                known += activeJobs(record.account, record.vault).map { payload(it, key).optString("source") }
                 val candidates = mutableListOf<CacheRow>()
                 var scanned = 0
                 suspend fun visit(folder: DocumentFile, depth: Int) {
@@ -3375,7 +3471,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
     suspend fun resumeAutomaticUploads() = withContext(Dispatchers.IO) {
         if (state.value.stage != VaultStage.READY || state.value.indexNeedsRepair) return@withContext
         BackupScheduling.request(app)
-        val anchor = activeJobs(account, vault).firstOrNull { it.phase != "FAILED" } ?: return@withContext
+        val anchor = activeJobs(account, vault).firstOrNull { !UploadQueuePolicy.terminalFailure(it.phase) } ?: return@withContext
         val key = unlockedKey()
         try {
             uploadQueue.withLock {
@@ -3426,7 +3522,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
                 releaseWorkKey(key)
             }
         }
-        val jobs = activeJobs(owner, scope).filter { it.phase != "FAILED" }
+        val jobs = activeJobs(owner, scope).filter { !UploadQueuePolicy.terminalFailure(it.phase) }
         jobs.firstOrNull()?.let { anchor ->
             val key = backgroundKey(anchor)
             try {

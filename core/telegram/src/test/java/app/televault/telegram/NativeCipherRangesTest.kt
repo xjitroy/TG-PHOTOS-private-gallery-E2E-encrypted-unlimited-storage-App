@@ -107,4 +107,22 @@ class NativeCipherRangesTest {
             local.delete()
         }
     }
+
+    @Test fun sparseRangesBeyondFiveAndTenGiBKeepLongOffsetsAndReadOnlyRequestedBytes() = runBlocking {
+        val local = File.createTempFile("cipher-large-range", ".bin")
+        try {
+            for (offset in listOf(5L * 1024 * 1024 * 1024 + 19, 10L * 1024 * 1024 * 1024 + 37)) {
+                val expected = ByteArray(32) { (it + offset).toByte() }
+                java.io.RandomAccessFile(local, "rw").use {
+                    it.seek(offset)
+                    it.write(expected)
+                }
+                val actual = NativeCipherRanges.read(offset, expected.size, { expected.size.toLong() }, { local }, { fail("Existing sparse range must not download or load a whole movie") }, {})
+                assertArrayEquals(expected, actual)
+                assertEquals(32, actual.size)
+            }
+        } finally {
+            assertTrue(local.delete())
+        }
+    }
 }

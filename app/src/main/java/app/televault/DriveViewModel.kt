@@ -63,9 +63,10 @@ class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
                 previousHidden = hidden
                 visibleFiles = if (hidden.isEmpty()) value.files else value.files.filterNot { it.id in hidden }
             }
-            value.copy(files = visibleFiles, notice = if (pending.isNotEmpty()) "Updating selected files…" else value.notice, indexLoading = value.indexLoading && !value.indexLoaded, transfers = value.transfers.filter { it.phase !in hiddenTransferPhases && !app.televault.domain.ActivityProgress.active(it.phase) }.map { it.copy(progress = 0, total = 0) }, syncProgress = null, deviceCopyProgress = value.deviceCopyProgress?.copy(completed = 0, total = 0))
+            value.copy(files = visibleFiles, notice = if (pending.isNotEmpty()) "Updating selected files…" else value.notice, indexLoading = value.indexLoading && !value.indexLoaded, transfers = value.transfers.filter { it.phase !in hiddenTransferPhases && !app.televault.domain.ActivityProgress.active(it.phase) }.map { it.copy(progress = 0, total = 0) }, syncProgress = null, backupVerification = null, deviceCopyProgress = value.deviceCopyProgress?.copy(completed = 0, total = 0))
         }.distinctUntilChanged().flowOn(Dispatchers.Default).recoveringMemory { recoverMemory() }.stateIn(viewModelScope, SharingStarted.Eagerly, state.value)
     }
+    internal val backupVerification = state.map { it.backupVerification }.distinctUntilChanged().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
     internal val backupBadgeTimes = state.map { it.files to it.backedDeviceFiles }.distinctUntilChanged().map { (files, links) ->
         val times = files.associate { it.id to it.backedUpAt }
         times + links.mapValues { times[it.value] ?: 0L }
@@ -432,7 +433,10 @@ class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
     fun backup(uri: Uri, wifi: Boolean) = action { repository.addBackup(uri, wifi) }
     fun deviceFolderBackup(path: String, enabled: Boolean) = action { repository.setDeviceFolderBackup(path, enabled) }
     fun stopBackup(id: String) = action { repository.stopBackup(id) }
-    fun sync() = action { repository.sync() }
+    fun sync() = action {
+        repository.sync()
+        repository.resumeAutomaticUploads()
+    }
     fun retry(id: String) = action { repository.retry(id) }
     fun cancel(id: String) = action { repository.cancel(id) }
     fun lock() {

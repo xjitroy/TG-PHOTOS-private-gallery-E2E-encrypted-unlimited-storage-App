@@ -14,10 +14,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.televault.DriveViewModel
 
 @Composable
-internal fun TransferQueue(model: DriveViewModel) {
+internal fun TransferQueue(model: DriveViewModel, attentionOnly: Boolean = false, modifier: Modifier = Modifier) {
     val state by model.state.collectAsStateWithLifecycle()
-    LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        items(state.transfers, key = { it.id }) { task ->
+    val jobs = state.transfers.filter { !attentionOnly || !it.download && it.phase !in setOf("COMPLETE", "CANCELLED", "WAITING") && !app.televault.domain.ActivityProgress.active(it.phase) }
+    LazyColumn(modifier, contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        if (jobs.isEmpty()) item { Text(label("No files need attention", "কোনো ফাইল আপনার সিদ্ধান্তের অপেক্ষায় নেই")) }
+        items(jobs, key = { it.id }) { task ->
             AppSurface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
                 ListItem(headlineContent = { Text(task.name, maxLines = 2) }, supportingContent = {
                     Column {

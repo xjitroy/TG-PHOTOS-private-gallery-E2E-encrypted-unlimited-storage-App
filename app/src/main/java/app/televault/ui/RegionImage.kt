@@ -405,7 +405,7 @@ internal class RegionImageView(context: Context) : View(context) {
     }
 }
 
-@Composable internal fun RegionImage(uri: Uri, modifier: Modifier, tap: () -> Unit = {}, swipeUp: (() -> Unit)? = null, placeholder: @Composable () -> Unit = {}, pixelsReady: () -> Unit = {}, cache: DecodedPhotoCache? = null, cacheKey: String = uri.toString(), longHold: (() -> Unit)? = null) {
+@Composable internal fun RegionImage(uri: Uri, modifier: Modifier, tap: () -> Unit = {}, swipeUp: (() -> Unit)? = null, placeholder: @Composable () -> Unit = {}, pixelsReady: () -> Unit = {}, cache: DecodedPhotoCache? = null, cacheKey: String = uri.toString(), longHold: (() -> Unit)? = null, openWith: (() -> Unit)? = null) {
     var retry by remember(uri) { mutableIntStateOf(0) }
     var loading by remember(uri, retry) { mutableStateOf(true) }
     var error by remember(uri, retry) { mutableStateOf(false) }
@@ -438,9 +438,10 @@ internal class RegionImageView(context: Context) : View(context) {
         if (!hasPixels) placeholder()
         if (error) {
             AppSurface(Modifier.align(Alignment.BottomCenter).padding(12.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = .94f), shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp)) {
-                Row(Modifier.padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.padding(horizontal = 12.dp)) {
                     Text(label("Original unavailable", "মূল ছবি খোলা যায়নি"), style = MaterialTheme.typography.bodySmall)
                     TextButton({ retry++ }) { Text(label("Retry", "আবার চেষ্টা করুন")) }
+                    openWith?.let { action -> TextButton(action) { Text(label("Open with another app", "অন্য অ্যাপে খুলুন")) } }
                 }
             }
         }

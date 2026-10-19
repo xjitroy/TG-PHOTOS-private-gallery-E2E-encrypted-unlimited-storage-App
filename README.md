@@ -1,3 +1,9 @@
+Standard Media3 audio output is restored for video playback; optional native200percent gain cannot prevent normal playback. Unsupported formats have a bounded foreground Open with fallback. Synthetic5/10GiB range/authenticated-seek tests are host checks; actual device codec/HEVC/frame acceptance remains pending.
+
+# TG Photos1.20.36 — metadata-first existing-copy checks
+
+Automatic backup restores authenticated cloud metadata first, verifies matching phone originals by full SHA256, and skips verified copies before queuing uploads. Existing blocked jobs can reconcile without bypassing real new-upload policy. Backup status identifies byte-based progress and opens individual attention reasons/Retry. No new model is installed. Android native/OEM/biometric/performance/account acceptance remains unavailable.
+
 # TG Photos1.20.35
 
 TG Photos1.20.35 reduces short startup/discovery/receipt/key-loading flashes without delaying completed work or bypassing verification. The first restored page avoids stacked entrance fades; deliberate navigation retains motion. Real errors/retry/password paths remain.

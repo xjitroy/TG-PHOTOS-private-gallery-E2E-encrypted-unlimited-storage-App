@@ -1,6 +1,6 @@
 package app.televault.domain;
 
-/** The first100percent uses system volume; the next100percent is bounded PCM gain. */
+/** The first100percent uses system volume; the next100percent requests bounded native audio-effect gain. */
 public final class VideoVolume {
     private VideoVolume() { }
     public static int percent(int requested) { return Math.max(0, Math.min(200, requested)); }

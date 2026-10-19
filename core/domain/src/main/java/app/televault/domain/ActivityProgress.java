@@ -5,7 +5,7 @@ public final class ActivityProgress {
     private ActivityProgress() {}
     public static boolean active(String phase) {
         return switch (phase) {
-            case "ENCRYPTING", "UPLOADING", "DOWNLOADING", "EXPORTING", "COMMITTING_INDEX", "MOVING_TO_TRASH" -> true;
+            case "VERIFYING_DEVICE", "ENCRYPTING", "UPLOADING", "DOWNLOADING", "EXPORTING", "COMMITTING_INDEX", "MOVING_TO_TRASH" -> true;
             default -> false;
         };
     }

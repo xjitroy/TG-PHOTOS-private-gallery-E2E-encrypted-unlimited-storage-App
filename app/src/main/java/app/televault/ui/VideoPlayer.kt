@@ -157,7 +157,16 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
     var repeat by remember { mutableStateOf(player.repeatMode == Player.REPEAT_MODE_ONE) }
     var fit by remember { mutableStateOf(false) }
     var speed by remember { mutableFloatStateOf(player.playbackParameters.speed) }
-    var playerError by remember { mutableStateOf("") }
+    var playerError by remember(uri, identity) { mutableStateOf("") }
+    var unsupported by remember(uri, identity) { mutableStateOf(false) }
+    val playbackFailureText = label("Playback failed. Retry or open this file in another app.", "ভিডিও চালানো যায়নি। Retry করুন বা অন্য অ্যাপে খুলুন।")
+    val codecFailureText = label("This phone could not decode this format. Try another player.", "ফোনে এই ফরম্যাট ডিকোড করা যায়নি। অন্য প্লেয়ারে খুলুন।")
+    UnsupportedFormatFallback(identity, unsupported) {
+        if (session.owns(identity) && model.playbackEpoch == epoch) {
+            player.pause()
+            openWith()
+        }
+    }
     var buffering by remember { mutableStateOf(true) }
     var showBuffering by remember(uri) { mutableStateOf(false) }
     val initialExitToken = remember(identity) { fullscreenExit }
@@ -278,7 +287,9 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
                 }
             }
             override fun onPlayerError(error: PlaybackException) {
-                playerError = "Playback failed. Check connection, file integrity or device codec support."
+                if (!session.owns(identity) || model.playbackEpoch != epoch) return
+                unsupported = unsupportedPlayback(error.errorCode, error)
+                playerError = if (unsupported) codecFailureText else playbackFailureText
             }
 
             override fun onVideoSizeChanged(size: VideoSize) {
@@ -291,6 +302,7 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
                 badgeEpoch++
             }
             override fun onTracksChanged(value: Tracks) {
+                if (!session.owns(identity)) return
                 tracks = value
                 val f = player.videoFormat
                 quality = f?.let { "${it.width} × ${it.height}" }.orEmpty()
@@ -306,6 +318,7 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
         }
         buffering = player.playbackState == Player.STATE_BUFFERING
         player.addListener(listener)
+        player.playerError?.let(listener::onPlayerError)
         owner.lifecycle.addObserver(lifecycle)
         onDispose {
             savePosition()
@@ -441,9 +454,14 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
                             Text(playerError, style = MaterialTheme.typography.bodySmall)
                             TextButton({
                                 playerError = ""
+                                unsupported = false
                                 player.prepare()
                                 player.play()
                             }) { Text(label("Retry", "আবার চেষ্টা")) }
+                            TextButton({
+                                player.pause()
+                                openWith()
+                            }) { Text(label("Open with another app", "অন্য অ্যাপে খুলুন")) }
                         }
                     }
                 }

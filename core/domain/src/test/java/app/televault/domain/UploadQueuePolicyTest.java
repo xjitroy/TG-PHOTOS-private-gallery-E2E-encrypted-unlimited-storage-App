@@ -37,4 +37,14 @@ public class UploadQueuePolicyTest {
         assertTrue(UploadQueuePolicy.eligible("WAITING",0,100,false,false,false,false,false,true,true));
         assertTrue(UploadQueuePolicy.eligible("DAILY_PHOTO_LIMIT",0,100,false,false,false,false,false,true,true));
     }
+    @Test public void actionableSourceAndStorageFailuresWaitForExplicitRetry() {
+        for (String phase : new String[]{"SOURCE_UNAVAILABLE", "SOURCE_ACCESS_REQUIRED", "WAITING_STORAGE"}) {
+            assertTrue(UploadQueuePolicy.terminalFailure(phase));
+            assertFalse(UploadQueuePolicy.eligible(phase,0,100,false,false,false,false,false,true,true));
+            assertFalse(UploadQueuePolicy.eligible(phase,0,100,false,true,false,false,false,true,true));
+        }
+        assertFalse(UploadQueuePolicy.terminalFailure("WAITING"));
+        assertFalse(UploadQueuePolicy.terminalFailure("DAILY_PHOTO_LIMIT"));
+        assertTrue(UploadQueuePolicy.eligible("WAITING",0,100,false,true,false,false,false,true,true));
+    }
 }

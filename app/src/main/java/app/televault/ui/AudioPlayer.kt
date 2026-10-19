@@ -31,7 +31,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-internal fun AudioPlayer(uri: Uri, item: MediaEntry, model: DriveViewModel, editedCopy: (MediaEntry) -> Unit, share: () -> Unit) {
+internal fun AudioPlayer(uri: Uri, item: MediaEntry, model: DriveViewModel, editedCopy: (MediaEntry) -> Unit, share: () -> Unit, openWith: () -> Unit) {
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
@@ -45,6 +45,11 @@ internal fun AudioPlayer(uri: Uri, item: MediaEntry, model: DriveViewModel, edit
     var playing by remember(currentUri) { mutableStateOf(false) }
     var ready by remember(currentUri) { mutableStateOf(false) }
     var error by remember(currentUri) { mutableStateOf("") }
+    var unsupported by remember(currentUri) { mutableStateOf(false) }
+    UnsupportedFormatFallback(currentUri, unsupported) {
+        player.pause()
+        openWith()
+    }
     var gain by remember(currentUri) { mutableFloatStateOf(1f) }
     var fadeIn by remember(currentUri) { mutableStateOf(false) }
     var fadeOut by remember(currentUri) { mutableStateOf(false) }
@@ -150,6 +155,7 @@ internal fun AudioPlayer(uri: Uri, item: MediaEntry, model: DriveViewModel, edit
     DisposableEffect(player, owner) {
         val failures = object : Player.Listener {
             override fun onPlayerError(failure: PlaybackException) {
+                unsupported = unsupportedPlayback(failure.errorCode, failure)
                 error = playbackFailedMessage
             }
         }
@@ -239,6 +245,10 @@ internal fun AudioPlayer(uri: Uri, item: MediaEntry, model: DriveViewModel, edit
                 player.prepare()
                 player.play()
             }, enabled = !saving) { Text(label("Retry playback", "আবার চালান")) }
+            TextButton({
+                player.pause()
+                openWith()
+            }, enabled = !saving) { Text(label("Open with another app", "অন্য অ্যাপে খুলুন")) }
         }
     }
     if (trim) {

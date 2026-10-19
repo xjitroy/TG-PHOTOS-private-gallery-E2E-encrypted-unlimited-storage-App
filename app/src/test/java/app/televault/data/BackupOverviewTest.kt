@@ -83,4 +83,25 @@ class BackupOverviewTest {
         assertEquals(Long.MAX_VALUE, huge.bytes)
         assertEquals(0, huge.percent)
     }
+
+    @Test fun screenshotCountsAndDataPercentageHaveDifferentDenominators() {
+        val jobs = (0 until 734).map { i ->
+            job("camera-$i", "Camera", 734, if (i < 731) "COMPLETE" else "CAMERA_VIDEO_LIMIT", bytes = 10000).copy(fileBytes = if (i < 731) 1 else 333)
+        }
+        val waiting = backupOverview(jobs, BackupOverview())
+        assertEquals(731L, waiting.completed)
+        assertEquals(3L, waiting.blocked)
+        assertEquals(90, waiting.percent)
+        val complete = backupOverview(jobs.map { it.copy(phase = "COMPLETE") }, waiting)
+        assertEquals(100, complete.percent)
+        assertEquals(0L, complete.blocked)
+    }
+
+    @Test fun checkingAnExistingDeviceCopyIsActiveAndNeverCountsAsUploaded() {
+        val checking = backupOverview(listOf(job("a", "Camera", 1, "VERIFYING_DEVICE", true)), BackupOverview())
+        assertNotNull(checking.active)
+        assertEquals(0L, checking.blocked)
+        assertEquals(0L, checking.completed)
+        assertEquals(0, checking.percent)
+    }
 }
