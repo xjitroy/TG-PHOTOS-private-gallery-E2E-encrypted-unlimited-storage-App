@@ -1,11 +1,11 @@
 {
-  "version": "1.20.32",
-  "code": 44,
+  "version": "1.20.33",
+  "code": 45,
   "checks": {
-    "distinctHostTests": 476,
+    "distinctHostTests": 506,
     "suites": {
       "domain": {
-        "tests": 288,
+        "tests": 294,
         "failures": 0,
         "errors": 0,
         "skipped": 0
@@ -23,7 +23,7 @@
         "skipped": 0
       },
       "app": {
-        "tests": 121,
+        "tests": 145,
         "failures": 0,
         "errors": 0,
         "skipped": 0
@@ -32,23 +32,23 @@
     "lintErrors": 0,
     "lintWarnings": 102,
     "localChecks": 8,
-    "nativeAcceptance": "Unavailable: Android large-tile pixel quality, layout, FPS and exact affected-phone crash/ANR, provider, codec and Keystore behavior",
+    "nativeAcceptance": "Unavailable: Android search/calendar/back flow, centred target/glass layout, FPS and exact affected-phone crash/ANR, provider, codec and Keystore behavior",
     "otpRootCauseVerified": false,
     "runtimeModelPins": "Existing face/OCR/subject/runtime models preserved",
     "privateDataReset": false,
     "privateApkBuilt": false,
-    "regressions": "Measured tall mosaic/crop/RAM/source/stage bounds, main-lock receipt expiry/mode/clock/boot/day, external URI isolation, notification wake-up, selected-native priority,25/15percent charging thresholds, normal-tab/Private-Vault fallback and unique Shorts deck/eligibility; prior regressions retained"
+    "regressions": "Shared chrome held-pointer/stale-player/timer behavior; interrupted biometric/credential request ownership; exact permission/root snapshot reuse; return/highlight ownership and Private Vault bounds; two consecutive face-review votes; inclusive local-day/ISO/Bengali search ranges and measured cell centring; prior regressions retained"
   },
   "artifact": {
-    "apk": "TG-Photos-1.20.32-universal.apk",
-    "bytes": 88174894,
-    "sha256": "477b085761092742f150557f7005d7ad8083ffd94704e6005f6ac29ca268ed25",
-    "versionCode": 44,
-    "versionName": "1.20.32",
+    "apk": "TG-Photos-1.20.33-universal.apk",
+    "bytes": 88304058,
+    "sha256": "699b41b1f4c52dc741378864e9506ebdc6c45ce9b1197c53af7c0fcd4a0a60f0",
+    "versionCode": 45,
+    "versionName": "1.20.33",
     "package": "app.televault.photos",
     "distribution": "public",
-    "sourceCommit": "d0c4633ef8824cdfa0f19f2b3454456756124d67",
-    "sourceTree": "a7c576571e772348cf01b75cf6ff8c29f1332802",
+    "sourceCommit": "d775c730cc61376aac0f21984fd708d0a797ed6f",
+    "sourceTree": "e8b5b34330351719e4c856c2d977ff4a3e522172",
     "certificateSHA256": "3e7c1029cb5e2da80026758abd483b5bd7f0551b6a56bee6b21640b8ae774559",
     "debuggable": false,
     "productionVerified": false,

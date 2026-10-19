@@ -22,7 +22,8 @@ internal fun VaultBiometricPrompt(request: VaultBiometricKey.Request, verified: 
     val context = LocalContext.current
     val onVerified by rememberUpdatedState(verified)
     val onCancelled by rememberUpdatedState(cancelled)
-    DisposableEffect(request) {
+    val owner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(request, owner) {
         val signal = CancellationSignal()
         val gate = BiometricCallbackGate()
         val handler = Handler(Looper.getMainLooper())
@@ -36,6 +37,13 @@ internal fun VaultBiometricPrompt(request: VaultBiometricKey.Request, verified: 
                 cancel()
             }
         }
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) {
+                cancel()
+                signal.cancel()
+            }
+        }
+        owner.lifecycle.addObserver(observer)
         try {
             if (Build.VERSION.SDK_INT >= 28) {
                 val executor = Executor { handler.post(it) }
@@ -78,6 +86,7 @@ internal fun VaultBiometricPrompt(request: VaultBiometricKey.Request, verified: 
             handler.post { cancel() }
         }
         onDispose {
+            owner.lifecycle.removeObserver(observer)
             gate.dispose()
             signal.cancel()
             request.close()

@@ -42,7 +42,7 @@ import kotlinx.coroutines.withContext
 
 @Composable
 internal fun TelegramStorageWarning(modifier: Modifier = Modifier) {
-    Surface(modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.errorContainer) {
+    AppSurface(modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.errorContainer) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Icon(Icons.Outlined.WarningAmber, null, tint = MaterialTheme.colorScheme.onErrorContainer)
@@ -161,7 +161,7 @@ internal fun CloudExportSettings(model: DriveViewModel, modifier: Modifier = Mod
             Text(label("Choose what to save. We prepare, download and verify your ZIP in the background.", "কী সেভ করবেন বেছে নিন। ব্যাকগ্রাউন্ডে ZIP তৈরি, ডাউনলোড ও যাচাই হবে।"), style = MaterialTheme.typography.bodyMedium)
         }
         item {
-            Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+            AppSurface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.primaryContainer) {
                 Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Icon(Icons.Outlined.History, null)
@@ -309,7 +309,7 @@ internal fun CloudExportSettings(model: DriveViewModel, modifier: Modifier = Mod
 
 @Composable
 private fun ExportSetupCard(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+    AppSurface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
             content()
@@ -323,7 +323,7 @@ private fun ExportHistoryCard(entry: CloudExportHistory, model: DriveViewModel) 
     val context = LocalContext.current
     var expanded by rememberSaveable(entry.id) { mutableStateOf(false) }
     val active = entry.phase !in setOf("COMPLETE", "FAILED", "CANCELLED")
-    Surface(shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+    AppSurface(shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(if (entry.phase == "COMPLETE") Icons.Outlined.TaskAlt else Icons.Outlined.FolderZip, null)

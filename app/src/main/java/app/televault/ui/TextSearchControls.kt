@@ -31,7 +31,7 @@ internal fun TextSearchControls(model: DriveViewModel) {
     var consent by remember { mutableStateOf(false) }
     var expanded by remember { mutableStateOf(false) }
     var clearing by remember { mutableStateOf(false) }
-    Surface(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+    AppSurface(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Outlined.TextFields, null, Modifier.size(20.dp))

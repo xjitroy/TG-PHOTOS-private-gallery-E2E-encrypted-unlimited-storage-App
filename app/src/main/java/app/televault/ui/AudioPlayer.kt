@@ -183,7 +183,7 @@ internal fun AudioPlayer(uri: Uri, item: MediaEntry, model: DriveViewModel, edit
         }
     }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Surface(shape = RoundedCornerShape(36.dp), color = MaterialTheme.colorScheme.primaryContainer) { Icon(Icons.Outlined.GraphicEq, null, Modifier.size(100.dp).padding(24.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer) }
+        AppSurface(shape = RoundedCornerShape(36.dp), color = MaterialTheme.colorScheme.primaryContainer) { Icon(Icons.Outlined.GraphicEq, null, Modifier.size(100.dp).padding(24.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer) }
         Text(currentName, style = MaterialTheme.typography.titleLarge)
         Text(if (copyUri != null) label("Edited audio copy", "এডিট করা অডিও কপি") else label("Private audio · original quality", "ব্যক্তিগত অডিও · অরিজিনাল কোয়ালিটি"), style = MaterialTheme.typography.bodySmall)
 

@@ -19,7 +19,7 @@ internal fun SettingsOverview(open: (String) -> Unit, logout: () -> Unit, modifi
         item { TelegramStorageWarning() }
         item { Text("TG Photos ${app.televault.BuildConfig.VERSION_NAME}", Modifier.padding(12.dp), style = MaterialTheme.typography.titleMedium) }
         items(entries, key = { it.first }) { (name, icon) ->
-            Surface(Modifier.fillMaxWidth().clickable { open(name) }, shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+            AppSurface(Modifier.fillMaxWidth().clickable { open(name) }, shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
                 ListItem(headlineContent = { Text(name) }, leadingContent = { Icon(icon, null, tint = MaterialTheme.colorScheme.primary) }, trailingContent = { Icon(Icons.Outlined.ChevronRight, null) }, colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent))
             }
         }

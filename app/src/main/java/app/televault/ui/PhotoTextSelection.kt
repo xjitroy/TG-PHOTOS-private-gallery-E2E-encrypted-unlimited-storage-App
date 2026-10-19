@@ -55,7 +55,7 @@ internal fun PhotoTextSelection(result: OcrText, uri: Uri, selectPhoto: Boolean,
     DisposableEffect(slot) { onDispose { slot.retire() } }
     val chosen = remember(selected, result) { result.words.filterIndexed { i, _ -> i in selected }.joinToString(" ") { it.text } }
     Dialog(close, properties = DialogProperties(usePlatformDefaultWidth = false, securePolicy = SecureFlagPolicy.SecureOn)) {
-        Surface(Modifier.fillMaxSize().safeDrawingPadding(), color = MaterialTheme.colorScheme.background) {
+        AppSurface(Modifier.fillMaxSize().safeDrawingPadding(), color = MaterialTheme.colorScheme.background) {
             Column {
                 TopAppBar(title = { Text(label("Text in photo", "ছবির লেখা")) }, navigationIcon = { IconButton(close) { Icon(Icons.Outlined.Close, label("Close", "বন্ধ")) } }, windowInsets = WindowInsets(0, 0, 0, 0))
                 Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -164,7 +164,7 @@ internal fun PhotoTextSelection(result: OcrText, uri: Uri, selectPhoto: Boolean,
                             }
                         }
                         if (selected.isNotEmpty()) {
-                            Surface(Modifier.align(androidx.compose.ui.Alignment.TopCenter).padding(8.dp), shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.inverseSurface, shadowElevation = 6.dp) {
+                            AppSurface(Modifier.align(androidx.compose.ui.Alignment.TopCenter).padding(8.dp), shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.inverseSurface, shadowElevation = 6.dp) {
                                 Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp)) {
                                     TextButton({
                                         SensitiveClipboard.copy(context, chosen, "Photo text")

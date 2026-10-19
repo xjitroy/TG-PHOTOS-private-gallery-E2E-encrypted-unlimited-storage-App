@@ -65,7 +65,7 @@ internal fun UsageGuidance(model: DriveViewModel, topic: String, failures: Int, 
         }
     }
     AnimatedVisibility(visible && enabled, modifier) {
-        Surface(shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp), tonalElevation = 4.dp) {
+        AppSurface(shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp), tonalElevation = 4.dp) {
             Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Outlined.TouchApp, null, Modifier.size(28.dp), tint = MaterialTheme.colorScheme.primary)
                 Text(label(english, bengali), Modifier.weight(1f).padding(12.dp), style = MaterialTheme.typography.bodySmall)

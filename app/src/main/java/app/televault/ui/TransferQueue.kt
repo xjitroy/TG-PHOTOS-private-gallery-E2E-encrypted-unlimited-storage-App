@@ -18,7 +18,7 @@ internal fun TransferQueue(model: DriveViewModel) {
     val state by model.state.collectAsStateWithLifecycle()
     LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         items(state.transfers, key = { it.id }) { task ->
-            Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+            AppSurface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
                 ListItem(headlineContent = { Text(task.name, maxLines = 2) }, supportingContent = {
                     Column {
                         Text(transferLabel(task.phase))

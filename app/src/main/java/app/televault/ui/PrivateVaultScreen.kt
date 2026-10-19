@@ -288,7 +288,7 @@ internal fun PrivateVaultScreen(model: DriveViewModel, modifier: Modifier = Modi
     val colors = MaterialTheme.colorScheme
     Column(modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         if (message.isNotBlank()) {
-            Surface(color = colors.secondaryContainer, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp).then(if (leadingContent != null) Modifier.statusBarsPadding() else Modifier)) {
+            AppSurface(color = colors.secondaryContainer, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp).then(if (leadingContent != null) Modifier.statusBarsPadding() else Modifier)) {
                 Text(message, Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall, color = colors.onSecondaryContainer)
             }
         }
@@ -424,7 +424,7 @@ internal fun PrivateVaultScreen(model: DriveViewModel, modifier: Modifier = Modi
             }
         } else {
             val vaultControls: @Composable () -> Unit = {
-                Surface(color = colors.tertiaryContainer, shape = RoundedCornerShape(24.dp), modifier = Modifier.fillMaxWidth()) {
+                AppSurface(color = colors.tertiaryContainer, shape = RoundedCornerShape(24.dp), modifier = Modifier.fillMaxWidth()) {
                     Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Outlined.EnhancedEncryption, null, tint = colors.onTertiaryContainer)
                         Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
@@ -492,7 +492,7 @@ internal fun PrivateVaultScreen(model: DriveViewModel, modifier: Modifier = Modi
             val grid = remember(unlocked, category, vault.selectedId) { androidx.compose.foundation.lazy.grid.LazyGridState() }
             val chrome = rememberGridChrome(grid, category)
             if (selected.isNotEmpty()) {
-                Surface(modifier = if (leadingContent != null) Modifier.statusBarsPadding() else Modifier, color = colors.primaryContainer, shape = RoundedCornerShape(20.dp)) {
+                AppSurface(modifier = if (leadingContent != null) Modifier.statusBarsPadding() else Modifier, color = colors.primaryContainer, shape = RoundedCornerShape(20.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         IconButton({ selected = emptySet() }) { Icon(Icons.Outlined.Close, label("Clear selection", "নির্বাচন বাতিল")) }
                         Text("${selected.size}", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
@@ -522,7 +522,7 @@ internal fun PrivateVaultScreen(model: DriveViewModel, modifier: Modifier = Modi
                     if (filtered.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) { Text(label("Add photos, videos or files to your protected space. Originals are removed only after the encrypted cloud copy is verified.", "সুরক্ষিত জায়গায় ছবি, ভিডিও বা ফাইল যোগ করুন। Encrypted cloud copy যাচাই হওয়ার পরেই মূল ফাইল মুছবে।"), Modifier.padding(vertical = 20.dp), style = MaterialTheme.typography.bodyMedium) }
                     items(filtered, key = { it.id }) { item ->
                         var itemMenu by remember { mutableStateOf(false) }
-                        Surface(
+                        AppSurface(
                             Modifier.fillMaxWidth().combinedClickable(onClick = {
                                 if (selected.isNotEmpty()) {
                                     selected = if (item.id in selected) selected - item.id else selected + item.id

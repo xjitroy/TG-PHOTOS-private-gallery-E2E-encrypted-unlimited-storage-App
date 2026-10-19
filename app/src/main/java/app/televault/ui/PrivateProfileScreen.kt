@@ -96,7 +96,7 @@ internal fun PrivateProfileScreen(model: DriveViewModel, favorites: List<MediaEn
         }.sortedWith(compareByDescending<MediaEntry> { it.date }.thenBy { it.id })
     }
     Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false, securePolicy = SecureFlagPolicy.SecureOn)) {
-        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        AppSurface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Column(Modifier.fillMaxSize().safeDrawingPadding()) {
                 TopAppBar(title = { Text(label("Profile", "প্রোফাইল")) }, navigationIcon = { IconButton(close) { Icon(Icons.Outlined.ArrowBack, label("Back", "ফিরুন")) } }, actions = {
                     IconButton({
@@ -118,7 +118,7 @@ internal fun PrivateProfileScreen(model: DriveViewModel, favorites: List<MediaEn
                 }
                 Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     listOf("Photos" to favorites.count { it.mime.startsWith("image/") }, "Videos" to favorites.count { it.mime.startsWith("video/") }, "Favorites" to favorites.size).forEach { (title, count) ->
-                        Surface(Modifier.weight(1f), shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+                        AppSurface(Modifier.weight(1f), shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
                             Column(Modifier.padding(vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text("$count", style = MaterialTheme.typography.titleLarge)
                                 Text(title, style = MaterialTheme.typography.labelMedium)

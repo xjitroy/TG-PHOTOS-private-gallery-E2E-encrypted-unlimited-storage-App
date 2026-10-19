@@ -96,20 +96,34 @@ class LocalMediaRepository(private val context: Context) {
         scope.launch {
             latestIndex.subscriptionCount.map { it > 0 }.distinctUntilChanged().collectLatest { active ->
                 if (!active) return@collectLatest
-                val restoredGeneration = generation.get()
-                val stamp = accessStamp()
-                if (changes.value.isEmpty()) cache.read(stamp)?.let { publish(it, restoredGeneration, stamp) }
+                var restoredStamp: String? = null
                 val rootsChanged = documentRoots.map { Unit }
                 collectDeviceIndexUpdates(merge(storageEvents, refreshes, rootsChanged)) {
                     durationJob?.cancel()
                     durationRevision.incrementAndGet()
                     val epoch = generation.get()
                     val access = accessStamp()
+                    // Root grants may arrive after subscription. Retry the exact-stamp cache
+                    // before traversal, including stable photo-only/video-only permissions.
+                    if (changes.value.isEmpty() && restoredStamp != access) {
+                        restoredStamp = access
+                        cache.read(access)?.let { publish(it, epoch, access) }
+                    }
+                    var snapshotAt = android.os.SystemClock.elapsedRealtime()
                     scanningDocuments.value = true
                     scanFailed.value = false
                     try {
                         // Complete one scan. Changes arriving during it request one follow-up scan.
-                        val items = scanMutex.withLock { scan(true) { publish(it, epoch, access) } }
+                        val items = scanMutex.withLock {
+                            scan(true) { partial ->
+                                publish(partial, epoch, access)
+                                val now = android.os.SystemClock.elapsedRealtime()
+                                if (partial.isNotEmpty() && now - snapshotAt >= 2000 && !scanFailed.value) {
+                                    persist(partial, epoch, access)
+                                    snapshotAt = now
+                                }
+                            }
+                        }
                         publish(items, epoch, access)
                         if (!scanFailed.value) persist(items, epoch, access)
                         readMissingDurations(items, epoch, access)
@@ -299,9 +313,11 @@ class LocalMediaRepository(private val context: Context) {
                     scanFailed.value = true
                 }
             }
+            // Do not make photos wait for the later audio/documents query or storage walk.
+            if (progressive && result.isNotEmpty()) partial(result.distinctBy { indexedUris[it.uri] ?: DeviceFileAccess.identity(it.uri) }.sortedByDescending { it.date })
         }
         // MediaStore results become visible before a potentially large shared-storage traversal.
-        if (progressive) partial(result.sortedByDescending { it.date })
+        if (progressive) partial(result.distinctBy { indexedUris[it.uri] ?: DeviceFileAccess.identity(it.uri) }.sortedByDescending { it.date })
         val rootsToScan = if (includeAllFiles) documentRoots.value else emptyList()
         scannedFiles.value = 0
         if (includeAllFiles && DeviceFileAccess.granted(context)) {
@@ -311,30 +327,43 @@ class LocalMediaRepository(private val context: Context) {
             }
         }
         val visited = mutableSetOf<String>()
+        var lastTreePublish = android.os.SystemClock.elapsedRealtime()
         for (rootUri in rootsToScan) {
             coroutineContext.ensureActive()
             try {
+                val rootId = DocumentsContract.getTreeDocumentId(rootUri)
                 val root = DocumentFile.fromTreeUri(context, rootUri) ?: continue
-                val pending = java.util.ArrayDeque<Pair<DocumentFile, String>>()
-                pending.add(root to (root.name ?: "Documents"))
+                val pending = java.util.ArrayDeque<Pair<String, String>>()
+                pending.add(rootId to (root.name ?: "Documents"))
                 while (pending.isNotEmpty()) {
                     coroutineContext.ensureActive()
                     val (directory, path) = pending.removeFirst()
-                    val identity = directory.uri.authority + ":" + DocumentsContract.getDocumentId(directory.uri)
-                    if (!visited.add(identity)) continue
-                    for (entry in directory.listFiles()) {
-                        coroutineContext.ensureActive()
-                        if (entry.isDirectory) {
-                            val next = "$path/${entry.name ?: "Folder"}"
-                            if (app.televault.domain.DeviceFileVisibility.visible(next)) pending.add(entry to next)
-                        } else if (entry.isFile && entry.canRead()) {
-                            val mime = app.televault.domain.MediaCategories.videoMime(entry.name, entry.type ?: "application/octet-stream")
-                            val id = entry.uri.authority + ":" + DocumentsContract.getDocumentId(entry.uri)
-                            if (!visited.add(id)) continue
-                            val modified = entry.lastModified()
-                            scannedFiles.value++
-                            if (app.televault.domain.DeviceFileVisibility.visible(path)) result += LocalMedia(entry.uri, entry.name ?: "Document", mime, entry.length(), modified, modified / 1000, path)
+                    if (!visited.add("${rootUri.authority}:$directory")) continue
+                    val children = DocumentsContract.buildChildDocumentsUriUsingTree(rootUri, directory)
+                    // One metadata cursor per directory instead of repeated DocumentFile
+                    // Binder queries for type/name/size/modified/readability on every child.
+                    val columns = arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_MIME_TYPE, DocumentsContract.Document.COLUMN_SIZE, DocumentsContract.Document.COLUMN_LAST_MODIFIED)
+                    context.contentResolver.query(children, columns, null, null, null)?.use { cursor ->
+                        while (cursor.moveToNext()) {
+                            coroutineContext.ensureActive()
+                            val id = cursor.getString(0) ?: continue
+                            val name = cursor.getString(1) ?: "Document"
+                            val mime = cursor.getString(2) ?: "application/octet-stream"
+                            if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
+                                val next = "$path/$name"
+                                if (app.televault.domain.DeviceFileVisibility.visible(next)) pending.add(id to next)
+                            } else if (visited.add("${rootUri.authority}:$id") && app.televault.domain.DeviceFileVisibility.visible(path)) {
+                                val uri = DocumentsContract.buildDocumentUriUsingTree(rootUri, id)
+                                val modified = cursor.getLong(4).coerceAtLeast(0)
+                                result += LocalMedia(uri, name, app.televault.domain.MediaCategories.videoMime(name, mime), cursor.getLong(3).coerceAtLeast(0), modified, modified / 1000, path)
+                                scannedFiles.value++
+                            }
                         }
+                    }
+                    val now = android.os.SystemClock.elapsedRealtime()
+                    if (progressive && result.isNotEmpty() && now - lastTreePublish >= 350) {
+                        partial(result.distinctBy { indexedUris[it.uri] ?: DeviceFileAccess.identity(it.uri) }.sortedByDescending { it.date })
+                        lastTreePublish = now
                     }
                 }
             } catch (e: CancellationException) {
@@ -343,6 +372,8 @@ class LocalMediaRepository(private val context: Context) {
                 // A revoked grant exposes no files; the user can select the folder again.
             } catch (_: IllegalArgumentException) {
                 // Provider removed or no longer a document tree.
+            } catch (_: Exception) {
+                scanFailed.value = true
             }
         }
         val knownDurations = changes.value.filter { it.durationMs > 0 }.associate { it.fingerprint to it.durationMs }

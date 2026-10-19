@@ -38,6 +38,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.withResumed
 import app.televault.domain.AuthProtocol
 import app.televault.domain.LockGrace
 import app.televault.security.LocalDeviceAuthentication
@@ -143,22 +144,29 @@ class MainActivity : ComponentActivity() {
     private val failures = mutableStateOf(0)
     private var appPasswordAvailable = false
     private var deviceGateRequired = false
-    private var authenticationGeneration = 0L
+    private val verification = app.televault.security.DeviceVerificationRequest()
+    private fun cancelVerification() {
+        // Revoke the generation before cancelling: some OEMs deliver cancellation synchronously.
+        verification.invalidate()
+        signal?.cancel()
+        signal = null
+        promptRunning.value = false
+    }
+    private fun retryVerification(phonePin: Boolean = false) {
+        if (!lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) return
+        cancelVerification()
+        authenticate(preferCredential = phonePin) {}
+    }
     private fun openPassword() {
         if (!appPasswordAvailable) return
         appLock.revoke()
-        authenticationGeneration++
-        signal?.cancel()
-        pending = null
-        promptRunning.value = false
+        cancelVerification()
         authenticated.value = false
         vaultModel?.lock()
         passwordRequested.value = true
     }
     private val authenticated = mutableStateOf(false)
     private val promptRunning = mutableStateOf(false)
-    private var pending: (() -> Unit)? = null
-    private var credentialInFlight = false
     private var backgroundAt = -1L
     private var graceMinutes = 2
     private val appLock by lazy { (application as TeleVaultApplication).appLockStore }
@@ -181,103 +189,103 @@ class MainActivity : ComponentActivity() {
         appLock.revoke()
         grantChecked.value = false
         revokePiP()
-        authenticationGeneration++
-        signal?.cancel()
-        pending = null
-        promptRunning.value = false
+        cancelVerification()
         passwordRequested.value = false
         authenticated.value = false
         vaultModel?.lock()
     }
-    private var credentialGeneration: Long? = null
     private var signal: CancellationSignal? = null
     private val credential = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        val completedGeneration = credentialGeneration
-        credentialGeneration = null
-        credentialInFlight = false
-        if (completedGeneration == null || completedGeneration != authenticationGeneration || pending == null) {
-            Handler(Looper.getMainLooper()).post {
-                if (!isFinishing && !isDestroyed && lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) && deviceGateRequired && !authenticated.value && !passwordRequested.value && !promptRunning.value) authenticate {}
-            }
-            return@registerForActivityResult
-        }
+        val token = verification.credentialGeneration ?: return@registerForActivityResult
+        val complete = verification.take(token) ?: return@registerForActivityResult
         promptRunning.value = false
-        val complete = pending
-        pending = null
+        signal = null
         if (result.resultCode == RESULT_OK) {
             failures.value = 0
             passwordRequested.value = false
             markAuthenticated()
-            complete?.invoke()
+            complete()
         }
     }
-    private fun authenticate(sensitive: Boolean = false, complete: () -> Unit) {
-        if (pending != null || credentialInFlight) return
+    private fun authenticate(sensitive: Boolean = false, preferCredential: Boolean = false, complete: () -> Unit) {
+        if (!lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) return
         val keyguard = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
         if (!keyguard.isDeviceSecure) {
             startActivity(Intent(Settings.ACTION_SECURITY_SETTINGS))
             return
         }
-        val requestGeneration = ++authenticationGeneration
-        pending = complete
+        val requestGeneration = verification.begin(complete) ?: return
         promptRunning.value = true
         fun pin() {
-            val intent = keyguard.createConfirmDeviceCredentialIntent("TG Photos", if (sensitive) "Verify this file action" else "Unlock your private gallery")
-            if (intent != null) {
-                credentialInFlight = true
-                credentialGeneration = requestGeneration
-                credential.launch(intent)
-            } else {
-                pending = null
-                promptRunning.value = false
+            if (requestGeneration != verification.generation) return
+            try {
+                val intent = keyguard.createConfirmDeviceCredentialIntent("TG Photos", if (sensitive) "Verify this file action" else "Unlock your private gallery")
+                if (intent != null && verification.credential(requestGeneration)) credential.launch(intent) else cancelVerification()
+            } catch (_: Exception) {
+                cancelVerification()
             }
         }
-        if (Build.VERSION.SDK_INT < 28) {
+        if (preferCredential || Build.VERSION.SDK_INT < 28) {
             pin()
             return
         }
         val executor = java.util.concurrent.Executor { Handler(Looper.getMainLooper()).post(it) }
-        val builder = BiometricPrompt.Builder(this).setTitle("TG Photos").setSubtitle(if (sensitive) "Verify this file action" else "Verify to open your private gallery")
-        if (Build.VERSION.SDK_INT >= 30) {
-            builder.setAllowedAuthenticators(android.hardware.biometrics.BiometricManager.Authenticators.BIOMETRIC_STRONG or android.hardware.biometrics.BiometricManager.Authenticators.DEVICE_CREDENTIAL)
-        } else if (Build.VERSION.SDK_INT >= 29) {
-            builder.setDeviceCredentialAllowed(true)
-        } else {
-            builder.setNegativeButton("Use phone PIN", executor) { _, _ -> if (requestGeneration == authenticationGeneration) pin() }
-        }
-        signal = CancellationSignal()
-        builder.build().authenticate(
-            signal!!,
-            executor,
-            object : BiometricPrompt.AuthenticationCallback() {
-                override fun onAuthenticationFailed() {
-                    if (requestGeneration != authenticationGeneration) return
-                    failures.value++
-                    if (!sensitive && failures.value >= 3 && appPasswordAvailable) openPassword()
-                }
-                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
-                    if (requestGeneration != authenticationGeneration) return
-                    val action = pending
-                    pending = null
-                    promptRunning.value = false
-                    failures.value = 0
-                    passwordRequested.value = false
-                    markAuthenticated()
-                    action?.invoke()
-                }
-                override fun onAuthenticationError(code: Int, message: CharSequence) {
-                    if (requestGeneration != authenticationGeneration) return
-                    if (code in setOf(BiometricPrompt.BIOMETRIC_ERROR_LOCKOUT, BiometricPrompt.BIOMETRIC_ERROR_LOCKOUT_PERMANENT) && (sensitive || appPasswordAvailable)) {
-                        if (sensitive) pin() else openPassword()
-                    } else if (code in setOf(BiometricPrompt.BIOMETRIC_ERROR_NO_BIOMETRICS, BiometricPrompt.BIOMETRIC_ERROR_HW_NOT_PRESENT, BiometricPrompt.BIOMETRIC_ERROR_HW_UNAVAILABLE)) {
-                        pin()
-                    } else if (!credentialInFlight) {
-                        pending = null
+        try {
+            val builder = BiometricPrompt.Builder(this).setTitle("TG Photos").setSubtitle(if (sensitive) "Verify this file action" else "Verify to open your private gallery")
+            if (Build.VERSION.SDK_INT >= 30) {
+                builder.setAllowedAuthenticators(android.hardware.biometrics.BiometricManager.Authenticators.BIOMETRIC_STRONG or android.hardware.biometrics.BiometricManager.Authenticators.DEVICE_CREDENTIAL)
+            } else if (Build.VERSION.SDK_INT >= 29) {
+                builder.setDeviceCredentialAllowed(true)
+            } else {
+                builder.setNegativeButton("Use phone PIN", executor) { _, _ -> pin() }
+            }
+            signal = CancellationSignal()
+            builder.build().authenticate(
+                signal!!,
+                executor,
+                object : BiometricPrompt.AuthenticationCallback() {
+                    override fun onAuthenticationFailed() {
+                        if (requestGeneration != verification.generation) return
+                        failures.value++
+                        if (!sensitive && failures.value >= 3 && appPasswordAvailable) openPassword()
+                    }
+                    override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                        val action = verification.take(requestGeneration) ?: return
+                        signal = null
                         promptRunning.value = false
+                        failures.value = 0
+                        passwordRequested.value = false
+                        markAuthenticated()
+                        action()
+                    }
+                    override fun onAuthenticationError(code: Int, message: CharSequence) {
+                        if (requestGeneration != verification.generation) return
+                        if (code in setOf(BiometricPrompt.BIOMETRIC_ERROR_LOCKOUT, BiometricPrompt.BIOMETRIC_ERROR_LOCKOUT_PERMANENT) && !sensitive && appPasswordAvailable) {
+                            openPassword()
+                        } else if (code in setOf(BiometricPrompt.BIOMETRIC_ERROR_LOCKOUT, BiometricPrompt.BIOMETRIC_ERROR_LOCKOUT_PERMANENT, BiometricPrompt.BIOMETRIC_ERROR_NO_BIOMETRICS, BiometricPrompt.BIOMETRIC_ERROR_HW_NOT_PRESENT, BiometricPrompt.BIOMETRIC_ERROR_HW_UNAVAILABLE)) {
+                            pin()
+                        } else if (!verification.credentialInFlight) {
+                            cancelVerification()
+                        }
                     }
                 }
+            )
+        } catch (_: Exception) {
+            if (requestGeneration == verification.generation) cancelVerification()
+        }
+    }
+    override fun onPostResume() {
+        super.onPostResume()
+        // Activity results normally arrive before RESUMED. Recover OEM-dropped results only
+        // after returning from the external credential screen, never while it is displayed.
+        val token = verification.generation
+        lockHandler.postDelayed({
+            if (!isFinishing && !isDestroyed && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) && token == verification.generation && verification.resumedWithoutCredentialResult()) {
+                signal?.cancel()
+                signal = null
+                promptRunning.value = false
             }
-        )
+        }, 500)
     }
     override fun onStart() {
         super.onStart()
@@ -289,6 +297,11 @@ class MainActivity : ComponentActivity() {
     }
     override fun onStop() {
         super.onStop()
+        if (verification.background()) {
+            signal?.cancel()
+            signal = null
+            promptRunning.value = false
+        }
         if (!isChangingConfigurations && !videoPipVisible.value) {
             backgroundAt = SystemClock.elapsedRealtime()
             lockHandler.removeCallbacks(expireLock)
@@ -312,9 +325,7 @@ class MainActivity : ComponentActivity() {
         }
     }
     override fun onDestroy() {
-        authenticationGeneration++
-        pending = null
-        signal?.cancel()
+        cancelVerification()
         lockHandler.removeCallbacks(expireLock)
         if (!isChangingConfigurations) {
             vaultModel?.lock()
@@ -385,9 +396,9 @@ class MainActivity : ComponentActivity() {
                 if (authenticated.value) return@LaunchedEffect
                 grantChecked.value = false
                 if (!deviceGateRequired || configuredLock == null || passwordRequested.value) return@LaunchedEffect
-                val generation = authenticationGeneration
+                val generation = verification.generation
                 val permitted = appLock.permits(grantScope, lockGraceMinutes)
-                if (generation == authenticationGeneration && grantScope == drive.guidanceScope && !protection.blocked()) {
+                if (generation == verification.generation && grantScope == drive.guidanceScope && !protection.blocked()) {
                     if (permitted) {
                         authenticatedDay = currentLockDay()
                         authenticated.value = true
@@ -427,9 +438,9 @@ class MainActivity : ComponentActivity() {
                                         Text(label("Finding your encrypted Drive…", "আপনার এনক্রিপ্টেড Drive খোঁজা হচ্ছে…"))
                                     }
                                 } else {
-                                    val setupGeneration = authenticationGeneration
+                                    val setupGeneration = verification.generation
                                     VaultForm(driveState, drive) { verified ->
-                                        if (verified && setupGeneration == authenticationGeneration) {
+                                        if (verified && setupGeneration == verification.generation) {
                                             failures.value = 0
                                             markAuthenticated()
                                         }
@@ -451,15 +462,23 @@ class MainActivity : ComponentActivity() {
                         } else {
                             // Do not compose photos or viewers behind a translucent system prompt.
                             BackHandler { if (passwordRequested.value) expireAuthentication() else moveTaskToBack(true) }
-                            LaunchedEffect(deviceGateRequired, grantChecked.value) { if (deviceGateRequired && grantChecked.value && !passwordRequested.value) authenticate {} }
+                            LaunchedEffect(deviceGateRequired, grantChecked.value) {
+                                lifecycle.withResumed {
+                                    if (deviceGateRequired && grantChecked.value && !passwordRequested.value) authenticate {}
+                                }
+                            }
                             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                                if (passwordRequested.value) {
-                                    val passwordGeneration = authenticationGeneration
+                                if (!grantChecked.value && !passwordRequested.value) {
+                                    // Keep a quiet theme-matched gate while the encrypted receipt
+                                    // is checked; valid Off/daily grants never flash password UI.
+                                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { app.televault.ui.SecureLoader(Modifier.size(24.dp)) }
+                                } else if (passwordRequested.value) {
+                                    val passwordGeneration = verification.generation
                                     Column(Modifier.fillMaxSize()) {
                                         TextButton({ expireAuthentication() }, Modifier.safeDrawingPadding()) { Text(label("Back to fingerprint / phone PIN", "ফিঙ্গারপ্রিন্ট / ফোনের PIN-এ ফিরুন")) }
                                         Box(Modifier.weight(1f)) {
                                             VaultForm(driveState, drive) { verified ->
-                                                if (verified && passwordRequested.value && passwordGeneration == authenticationGeneration) {
+                                                if (verified && passwordRequested.value && passwordGeneration == verification.generation) {
                                                     failures.value = 0
                                                     passwordRequested.value = false
                                                     markAuthenticated()
@@ -468,7 +487,7 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }
                                 } else {
-                                    UnlockScreen(unlock = { authenticate {} }, busy = promptRunning.value || !grantChecked.value, notice = if (failures.value >= 3) label("Biometric verification failed. Try your phone PIN or available vault-password option.", "বায়োমেট্রিক যাচাই হয়নি। ফোনের PIN বা ভল্ট পাসওয়ার্ডের অপশন ব্যবহার করুন।") else "", recovery = if (appPasswordAvailable && grantChecked.value) ({ openPassword() }) else null, back = { moveTaskToBack(true) })
+                                    UnlockScreen(unlock = { retryVerification() }, busy = promptRunning.value, ready = grantChecked.value, phonePin = if (grantChecked.value) ({ retryVerification(true) }) else null, notice = if (failures.value >= 3) label("Biometric verification failed. Try your phone PIN or available vault-password option.", "বায়োমেট্রিক যাচাই হয়নি। ফোনের PIN বা ভল্ট পাসওয়ার্ডের অপশন ব্যবহার করুন।") else "", recovery = if (appPasswordAvailable && grantChecked.value) ({ openPassword() }) else null, back = { moveTaskToBack(true) })
                                 }
                             }
                         }

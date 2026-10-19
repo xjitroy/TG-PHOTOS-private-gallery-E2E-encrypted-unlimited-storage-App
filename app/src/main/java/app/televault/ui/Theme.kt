@@ -88,7 +88,6 @@ fun TeleVaultTheme(dynamicColor: Boolean = true, appearanceMode: AppearanceMode 
         }
         onDispose { }
     }
-    val base = if (dark) Dark else Light
     val generated = remember(context, dynamicColor, dark) {
         when {
             dynamicColor && Build.VERSION.SDK_INT >= 31 -> if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
@@ -97,28 +96,9 @@ fun TeleVaultTheme(dynamicColor: Boolean = true, appearanceMode: AppearanceMode 
         }
     }
     val glass = interfaceStyle == InterfaceStyle.GLASS
-    // Material You keeps all wallpaper-derived roles together, including their paired content
-    // colors. Glass retains the app's complementary accents and blue-gray neutral surfaces.
-    val palette = remember(generated, glass, base) {
-        if (!glass) {
-            generated
-        } else {
-            generated.copy(
-                background = base.background, onBackground = base.onBackground,
-                surface = base.surface, onSurface = base.onSurface,
-                surfaceVariant = base.surfaceVariant, onSurfaceVariant = base.onSurfaceVariant,
-                surfaceContainerLowest = base.surfaceContainerLowest, surfaceContainerLow = base.surfaceContainerLow,
-                surfaceContainer = base.surfaceContainer, surfaceContainerHigh = base.surfaceContainerHigh,
-                surfaceContainerHighest = base.surfaceContainerHighest, surfaceDim = base.surfaceDim,
-                surfaceBright = base.surfaceBright, outline = base.outline, outlineVariant = base.outlineVariant,
-                inverseSurface = base.inverseSurface, inverseOnSurface = base.inverseOnSurface,
-                secondary = base.secondary, onSecondary = base.onSecondary,
-                secondaryContainer = base.secondaryContainer, onSecondaryContainer = base.onSecondaryContainer,
-                tertiary = base.tertiary, onTertiary = base.onTertiary,
-                tertiaryContainer = base.tertiaryContainer, onTertiaryContainer = base.onTertiaryContainer
-            )
-        }
-    }
+    // Keep every wallpaper role and its paired readable content color in either style.
+    // Glass treatment is independent of the Material You color switch.
+    val palette = generated
     // Static app-owned color wash. No sampling of photos, screenshots, wallpaper bitmaps
     // or expensive per-frame blur; the same composition tree survives style changes.
     val backdrop = remember(palette, glass, dark) {

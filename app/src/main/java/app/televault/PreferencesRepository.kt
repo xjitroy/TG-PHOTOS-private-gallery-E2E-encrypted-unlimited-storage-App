@@ -48,6 +48,21 @@ class PreferencesRepository(context: Context) {
     suspend fun setTrashCooldownEnabled(enabled: Boolean) {
         store.edit { it[cooldown] = enabled }
     }
+    private val exploreIntroKey = booleanPreferencesKey("explore_intro_seen")
+    val exploreIntroSeen = store.data.catch { error -> if (error is IOException) emit(emptyPreferences()) else throw error }.map { it[exploreIntroKey] ?: false }
+    suspend fun markExploreIntroSeen() {
+        store.edit { it[exploreIntroKey] = true }
+    }
+    private val returnFocusKey = booleanPreferencesKey("return_to_viewed_item")
+    val returnToViewedItem = store.data.catch { error -> if (error is IOException) emit(emptyPreferences()) else throw error }.map { it[returnFocusKey] ?: true }
+    suspend fun setReturnToViewedItem(enabled: Boolean) {
+        store.edit { it[returnFocusKey] = enabled }
+    }
+    private val tapControlsKey = booleanPreferencesKey("tap_to_reveal_viewer_controls")
+    val tapToRevealControls = store.data.catch { error -> if (error is IOException) emit(emptyPreferences()) else throw error }.map { it[tapControlsKey] ?: false }
+    suspend fun setTapToRevealControls(enabled: Boolean) {
+        store.edit { it[tapControlsKey] = enabled }
+    }
     private val animation = intPreferencesKey("animation_mode")
     private val launcher = stringPreferencesKey("launcher_name")
     private val launcherChanges = kotlinx.coroutines.sync.Mutex()

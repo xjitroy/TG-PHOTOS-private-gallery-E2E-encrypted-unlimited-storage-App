@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -46,7 +47,7 @@ internal fun PersonPortrait(person: PersonCard, modifier: Modifier = Modifier) {
         value = slot.publish()
     }
     DisposableEffect(slot) { onDispose { slot.retire() } }
-    Surface(modifier.clip(CircleShape), shape = CircleShape, color = MaterialTheme.colorScheme.tertiaryContainer) {
+    AppSurface(modifier.clip(CircleShape), shape = CircleShape, color = MaterialTheme.colorScheme.tertiaryContainer) {
         image?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) } ?: Box(contentAlignment = Alignment.Center) { Icon(Icons.Outlined.Person, null) }
     }
 }
@@ -84,7 +85,7 @@ internal fun PeopleAlbums(state: PeopleState, model: DriveViewModel, open: (Pers
             Switch(state.enabled, { value -> if (value) consent = true else model.setPeopleEnabled(false) })
         }
         if (state.enabled && !pack.installed) {
-            Surface(shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.secondaryContainer) {
+            AppSurface(shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.secondaryContainer) {
                 Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("New on-device face recognition", style = MaterialTheme.typography.titleMedium)
                     Text("YuNet + SFace (39 MB) downloads automatically after setup. Recognition runs on-device; no photo goes to an AI service. Previous names and confirmed tags are kept; automatic groups are rechecked with the new models.", style = MaterialTheme.typography.bodySmall)
@@ -101,7 +102,7 @@ internal fun PeopleAlbums(state: PeopleState, model: DriveViewModel, open: (Pers
             }
         }
         if (state.enabled && pack.installed) {
-            Surface(shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = .6f)) {
+            AppSurface(shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = .6f)) {
                 Column(Modifier.fillMaxWidth().padding(14.dp)) {
                     Text(if (state.busy) label("Finding faces gently in the background…", "পটভূমিতে ধীরে মুখ শনাক্ত হচ্ছে…") else label("${state.scanned} photos / video previews checked", "${state.scanned}টি ছবি / ভিডিও প্রিভিউ দেখা হয়েছে"), style = MaterialTheme.typography.bodyMedium)
                     Text(label("${known.size} groups · ${unsorted.size} unsorted faces · ${candidates.size} suggestions", "${known.size}টি গ্রুপ · ${unsorted.size}টি অসম্পূর্ণ মুখ · ${candidates.size}টি পরামর্শ"), style = MaterialTheme.typography.bodySmall)
@@ -178,17 +179,17 @@ internal fun PeopleAlbums(state: PeopleState, model: DriveViewModel, open: (Pers
                 continuous = false
                 review = null
             }, title = { Text(label("Same person? · ${candidates.size} remaining", "একই ব্যক্তি? · ${candidates.size}টি বাকি")) }, text = {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(Modifier.verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
                     Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
                         PersonPortrait(current, Modifier.size(100.dp))
                         PersonPortrait(target, Modifier.size(100.dp))
                     }
                     Text(target.name.ifBlank { label("Review this match", "মিলটি যাচাই করুন") }, Modifier.padding(top = 12.dp))
-                    Text(label("Only confirm if you recognize them.", "চিনতে পারলেই নিশ্চিত করুন।"), style = MaterialTheme.typography.bodySmall)
+                    Text(if (current.reviewAnswer == null) label("Two matching reviews are required. This first answer will not change profiles.", "দুইবার একই রিভিউ প্রয়োজন। প্রথম উত্তরে প্রোফাইল বদলাবে না।") else label("Review this pair again. Choose the same answer to confirm; a changed answer needs another review.", "জোড়াটি আবার যাচাই করুন। একই উত্তর হলে নিশ্চিত হবে; উত্তর বদলালে আবার যাচাই প্রয়োজন।"), style = MaterialTheme.typography.bodySmall)
                 }
             }, confirmButton = {
                 TextButton({
-                    deferred += candidate.id
+                    if (current.reviewAnswer == true) deferred += candidate.id
                     model.peopleAction { model.people.review(candidate.id, true, target.id) }
                     review = null
                 }) { Text(label("Same person", "একই ব্যক্তি")) }
@@ -199,7 +200,7 @@ internal fun PeopleAlbums(state: PeopleState, model: DriveViewModel, open: (Pers
                         review = null
                     }) { Text(label("Later", "পরে")) }
                     TextButton({
-                        deferred += candidate.id
+                        if (current.reviewAnswer == false) deferred += candidate.id
                         model.peopleAction { model.people.review(candidate.id, false, target.id) }
                         review = null
                     }) { Text(label("Different", "আলাদা")) }
@@ -215,7 +216,7 @@ internal fun PeopleAlbums(state: PeopleState, model: DriveViewModel, open: (Pers
 internal fun AllPeopleDialog(state: PeopleState, close: () -> Unit, open: (PersonCard) -> Unit) {
     var faceQuery by remember { mutableStateOf("") }
     Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false, securePolicy = androidx.compose.ui.window.SecureFlagPolicy.SecureOn)) {
-        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        AppSurface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Column(Modifier.fillMaxSize().safeDrawingPadding().padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(label("People", "মানুষ"), Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall)

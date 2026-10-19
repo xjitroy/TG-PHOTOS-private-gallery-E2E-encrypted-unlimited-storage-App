@@ -127,7 +127,7 @@ internal fun PhotoMemories(cards: List<PhotoMemory>, model: DriveViewModel, open
 
 @Composable
 internal fun PhotoSectionPills(section: String, choose: (String) -> Unit, modifier: Modifier = Modifier) {
-    Surface(modifier, shape = RoundedCornerShape(32.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, shadowElevation = 4.dp) {
+    AppSurface(modifier, shape = RoundedCornerShape(32.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, shadowElevation = 4.dp) {
         Row(Modifier.padding(horizontal = 6.dp, vertical = 2.dp).horizontalScroll(androidx.compose.foundation.rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
             listOf("All", "Photos", "Videos", "Favorites").forEach { key ->
                 FilterChip(section == key, { choose(key) }, label = { Text(sectionLabel(key)) }, shape = RoundedCornerShape(28.dp), border = null, colors = FilterChipDefaults.filterChipColors(containerColor = Color.Transparent, selectedContainerColor = MaterialTheme.colorScheme.primaryContainer))

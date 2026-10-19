@@ -5,6 +5,7 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.*
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculateZoom
@@ -127,7 +128,7 @@ internal fun AlbumsGrid(device: List<AlbumTile>, cloud: List<AlbumTile>, model: 
         item(key = "cloud-title", span = { GridItemSpan(maxLineSpan) }) { SectionTitle(label("Cloud albums", "ক্লাউড অ্যালবাম"), label("Create", "তৈরি"), create) }
         if (cloud.isEmpty()) {
             item(key = "empty-cloud", span = { GridItemSpan(maxLineSpan) }) {
-                Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+                AppSurface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
                     Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Outlined.CloudQueue, null, tint = MaterialTheme.colorScheme.primary)
                         Spacer(Modifier.width(12.dp))
@@ -174,7 +175,7 @@ private fun AlbumCover(tile: AlbumTile, model: DriveViewModel, modifier: Modifie
                 )
             }
             if (tile.cloud) {
-                Surface(Modifier.align(Alignment.TopEnd).padding(6.dp), shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = .94f)) {
+                AppSurface(Modifier.align(Alignment.TopEnd).padding(6.dp), shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = .94f)) {
                     Row(Modifier.padding(horizontal = 7.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Outlined.CloudDone, label("Cloud", "ক্লাউড"), Modifier.size(12.dp), tint = MaterialTheme.colorScheme.primary)
                         Spacer(Modifier.width(3.dp))
@@ -309,6 +310,8 @@ internal fun MediaGrid(files: List<MediaEntry>, selected: Set<String>, model: Dr
             }
         }
     }
+    LocateBrowseFocus(keyPositions, { grid.firstVisibleItemIndex }, { grid.scrollToItem(it) }, { grid.animateScrollBy(it, tween(180)) })
+    val focusPending = LocalBrowseFocus.current?.pendingId
     val geometry = remember(grid) { intArrayOf(columns, if (useMosaic) 1 else 0) }
     var touched by remember(grid) { mutableStateOf(false) }
     val input = remember(grid) {
@@ -319,8 +322,10 @@ internal fun MediaGrid(files: List<MediaEntry>, selected: Set<String>, model: Dr
             }
         }
     }
+    val browseFocus = LocalBrowseFocus.current
+    LaunchedEffect(browseFocus?.highlightedId) { if (browseFocus?.highlightedId != null) touched = true }
     LaunchedEffect(grid, files.firstOrNull()?.id) {
-        if (!touched) grid.requestScrollToItem(0)
+        if (!touched && focusPending == null) grid.requestScrollToItem(0)
     }
     LaunchedEffect(grid, columns, useMosaic) {
         val next = if (useMosaic) 1 else 0
@@ -339,13 +344,13 @@ internal fun MediaGrid(files: List<MediaEntry>, selected: Set<String>, model: Dr
         anchor = grid.layoutInfo.visibleItemsInfo.firstOrNull { item -> item.key is String && !(item.key as String).startsWith("date:") }?.key as? String
         densityChanged(value)
     }
-    LazyVerticalGrid(columns = GridCells.Fixed(columns), state = grid, modifier = Modifier.fillMaxSize().nestedScroll(input).then(dragModifier).timelinePinch(density, change, enabled = !drag.active), contentPadding = PaddingValues(bottom = 92.dp), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+    LazyVerticalGrid(columns = GridCells.Fixed(columns), state = grid, modifier = Modifier.fillMaxSize().browseFocusViewport().nestedScroll(input).then(dragModifier).timelinePinch(density, change, enabled = !drag.active), contentPadding = PaddingValues(bottom = browseFocusBottom(92.dp)), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         if (leadingContent != null) item(key = "timeline-introduction", span = { GridItemSpan(maxLineSpan) }, contentType = "timeline-introduction") { leadingContent() }
         groups.forEach { (date, group) ->
             stickyHeader(key = "date:$date") {
                 if (showDateHeaders) {
                     Box(Modifier.fillMaxWidth().padding(top = if (leadingContent != null) WindowInsets.statusBars.asPaddingValues().calculateTopPadding() else 0.dp, bottom = 8.dp), contentAlignment = Alignment.Center) {
-                        Surface(shape = RoundedCornerShape(32.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = .94f), shadowElevation = 3.dp) {
+                        AppSurface(shape = RoundedCornerShape(32.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = .94f), shadowElevation = 3.dp) {
                             Text(date, Modifier.padding(horizontal = 18.dp, vertical = 10.dp), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium)
                         }
                     }
@@ -417,7 +422,7 @@ private fun MosaicPhotoBlock(files: List<MediaEntry>, block: MosaicLayout.Block,
 private fun MediaGridCell(entry: MediaEntry, selected: Set<String>, snapshot: DriveSnapshot, model: DriveViewModel, pixels: Int, click: (MediaEntry) -> Unit, hold: (MediaEntry) -> Unit, modifier: Modifier) {
     val chosen = entry.id in selected
     val scale by animateFloatAsState(if (chosen) .89f else 1f, tween(170), label = "Selection")
-    Box(modifier.clip(RoundedCornerShape(if (chosen) 16.dp else 4.dp)).background(MaterialTheme.colorScheme.surfaceContainerHighest).combinedClickable(onClick = { click(entry) }, onLongClick = { hold(entry) })) {
+    Box(modifier.clip(RoundedCornerShape(if (chosen) 16.dp else 4.dp)).browseFocus(entry.id).background(MaterialTheme.colorScheme.surfaceContainerHighest).combinedClickable(onClick = { click(entry) }, onLongClick = { hold(entry) })) {
         MediaThumbnail(
             entry,
             model,
@@ -439,22 +444,32 @@ private fun MediaGridCell(entry: MediaEntry, selected: Set<String>, snapshot: Dr
 }
 
 @Composable private fun BadgeIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, name: String, modifier: Modifier) {
-    Surface(modifier.padding(5.dp), color = Color.Black.copy(alpha = .52f), shape = RoundedCornerShape(14.dp)) { Icon(icon, name, Modifier.padding(4.dp).size(16.dp), tint = Color.White) }
+    AppSurface(modifier.padding(5.dp), color = Color.Black.copy(alpha = .52f), shape = RoundedCornerShape(14.dp)) { Icon(icon, name, Modifier.padding(4.dp).size(16.dp), tint = Color.White) }
 }
 
 @Composable
 internal fun DocumentTimeline(files: List<MediaEntry>, selected: Set<String>, model: DriveViewModel, density: Float, changed: (Float) -> Unit, open: (MediaEntry) -> Unit, hold: (MediaEntry) -> Unit, scroll: androidx.compose.foundation.lazy.LazyListState = androidx.compose.foundation.lazy.rememberLazyListState(), leadingContent: (@Composable () -> Unit)? = null, showDateHeaders: Boolean = true) {
     val groups = remember(files, TimelineZoom.period(density)) { timeGroups(files, density) }
-    LazyColumn(Modifier.fillMaxSize().timelinePinch(density, changed), state = scroll, contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 110.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    val positions = remember(groups, leadingContent != null) {
+        buildMap<String, Int> {
+            var index = if (leadingContent != null) 1 else 0
+            groups.values.forEach { entries ->
+                index++
+                entries.forEach { put(it.id, index++) }
+            }
+        }
+    }
+    LocateBrowseFocus(positions, { scroll.firstVisibleItemIndex }, { scroll.scrollToItem(it) }, { scroll.animateScrollBy(it, tween(180)) })
+    LazyColumn(Modifier.fillMaxSize().browseFocusViewport().timelinePinch(density, changed), state = scroll, contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = browseFocusBottom(110.dp)), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (leadingContent != null) item(key = "browse-introduction") { leadingContent() }
         groups.forEach { (date, entries) ->
             stickyHeader(key = "date:$date") {
                 if (showDateHeaders) Text(date, Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).padding(top = if (leadingContent != null) WindowInsets.statusBars.asPaddingValues().calculateTopPadding() else 0.dp).padding(vertical = 12.dp), style = MaterialTheme.typography.titleSmall) else Spacer(Modifier.fillMaxWidth().height(0.dp))
             }
             items(entries, key = { it.id }) { entry ->
-                Surface(shape = RoundedCornerShape(22.dp), color = if (entry.id in selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.animateItem().combinedClickable(onClick = { open(entry) }, onLongClick = { hold(entry) })) {
+                AppSurface(shape = RoundedCornerShape(22.dp), color = if (entry.id in selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.animateItem().browseFocus(entry.id).combinedClickable(onClick = { open(entry) }, onLongClick = { hold(entry) })) {
                     Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Surface(shape = RoundedCornerShape(16.dp), color = mediaAccentContainer(entry.mime)) { Icon(if (entry.mime.startsWith("audio/")) Icons.Outlined.AudioFile else Icons.Outlined.Description, null, Modifier.padding(14.dp).size(24.dp), tint = mediaAccent(entry.mime)) }
+                        AppSurface(shape = RoundedCornerShape(16.dp), color = mediaAccentContainer(entry.mime)) { Icon(if (entry.mime.startsWith("audio/")) Icons.Outlined.AudioFile else Icons.Outlined.Description, null, Modifier.padding(14.dp).size(24.dp), tint = mediaAccent(entry.mime)) }
                         Spacer(Modifier.width(14.dp))
                         Column(Modifier.weight(1f)) {
                             Text(entry.name, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -479,7 +494,7 @@ internal fun DeviceLibraryFolders(files: List<MediaEntry>, scroll: androidx.comp
         if (leadingContent != null) item(key = "browse-introduction") { leadingContent() }
         items(folders, key = { it.key }) { (path, entries) ->
             val colors = folderColors(path)
-            Surface(Modifier.animateItem().clickable { open(path) }, shape = RoundedCornerShape(24.dp), color = colors.container) {
+            AppSurface(Modifier.animateItem().clickable { open(path) }, shape = RoundedCornerShape(24.dp), color = colors.container) {
                 ListItem(headlineContent = { Text(path.substringAfterLast('/').ifBlank { path }) }, supportingContent = { Text("$path · ${entries.size} " + label("files", "ফাইল")) }, leadingContent = { Icon(Icons.Outlined.Folder, null, tint = colors.accent) }, trailingContent = { Icon(Icons.Outlined.ChevronRight, label("Open folder", "ফোল্ডার খুলুন")) }, colors = ListItemDefaults.colors(containerColor = Color.Transparent))
             }
         }

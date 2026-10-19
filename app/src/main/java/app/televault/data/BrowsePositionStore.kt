@@ -25,13 +25,14 @@ internal data class BrowsePosition(
     val index: Int = 0,
     val offset: Int = 0,
     val columns: Float = 4f,
-    val explore: String = ""
+    val explore: String = "",
+    val focusId: String = ""
 ) {
     fun safe(): BrowsePosition {
         val normal = BrowseResumePolicy.tab(tab)
         if (tab == "VAULT") return BrowsePosition(tab = "GALLERY", section = "Albums")
         if (normal != tab) return BrowsePosition()
-        return copy(explore = explore.takeIf { it in setOf("All videos", "Normal videos", "Movies", "Documents") }.orEmpty(), folder = folder?.take(4096), album = album?.take(4096), section = section.take(64), libraryPath = libraryPath.take(4096), libraryCategory = libraryCategory.take(64), index = index.coerceIn(0, 100000), offset = offset.coerceIn(0, 100000), columns = columns.takeIf { it.isFinite() }?.coerceIn(2f, 12f) ?: 4f)
+        return copy(focusId = focusId.take(4096), explore = explore.takeIf { it in setOf("All videos", "Normal videos", "Movies", "Documents") }.orEmpty(), folder = folder?.take(4096), album = album?.take(4096), section = section.take(64), libraryPath = libraryPath.take(4096), libraryCategory = libraryCategory.take(64), index = index.coerceIn(0, 100000), offset = offset.coerceIn(0, 100000), columns = columns.takeIf { it.isFinite() }?.coerceIn(2f, 12f) ?: 4f)
     }
 }
 
@@ -57,7 +58,7 @@ internal class BrowsePositionStore(private val context: Context, private val dri
                 try {
                     val row = JSONObject(bytes.toString(Charsets.UTF_8))
                     check(row.getInt("version") == 1 && epoch == drive.playbackEpoch)
-                    BrowsePosition(row.getString("tab"), row.getString("section"), row.optString("folder").takeIf { it.isNotEmpty() }, row.optString("album").takeIf { it.isNotEmpty() }, row.optBoolean("device"), row.optBoolean("galleryCloud"), row.optString("path"), row.optString("category", "All files"), row.optBoolean("recent"), row.optInt("index"), row.optInt("offset"), row.optDouble("columns", 4.0).toFloat(), row.optString("explore")).safe()
+                    BrowsePosition(row.getString("tab"), row.getString("section"), row.optString("folder").takeIf { it.isNotEmpty() }, row.optString("album").takeIf { it.isNotEmpty() }, row.optBoolean("device"), row.optBoolean("galleryCloud"), row.optString("path"), row.optString("category", "All files"), row.optBoolean("recent"), row.optInt("index"), row.optInt("offset"), row.optDouble("columns", 4.0).toFloat(), row.optString("explore"), row.optString("focusId")).safe()
                 } finally {
                     bytes.fill(0)
                 }
@@ -73,7 +74,7 @@ internal class BrowsePositionStore(private val context: Context, private val dri
             check(epoch == drive.playbackEpoch)
             val binding = drive.privateVaultBinding()
             val value = position.safe()
-            val bytes = JSONObject().put("version", 1).put("tab", value.tab).put("section", value.section).put("folder", value.folder.orEmpty()).put("album", value.album.orEmpty()).put("device", value.device).put("galleryCloud", value.galleryCloud).put("path", value.libraryPath).put("category", value.libraryCategory).put("recent", value.libraryRecent).put("index", value.index).put("offset", value.offset).put("columns", value.columns.toDouble()).put("explore", value.explore).toString().toByteArray()
+            val bytes = JSONObject().put("version", 1).put("tab", value.tab).put("section", value.section).put("folder", value.folder.orEmpty()).put("album", value.album.orEmpty()).put("device", value.device).put("galleryCloud", value.galleryCloud).put("path", value.libraryPath).put("category", value.libraryCategory).put("recent", value.libraryRecent).put("index", value.index).put("offset", value.offset).put("columns", value.columns.toDouble()).put("explore", value.explore).put("focusId", value.focusId).toString().toByteArray()
             val cipher = try {
                 check(bytes.size <= 32740)
                 drive.ocrEnvelope(bytes, "browse-position-v1", binding, false)

@@ -560,7 +560,7 @@ private fun transferPhase(phase: String) = when (phase) {
 private fun PreviewDialog(item: DriveFile, file: Uri?, close: () -> Unit, download: () -> Unit) {
     val context = LocalContext.current
     Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(Modifier.fillMaxSize()) {
+        AppSurface(Modifier.fillMaxSize()) {
             Column(Modifier.fillMaxSize().safeDrawingPadding()) {
                 TopAppBar(title = { Text(item.name, maxLines = 1) }, navigationIcon = { IconButton(close) { Icon(Icons.Outlined.Close, words("Close preview", "প্রিভিউ বন্ধ")) } }, actions = { IconButton(download) { Icon(Icons.Outlined.Download, words("Save original", "মূল ফাইল সংরক্ষণ")) } })
                 if (file == null) {

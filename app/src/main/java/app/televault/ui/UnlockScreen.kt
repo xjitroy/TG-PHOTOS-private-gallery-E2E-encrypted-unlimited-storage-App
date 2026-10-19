@@ -26,7 +26,7 @@ import app.televault.R
 
 /** App-owned presentation behind Android's protected biometric/device-credential prompt. */
 @Composable
-internal fun UnlockScreen(unlock: () -> Unit, busy: Boolean = false, notice: String = "", recovery: (() -> Unit)? = null, back: (() -> Unit)? = null) {
+internal fun UnlockScreen(unlock: () -> Unit, busy: Boolean = false, ready: Boolean = true, phonePin: (() -> Unit)? = null, notice: String = "", recovery: (() -> Unit)? = null, back: (() -> Unit)? = null) {
     val colors = MaterialTheme.colorScheme
     var entered by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { entered = true }
@@ -49,7 +49,9 @@ internal fun UnlockScreen(unlock: () -> Unit, busy: Boolean = false, notice: Str
                 Spacer(Modifier.height(8.dp))
                 Text("Private Gallery & Encrypted | Unlimited Storage", style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant, textAlign = TextAlign.Center)
                 Spacer(Modifier.height(18.dp))
-                Surface(
+                AppSurface(
+                    onClick = unlock,
+                    enabled = ready,
                     shape = CircleShape,
                     color = colors.primaryContainer,
                     modifier = Modifier.size(64.dp).graphicsLayer {
@@ -57,7 +59,7 @@ internal fun UnlockScreen(unlock: () -> Unit, busy: Boolean = false, notice: Str
                         scaleY = scale
                     }
                 ) {
-                    Box(contentAlignment = Alignment.Center) { Icon(Icons.Outlined.Fingerprint, null, Modifier.size(36.dp), tint = colors.onPrimaryContainer) }
+                    Box(contentAlignment = Alignment.Center) { Icon(Icons.Outlined.Fingerprint, label("Unlock gallery", "গ্যালারি আনলক করুন"), Modifier.size(36.dp), tint = colors.onPrimaryContainer) }
                 }
                 Spacer(Modifier.height(24.dp))
                 Text(label("Your memories.\nJust for you.", "আপনার স্মৃতি।\nশুধুই আপনার।"), textAlign = TextAlign.Center, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Medium)
@@ -73,11 +75,12 @@ internal fun UnlockScreen(unlock: () -> Unit, busy: Boolean = false, notice: Str
                 }
                 Spacer(Modifier.height(28.dp))
             }
-            Button(unlock, Modifier.fillMaxWidth().height(60.dp), enabled = !busy, shape = RoundedCornerShape(24.dp)) {
+            Button(unlock, Modifier.fillMaxWidth().height(60.dp), enabled = ready, shape = RoundedCornerShape(24.dp)) {
                 if (busy) SecureLoader(Modifier.size(22.dp)) else Icon(Icons.Outlined.Fingerprint, null)
                 Spacer(Modifier.width(10.dp))
-                Text(if (busy) label("Waiting for verification…", "যাচাইয়ের অপেক্ষায়…") else label("Unlock gallery", "গ্যালারি আনলক করুন"), style = MaterialTheme.typography.titleMedium)
+                Text(if (busy) label("Try verification again", "আবার যাচাই করুন") else label("Unlock gallery", "গ্যালারি আনলক করুন"), style = MaterialTheme.typography.titleMedium)
             }
+            phonePin?.let { TextButton(it, Modifier.fillMaxWidth()) { Text(label("Use phone PIN / password", "ফোনের PIN / পাসওয়ার্ড ব্যবহার করুন")) } }
             recovery?.let { TextButton(it, Modifier.padding(top = 10.dp)) { Text(label("Use main / recovery password", "মূল / রিকভারি পাসওয়ার্ড দিন")) } }
         }
     }

@@ -46,7 +46,7 @@ import kotlinx.coroutines.withContext
 
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
-internal fun VideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>, choose: (MediaEntry) -> Unit, model: DriveViewModel, current: MediaEntry, session: ViewerPlaybackSession, modifier: Modifier = Modifier, fullScreenChanged: (Boolean) -> Unit = {}, adjacent: (Int) -> Unit = {}, verticalPaging: Boolean = false, portraitChanged: (Boolean) -> Unit = {}, openWith: () -> Unit = {}, fullscreenExit: Int = 0, favorite: () -> Unit = {}, share: () -> Unit = {}, backup: (Boolean) -> Unit = {}, removeDevice: () -> Unit = {}, profile: () -> Unit = {}, closeViewer: () -> Unit = {}, movieDetails: @Composable () -> Unit = {}, controlsChanged: (Boolean) -> Unit = {}) {
+internal fun VideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>, choose: (MediaEntry) -> Unit, model: DriveViewModel, current: MediaEntry, session: ViewerPlaybackSession, modifier: Modifier = Modifier, fullScreenChanged: (Boolean) -> Unit = {}, adjacent: (Int) -> Unit = {}, verticalPaging: Boolean = false, portraitChanged: (Boolean) -> Unit = {}, openWith: () -> Unit = {}, fullscreenExit: Int = 0, favorite: () -> Unit = {}, share: () -> Unit = {}, backup: (Boolean) -> Unit = {}, removeDevice: () -> Unit = {}, profile: () -> Unit = {}, closeViewer: () -> Unit = {}, movieDetails: @Composable () -> Unit = {}, chrome: ViewerChromeState) {
     val identity = remember(current.id, current.size, current.date) { "${current.id}|${current.size}|${current.date}" }
     val epoch = remember(identity) { model.playbackEpoch }
     var resume by remember(identity) { mutableStateOf<Long?>(if (session.owns(identity)) 0L else null) }
@@ -61,7 +61,7 @@ internal fun VideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>, cho
         }
     }
     if (resume != null) {
-        ReadyVideoPlayer(uri, video, videos, choose, model, current, modifier, session, fullScreenChanged, adjacent, verticalPaging, portraitChanged, openWith, fullscreenExit, favorite, share, backup, removeDevice, profile, identity, epoch, resume!!, closeViewer, movieDetails, controlsChanged)
+        ReadyVideoPlayer(uri, video, videos, choose, model, current, modifier, session, fullScreenChanged, adjacent, verticalPaging, portraitChanged, openWith, fullscreenExit, favorite, share, backup, removeDevice, profile, identity, epoch, resume!!, closeViewer, movieDetails, chrome)
     } else {
         Box(modifier.fillMaxSize().background(Color.Black)) { MediaThumbnail(current, model, Modifier.fillMaxSize(), 384, androidx.compose.ui.layout.ContentScale.Fit) }
     }
@@ -69,7 +69,7 @@ internal fun VideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>, cho
 
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
-private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>, choose: (MediaEntry) -> Unit, model: DriveViewModel, current: MediaEntry, modifier: Modifier, session: ViewerPlaybackSession, fullScreenChanged: (Boolean) -> Unit, adjacent: (Int) -> Unit, verticalPaging: Boolean, portraitChanged: (Boolean) -> Unit, openWith: () -> Unit, fullscreenExit: Int, favorite: () -> Unit, share: () -> Unit, backup: (Boolean) -> Unit, removeDevice: () -> Unit, profile: () -> Unit, identity: String, epoch: Long, resume: Long, closeViewer: () -> Unit, movieDetails: @Composable () -> Unit, controlsChanged: (Boolean) -> Unit) {
+private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>, choose: (MediaEntry) -> Unit, model: DriveViewModel, current: MediaEntry, modifier: Modifier, session: ViewerPlaybackSession, fullScreenChanged: (Boolean) -> Unit, adjacent: (Int) -> Unit, verticalPaging: Boolean, portraitChanged: (Boolean) -> Unit, openWith: () -> Unit, fullscreenExit: Int, favorite: () -> Unit, share: () -> Unit, backup: (Boolean) -> Unit, removeDevice: () -> Unit, profile: () -> Unit, identity: String, epoch: Long, resume: Long, closeViewer: () -> Unit, movieDetails: @Composable () -> Unit, chrome: ViewerChromeState) {
     val context = LocalContext.current
     val exploreFeed = LocalExploreFeed.current
     val exploreMovie = LocalExploreMode.current in setOf("Movies", "Normal videos")
@@ -158,9 +158,7 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
     var quality by remember { mutableStateOf("") }
     var badge by remember { mutableStateOf(true) }
     var badgeEpoch by remember { mutableIntStateOf(0) }
-    var controls by remember { mutableStateOf(true) }
-    val onControlsChanged by rememberUpdatedState(controlsChanged)
-    LaunchedEffect(controls) { onControlsChanged(controls) }
+    val controls = chrome.visible
     val actionsBottom by animateDpAsState(if (controls) 170.dp else 54.dp, tween(180), label = "Short action position")
     var playbackPosition by remember { mutableLongStateOf(0) }
     var duration by remember { mutableLongStateOf(0) }
@@ -176,7 +174,6 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
     var seekDraft by remember(uri) { mutableStateOf<Float?>(null) }
     var seekNotice by remember(uri) { mutableStateOf("") }
     var seekNoticeEpoch by remember(uri) { mutableIntStateOf(0) }
-    var controlEpoch by remember { mutableIntStateOf(0) }
     val seekUnavailable = label("This video is still preparing, or its format has no seek index.", "ভিডিও এখনও প্রস্তুত হচ্ছে, অথবা এই ফরম্যাটে seek index নেই।")
     val seekPositionLabel = label("Position: ", "সময়: ")
     fun seekVideo(target: Long) {
@@ -191,8 +188,8 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
             playbackPosition = bounded
             seekNotice = seekPositionLabel + playbackTime(bounded)
         }
-        controls = true
-        controlEpoch++
+        chrome.show(current.id)
+        chrome.interact(current.id)
         seekNoticeEpoch++
     }
     LaunchedEffect(seekNoticeEpoch) {
@@ -225,15 +222,11 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
     LaunchedEffect(short) {
         onPortraitChanged(short)
         if (short) fullscreen = true
-        controlEpoch++
+        chrome.interact(current.id)
     }
     LaunchedEffect(fullscreen, short) { fullScreenChanged(fullscreen || short) }
     LaunchedEffect(identity, fullscreen, short, verticalPaging, frameKnown, pipVisible) {
         session.orientation(identity, VideoPresentation.landscapePlayback(verticalPaging, short, fullscreen, frameKnown), pipVisible)
-    }
-    LaunchedEffect(controlEpoch, short) {
-        delay(if (short) 3000 else 5000)
-        controls = false
     }
     var tracks by remember { mutableStateOf(Tracks.EMPTY) }
     DisposableEffect(player, owner, identity) {
@@ -255,8 +248,7 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
                         player.play()
                     } else {
                         player.pause()
-                        controls = true
-                        controlEpoch++
+                        if (!chrome.tapOnly) chrome.show(current.id)
                     }
                 }
             }
@@ -329,16 +321,16 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
                 Box(
                     Modifier.fillMaxSize().mediaZoomInput(zoom).observeWrongSwipe(short && verticalPaging) { wrongSwipes++ }.pointerInput(player, short, identity) {
                         detectTapGestures(onTap = {
-                            controls = !controls
+                            chrome.toggle(current.id)
                             if (short) actionsVisible = true
-                            controlEpoch++
+                            chrome.interact(current.id)
                             if (controls)view?.showController()else view?.hideController()
                             badge = true
                             badgeEpoch++
                         }, onDoubleTap = { point ->
                             seekVideo(player.currentPosition + if (point.x < size.width / 2) -10000 else 10000)
-                            controls = true
-                            controlEpoch++
+                            chrome.show(current.id)
+                            chrome.interact(current.id)
                         })
                     }.pointerInput(short, verticalPaging, current.id, fullscreen, frameKnown) {
                         if (verticalPaging) return@pointerInput
@@ -348,8 +340,8 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
                                 onAdjacent(if (dragged < 0) 1 else -1)
                             } else if (!short && frameKnown) {
                                 fullscreen = VideoPresentation.fullscreenAfterSwipe(fullscreen, dragged, 72.dp.toPx())
-                                controls = true
-                                controlEpoch++
+                                chrome.show(current.id)
+                                chrome.interact(current.id)
                             }
                         }) { change, amount ->
                             if (!verticalPaging) {
@@ -363,7 +355,7 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
                 if (showBuffering && current.local == null && playerError.isBlank()) Box(Modifier.align(Alignment.Center).clip(RoundedCornerShape(24.dp)).background(Color.Black.copy(alpha = .65f)).padding(10.dp)) { CircularProgressIndicator(Modifier.size(30.dp), strokeWidth = 2.dp) }
                 if (seekNotice.isNotBlank()) Text(seekNotice, Modifier.align(Alignment.Center).clip(RoundedCornerShape(16.dp)).background(Color.Black.copy(alpha = .65f)).padding(12.dp), color = Color.White, style = MaterialTheme.typography.labelLarge)
                 if (playerError.isNotBlank()) {
-                    Surface(Modifier.align(Alignment.Center).padding(16.dp), shape = RoundedCornerShape(20.dp)) {
+                    AppSurface(Modifier.align(Alignment.Center).padding(16.dp), shape = RoundedCornerShape(20.dp)) {
                         Column(Modifier.padding(16.dp)) {
                             Text(playerError, style = MaterialTheme.typography.bodySmall)
                             TextButton({
@@ -374,20 +366,20 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
                         }
                     }
                 }
-                androidx.compose.animation.AnimatedVisibility(controls, modifier = Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom)), enter = fadeIn(tween(220)), exit = fadeOut(tween(220))) {
-                    Column(Modifier.fillMaxWidth().background(androidx.compose.ui.graphics.Color.Black.copy(alpha = .55f)).padding(horizontal = 12.dp)) {
+                androidx.compose.animation.AnimatedVisibility(controls, modifier = Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom)), enter = fadeIn(tween(120)), exit = fadeOut(tween(100))) {
+                    Column(Modifier.fillMaxWidth().background(chromeColor(media = true)).padding(horizontal = 12.dp)) {
                         Slider(seekDraft ?: if (duration > 0) (playbackPosition.toDouble() / duration).toFloat().coerceIn(0f, 1f) else 0f, {
                             seekDraft = it
-                            controlEpoch++
+                            chrome.interact(current.id)
                         }, onValueChangeFinished = {
                             seekDraft?.let { seekVideo((it.toDouble() * player.duration.coerceAtLeast(0)).toLong()) }
                             seekDraft = null
-                            controlEpoch++
+                            chrome.interact(current.id)
                         }, enabled = duration > 0, valueRange = 0f..1f)
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             IconButton({
                                 seekVideo(player.currentPosition - 10000)
-                                controlEpoch++
+                                chrome.interact(current.id)
                             }) { Icon(Icons.Outlined.Replay10, label("Back 10 seconds", "১০ সেকেন্ড পেছনে"), tint = androidx.compose.ui.graphics.Color.White) }
                             IconButton({
                                 if (player.isPlaying) {
@@ -399,11 +391,11 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
                                     }
                                     player.play()
                                 }
-                                controlEpoch++
+                                chrome.interact(current.id)
                             }) { Icon(if (playing)Icons.Outlined.Pause else Icons.Outlined.PlayArrow, label("Play / pause", "চালান / থামান"), tint = androidx.compose.ui.graphics.Color.White) }
                             IconButton({
                                 seekVideo(player.currentPosition + 10000)
-                                controlEpoch++
+                                chrome.interact(current.id)
                             }) { Icon(Icons.Outlined.Forward10, label("Forward 10 seconds", "১০ সেকেন্ড এগিয়ে"), tint = androidx.compose.ui.graphics.Color.White) }
                             Text("${playbackTime(seekDraft?.let { (it.toDouble() * duration).toLong() } ?: playbackPosition)} / ${playbackTime(duration)}", modifier = Modifier.weight(1f), color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
@@ -450,7 +442,7 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
                             }
                         }
                         if (!actionsVisible) {
-                            Surface(Modifier.align(Alignment.BottomEnd).padding(end = 4.dp, bottom = actionsBottom).navigationBarsPadding(), shape = RoundedCornerShape(18.dp), color = Color.Black.copy(alpha = .38f)) {
+                            AppSurface(Modifier.align(Alignment.BottomEnd).padding(end = 4.dp, bottom = actionsBottom).navigationBarsPadding(), shape = RoundedCornerShape(18.dp), color = Color.Black.copy(alpha = .38f)) {
                                 IconButton({ actionsVisible = true }) { Icon(Icons.Outlined.ChevronLeft, label("Show video actions", "ভিডিওর বাটন দেখান"), tint = Color.White) }
                             }
                         }
@@ -460,7 +452,7 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
                 androidx.compose.animation.AnimatedVisibility(controls, modifier = Modifier.align(Alignment.TopStart).windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top)), enter = fadeIn(), exit = fadeOut()) {
                     IconButton({ if (fullscreen && !short) fullscreen = false else closeViewer() }) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, label("Back", "ফিরুন"), tint = Color.White) }
                 }
-                androidx.compose.animation.AnimatedVisibility(controls, modifier = Modifier.align(Alignment.TopEnd).windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top)), enter = fadeIn(tween(220)), exit = fadeOut(tween(220))) {
+                androidx.compose.animation.AnimatedVisibility(controls, modifier = Modifier.align(Alignment.TopEnd).windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top)), enter = fadeIn(tween(120)), exit = fadeOut(tween(100))) {
                     Row(Modifier.background(Color.Black.copy(alpha = .45f), RoundedCornerShape(18.dp))) {
                         if (activity?.supportsVideoPiP() == true) {
                             IconButton({
@@ -473,7 +465,7 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
                 }
             }
             if (video && !fullscreen && !short) {
-                Surface(Modifier.weight(1f).fillMaxWidth(), color = MaterialTheme.colorScheme.surface, contentColor = MaterialTheme.colorScheme.onSurface) {
+                AppSurface(Modifier.weight(1f).fillMaxWidth(), color = MaterialTheme.colorScheme.surface, contentColor = MaterialTheme.colorScheme.onSurface) {
                     androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxSize(), state = detailsScroll, contentPadding = PaddingValues(bottom = 20.dp)) {
                         item(key = "movie-details") {
                             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {

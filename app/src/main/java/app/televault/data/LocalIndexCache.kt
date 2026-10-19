@@ -27,11 +27,6 @@ internal class LocalIndexCache(private val context: Context) {
         val persisted = runCatching { context.contentResolver.persistedUriPermissions.filter { it.isReadPermission }.map { it.uri }.toSet() }.getOrDefault(emptySet())
         return "${DeviceFileAccess.granted(context)}|" + trackedPermissions.joinToString { permission -> "${ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED}" } + "|" + roots.map { "$it:${it in persisted}" }.sorted().joinToString()
     }
-    fun fullAccess(): Boolean {
-        if (DeviceFileAccess.granted(context)) return true
-        val permissions = if (Build.VERSION.SDK_INT >= 33) listOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO, Manifest.permission.READ_MEDIA_AUDIO) else listOf(Manifest.permission.READ_EXTERNAL_STORAGE)
-        return permissions.all { ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED }
-    }
     fun limitedVisualAccess(): Boolean {
         if (Build.VERSION.SDK_INT < 34) return false
         fun granted(permission: String) = ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
@@ -47,7 +42,7 @@ internal class LocalIndexCache(private val context: Context) {
         return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore").apply { init(spec.build()) }.generateKey()
     }
     fun read(stamp: String): List<LocalMedia>? = runCatching {
-        if (!fullAccess()) return@runCatching null // Selected-photo grants require a fresh provider query.
+        if (limitedVisualAccess()) return@runCatching null // Mutable selected-photo grants require a fresh provider query.
         val raw = file.openRead().use { input ->
             check(file.baseFile.length() in 28..maxBytes.toLong())
             input.readBytes()
@@ -57,11 +52,7 @@ internal class LocalIndexCache(private val context: Context) {
             try {
                 val value = JSONObject(plain.toString(Charsets.UTF_8))
                 val age = System.currentTimeMillis() - value.getLong("time")
-                if (age !in 0 until 86400000L) {
-                    file.delete()
-                    return@runCatching null
-                }
-                if (value.getString("access") != stamp) return@runCatching null
+                if (!app.televault.domain.DeviceIndexAccess.cachedSnapshotAllowed(limitedVisualAccess(), value.getString("access") == stamp, age)) return@runCatching null
                 val rows = value.getJSONArray("files")
                 check(rows.length() <= 50000)
                 List(rows.length()) { index ->
@@ -76,7 +67,7 @@ internal class LocalIndexCache(private val context: Context) {
         }
     }.getOrNull()
     fun write(stamp: String, items: List<LocalMedia>) {
-        if (!fullAccess() || items.size > 50000) return
+        if (limitedVisualAccess() || items.size > 50000) return
         runCatching {
             val rows = JSONArray()
             var encodedBytes = 4096L

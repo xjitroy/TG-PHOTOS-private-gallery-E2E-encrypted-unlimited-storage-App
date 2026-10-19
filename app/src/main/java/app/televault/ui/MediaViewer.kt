@@ -49,7 +49,7 @@ import kotlinx.coroutines.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: DriveViewModel, close: () -> Unit, choose: (MediaEntry) -> Unit, save: (MediaEntry) -> Unit, trash: (MediaEntry) -> Unit, restore: (MediaEntry) -> Unit, purge: (MediaEntry) -> Unit, favorite: (MediaEntry) -> Unit, backup: (MediaEntry, Boolean) -> Unit = { _, _ -> }, removeDevice: (MediaEntry) -> Unit = {}, profile: () -> Unit = {}, personProfile: (String) -> Unit = {}) {
+internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: DriveViewModel, close: () -> Unit, choose: (MediaEntry) -> Unit, save: (MediaEntry) -> Unit, trash: (MediaEntry) -> Unit, restore: (MediaEntry) -> Unit, purge: (MediaEntry) -> Unit, favorite: (MediaEntry) -> Unit, backup: (MediaEntry, Boolean) -> Unit = { _, _ -> }, removeDevice: (MediaEntry) -> Unit = {}, profile: () -> Unit = {}, personProfile: (String) -> Unit = {}, viewed: (MediaEntry) -> Unit = {}) {
     var closing by remember { mutableStateOf(false) }
     val finishClose by rememberUpdatedState(close)
     val entrance = remember { androidx.compose.animation.core.Animatable(0f) }
@@ -91,7 +91,10 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
     var vertical by remember { mutableStateOf(entry.mime.startsWith("video/") && !exploreMovie && app.televault.domain.VideoPresentation.shortLayout(entry.cloud?.facts?.width ?: entry.local?.width ?: 0, entry.cloud?.facts?.height ?: entry.local?.height ?: 0, 1f)) }
     var photoVertical by remember { mutableStateOf(false) }
     var portraitPage by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
-    var controls by remember { mutableStateOf(true) }
+    val tapEverywhere by model.preferences.tapToRevealControls.collectAsStateWithLifecycle(initialValue = false)
+    val exploreFeed = LocalExploreFeed.current
+    val viewerChrome = remember { ViewerChromeState(entry.id, exploreFeed || vertical || tapEverywhere) }
+    val controls = viewerChrome.visible
     var details by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
@@ -111,6 +114,8 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
     var prepared by remember { mutableStateOf<Uri?>(null) }
     var preparedId by remember { mutableStateOf<String?>(null) }
     val current = media.getOrElse(pager.settledPage) { entry }
+    val onViewed by rememberUpdatedState(viewed)
+    LaunchedEffect(current.id, scrubbing) { if (!scrubbing) onViewed(current) }
     // Keep the action panel's geometry stable under the finger while crossing mixed media/tags.
     var settledChrome by remember { mutableStateOf(current) }
     SideEffect { if (!scrubbing) settledChrome = current }
@@ -133,7 +138,7 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
         }
         val epoch = model.playbackEpoch
         textReading = true
-        controls = true
+        viewerChrome.show(current.id)
         message = "Reading text on this phone…"
         scope.launch {
             try {
@@ -242,7 +247,6 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
             preparedId = null
         }
         message = ""
-        controls = true
         if (current.cloud != null && !trashed) {
             try {
                 model.recordMediaView(current.id)
@@ -348,6 +352,15 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
             }
         }
     }
+    LaunchedEffect(current.id, tapEverywhere, vertical, exploreFeed) {
+        viewerChrome.select(current.id, tapEverywhere || exploreFeed || current.mime.startsWith("video/") && vertical)
+    }
+    LaunchedEffect(viewerChrome.revision, viewerChrome.visible, viewerChrome.held, current.id, current.mime, vertical, scrubbing) {
+        if (!viewerChrome.visible || viewerChrome.held || scrubbing || !(viewerChrome.tapOnly || current.mime.startsWith("video/"))) return@LaunchedEffect
+        val revision = viewerChrome.revision
+        delay(if (vertical) 3000 else 5000)
+        viewerChrome.expire(revision)
+    }
     val inlineFilmstrip = current.mime.startsWith("video/") && !vertical && !videoFullscreen
     val filmstrip: @Composable () -> Unit = {
         if (media.size > 1) {
@@ -403,7 +416,7 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
             else -> requestClose()
         }
     }, properties = DialogProperties(usePlatformDefaultWidth = false, securePolicy = SecureFlagPolicy.SecureOff, decorFitsSystemWindows = false)) {
-        Box(Modifier.fillMaxSize().background(Color.Black)) {
+        Box(Modifier.fillMaxSize().holdViewerChrome(viewerChrome).background(if (current.mime.startsWith("image/") || current.mime.startsWith("video/")) Color.Black else MaterialTheme.colorScheme.background)) {
             val dialogView = androidx.compose.ui.platform.LocalView.current
             val window = (dialogView.parent as? DialogWindowProvider)?.window
             // This dialog owns its fade/scale; a second platform exit animation adds latency.
@@ -419,14 +432,12 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
             }
             val immersive = videoFullscreen || photoLayout && !controls
             val lightVideoSurface = MaterialTheme.colorScheme.surface.luminance() > .5f
-            DisposableEffect(window, immersive, videoLayout, lightVideoSurface) {
+            DisposableEffect(window, immersive, photoLayout, videoLayout, lightVideoSurface) {
                 val controller = window?.let { androidx.core.view.WindowCompat.getInsetsController(it, dialogView) }
                 val previousStatusIcons = controller?.isAppearanceLightStatusBars
                 val previousNavigationIcons = controller?.isAppearanceLightNavigationBars
-                if (videoLayout) {
-                    controller?.isAppearanceLightStatusBars = false
-                    controller?.isAppearanceLightNavigationBars = !immersive && lightVideoSurface
-                }
+                controller?.isAppearanceLightStatusBars = !photoLayout && !videoLayout && lightVideoSurface
+                controller?.isAppearanceLightNavigationBars = !photoLayout && !immersive && lightVideoSurface
                 if (immersive) {
                     controller?.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
                     controller?.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
@@ -447,7 +458,7 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
                 }
             }
             val renderMedia: @Composable (Modifier) -> Unit = { area ->
-                Box(area.background(Color.Black)) {
+                Box(area.background(if (photoLayout || videoLayout) Color.Black else MaterialTheme.colorScheme.background)) {
                     val page: @Composable (Int) -> Unit = { index ->
                         MediaPage(media[index], index == pager.settledPage && !scrubbing, !scrubbing && !closing && !snapshot.uploadSettings.dataSaver && !pager.isScrollInProgress && model.canPrefetchPhotos(), model, { if (index == pager.settledPage && photoLoadToken != 0L) model.finishPhotoLoad(photoLoadToken) }, {
                             resolvedSources[media[index].id] = it
@@ -455,12 +466,12 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
                                 prepared = it
                                 preparedId = media[index].id
                             }
-                        }, videos, ::select, { direction -> app.televault.domain.ViewerOrder.adjacent(media, index, direction)?.let(::select) }, vertical, { portrait -> if (index == pager.settledPage) portraitPage = media[index].id to portrait }, videoSession, fullscreenExit, { if (index == pager.settledPage) videoFullscreen = it }, { controls = !controls }, if (vertical) null else ({ details = true }), { favorite(media[index]) }, { send(Intent.ACTION_SEND) }, { send(Intent.ACTION_VIEW) }, { cleanup -> backup(media[index], cleanup) }, { removeDevice(media[index]) }, snapshot.backedDeviceFiles, { copy -> editedAudio[stableIds[index]] = copy }, profile, resolvedSources[media[index].id], requestClose, movieDetails, { if (index == pager.settledPage) readText(true) }, scrubbing, { visible -> if (index == pager.settledPage && !scrubbing) controls = visible }, controls)
+                        }, videos, ::select, { direction -> app.televault.domain.ViewerOrder.adjacent(media, index, direction)?.let(::select) }, vertical, { portrait -> if (index == pager.settledPage) portraitPage = media[index].id to portrait }, videoSession, fullscreenExit, { if (index == pager.settledPage) videoFullscreen = it }, { viewerChrome.toggle(current.id) }, if (vertical) null else ({ details = true }), { favorite(media[index]) }, { send(Intent.ACTION_SEND) }, { send(Intent.ACTION_VIEW) }, { cleanup -> backup(media[index], cleanup) }, { removeDevice(media[index]) }, snapshot.backedDeviceFiles, { copy -> editedAudio[stableIds[index]] = copy }, profile, resolvedSources[media[index].id], requestClose, movieDetails, { if (index == pager.settledPage) readText(true) }, scrubbing, viewerChrome)
                     }
                     if (vertical) VerticalPager(pager, key = { media[it].id }, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = 1, userScrollEnabled = !busy && !scrubbing && !closing) { page(it) } else HorizontalPager(pager, key = { media[it].id }, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = 1, userScrollEnabled = !busy && !scrubbing && !closing) { page(it) }
                 }
             }
-            Surface(
+            AppSurface(
                 Modifier.fillMaxSize().graphicsLayer {
                     alpha = entrance.value
                     scaleX = .98f + .02f * entrance.value
@@ -507,7 +518,7 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
                                 if (chrome.mime.startsWith("video/")) {
                                     Spacer(Modifier.height(104.dp).then(if (videoFullscreen) Modifier.navigationBarsPadding() else Modifier))
                                 } else {
-                                    Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = .9f), border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = .35f)), tonalElevation = 1.dp) {
+                                    AppSurface(shape = RoundedCornerShape(24.dp), color = chromeColor(), border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = .35f)), tonalElevation = 1.dp) {
                                         Column(Modifier.padding(horizontal = 4.dp, vertical = 6.dp)) {
                                             val tags = people.people.filter { chrome.id in it.members }
                                             if (tags.isNotEmpty()) {
@@ -567,7 +578,7 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
     }
 }
 
-@Composable private fun MediaPage(item: MediaEntry, active: Boolean, preload: Boolean, model: DriveViewModel, pixelsReady: () -> Unit, ready: (Uri) -> Unit, videos: List<MediaEntry>, choose: (MediaEntry) -> Unit, adjacent: (Int) -> Unit, verticalPaging: Boolean, portraitChanged: (Boolean) -> Unit, videoSession: ViewerPlaybackSession, fullscreenExit: Int, fullScreenChanged: (Boolean) -> Unit, tap: () -> Unit, info: (() -> Unit)?, favorite: () -> Unit, share: () -> Unit, openWith: () -> Unit, backup: (Boolean) -> Unit, removeDevice: () -> Unit, backedDeviceFiles: Map<String, String>, editedCopy: (MediaEntry) -> Unit, profile: () -> Unit, cachedSource: Uri?, closeViewer: () -> Unit, movieDetails: @Composable () -> Unit, longHold: () -> Unit, previewOnly: Boolean, controlsChanged: (Boolean) -> Unit, chromeVisible: Boolean) {
+@Composable private fun MediaPage(item: MediaEntry, active: Boolean, preload: Boolean, model: DriveViewModel, pixelsReady: () -> Unit, ready: (Uri) -> Unit, videos: List<MediaEntry>, choose: (MediaEntry) -> Unit, adjacent: (Int) -> Unit, verticalPaging: Boolean, portraitChanged: (Boolean) -> Unit, videoSession: ViewerPlaybackSession, fullscreenExit: Int, fullScreenChanged: (Boolean) -> Unit, tap: () -> Unit, info: (() -> Unit)?, favorite: () -> Unit, share: () -> Unit, openWith: () -> Unit, backup: (Boolean) -> Unit, removeDevice: () -> Unit, backedDeviceFiles: Map<String, String>, editedCopy: (MediaEntry) -> Unit, profile: () -> Unit, cachedSource: Uri?, closeViewer: () -> Unit, movieDetails: @Composable () -> Unit, longHold: () -> Unit, previewOnly: Boolean, chrome: ViewerChromeState) {
     val context = LocalContext.current
     var uri by remember(item.id) { mutableStateOf(cachedSource) }
     var deviceSource by remember(item.id) { mutableStateOf(false) }
@@ -610,22 +621,23 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
             uri = null
         }
     }
+    val chromeVisible = chrome.visible
     val latestTap by rememberUpdatedState(tap)
     val nonVisual = !item.mime.startsWith("image/") && !item.mime.startsWith("video/")
     val contentTop by animateDpAsState(if (chromeVisible) 76.dp else 0.dp, tween(120), label = "Viewer top inset")
     val contentBottom by animateDpAsState(if (chromeVisible) 176.dp else 0.dp, tween(120), label = "Viewer bottom inset")
-    Box(Modifier.fillMaxSize().clipToBounds().background(Color.Black).then(if (nonVisual) Modifier.pointerInput(item.id) { detectTapGestures { latestTap() } }.safeDrawingPadding().padding(top = contentTop, bottom = contentBottom) else Modifier), contentAlignment = Alignment.Center) {
+    Box(Modifier.fillMaxSize().clipToBounds().background(if (nonVisual) MaterialTheme.colorScheme.background else Color.Black).then(if (nonVisual) Modifier.pointerInput(item.id) { detectTapGestures { latestTap() } }.safeDrawingPadding().padding(top = contentTop, bottom = contentBottom) else Modifier), contentAlignment = Alignment.Center) {
         val source = uri
         when {
             previewOnly && (source == null || !item.mime.startsWith("image/")) -> MediaThumbnail(item, model, Modifier.fillMaxSize(), 768, ContentScale.Fit)
             error -> Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(label("Could not open. Check connection, space and file integrity.", "খোলা যায়নি। সংযোগ, জায়গা ও ফাইলের অখণ্ডতা পরীক্ষা করুন।"))
+                Text(label("Could not open. Check connection, space and file integrity.", "খোলা যায়নি। সংযোগ, জায়গা ও ফাইলের অখণ্ডতা পরীক্ষা করুন।"), color = if (nonVisual) MaterialTheme.colorScheme.onBackground else Color.White)
                 TextButton({ retry++ }) { Text(label("Retry", "আবার চেষ্টা করুন")) }
             }
             source == null || (!active && !item.mime.startsWith("image/")) -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 MediaThumbnail(item, model, Modifier.fillMaxSize(), 384, ContentScale.Fit)
                 if (active && item.local == null && !item.mime.startsWith("image/") && !item.mime.startsWith("video/")) {
-                    Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = .92f)) {
+                    AppSurface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = .92f)) {
                         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text(label("Opening original…", "মূল ফাইল খুলছে…"), Modifier.padding(horizontal = 10.dp), style = MaterialTheme.typography.labelMedium)
                         }
@@ -634,7 +646,7 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
             }
             item.mime.startsWith("image/") -> key(item.id, source, item.local?.fingerprint) { RegionImage(source, Modifier.fillMaxSize(), tap = tap, swipeUp = info, placeholder = { MediaThumbnail(item, model, Modifier.fillMaxSize(), 384, ContentScale.Fit) }, pixelsReady = pixelsReady, cache = model.photoPreviews, cacheKey = item.id + ":" + (item.local?.fingerprint ?: item.cloud?.hash.orEmpty()), longHold = if (active) longHold else null) }
             item.mime.startsWith("audio/") -> AudioPlayer(source, item, model, editedCopy, share)
-            item.mime.startsWith("video/") -> VideoPlayer(source, true, videos, choose, model = model, current = item, session = videoSession, adjacent = adjacent, verticalPaging = verticalPaging, portraitChanged = portraitChanged, openWith = openWith, fullScreenChanged = fullScreenChanged, fullscreenExit = fullscreenExit, favorite = favorite, share = share, backup = backup, removeDevice = removeDevice, profile = profile, closeViewer = closeViewer, movieDetails = movieDetails, controlsChanged = controlsChanged)
+            item.mime.startsWith("video/") -> VideoPlayer(source, true, videos, choose, model = model, current = item, session = videoSession, adjacent = adjacent, verticalPaging = verticalPaging, portraitChanged = portraitChanged, openWith = openWith, fullScreenChanged = fullScreenChanged, fullscreenExit = fullscreenExit, favorite = favorite, share = share, backup = backup, removeDevice = removeDevice, profile = profile, closeViewer = closeViewer, movieDetails = movieDetails, chrome = chrome)
             else -> DocumentViewer(source, item, model, openWith)
         }
     }

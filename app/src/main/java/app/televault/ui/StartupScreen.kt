@@ -27,7 +27,7 @@ internal fun StartupScreen(failed: Boolean, retry: () -> Unit) {
     val report by produceState("", slow, failed) {
         if (slow || failed) value = withContext(Dispatchers.IO) { RuntimeDiagnostics.report(context.applicationContext) }
     }
-    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+    AppSurface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(Modifier.fillMaxSize().safeDrawingPadding().padding(28.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
             Text(if (failed) "TG Photos could not start" else "Opening TG Photos", style = MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(16.dp))

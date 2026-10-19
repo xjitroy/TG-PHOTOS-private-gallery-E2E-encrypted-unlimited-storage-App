@@ -57,7 +57,7 @@ import kotlinx.coroutines.*
         }
     }
     if (ticket != null && showPending) {
-        Surface(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.errorContainer) {
+        AppSurface(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.errorContainer) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(label("Forgotten vault deletion", "ভুলে যাওয়া ভল্ট মুছে ফেলা"), style = MaterialTheme.typography.titleSmall)
                 if (ticket.phase == "SCHEDULING") {

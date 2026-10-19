@@ -41,7 +41,7 @@ fun TeleVaultRoot(
     authenticatedContent: @Composable () -> Unit = { Workspace(auth, submit, dynamicColor, changeDynamicColor) }
 ) {
     var started by rememberSaveable { mutableStateOf(false) }
-    Surface(Modifier.fillMaxSize()) {
+    AppSurface(Modifier.fillMaxSize()) {
         when (app.televault.domain.AuthRestorePolicy.screen(auth.stage, auth.previouslyAuthorized, started)) {
             app.televault.domain.AuthRestorePolicy.Screen.CONTENT -> authenticatedContent()
             app.televault.domain.AuthRestorePolicy.Screen.WELCOME -> Welcome { started = true }
@@ -68,7 +68,7 @@ private fun Welcome(connect: () -> Unit) {
             Spacer(Modifier.height(24.dp))
             Box(Modifier.size(160.dp), contentAlignment = Alignment.Center) {
                 Icon(Icons.Outlined.Cloud, null, Modifier.size(148.dp), tint = MaterialTheme.colorScheme.primary)
-                Surface(shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.tertiaryContainer) {
+                AppSurface(shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.tertiaryContainer) {
                     Icon(Icons.Outlined.Lock, null, Modifier.padding(18.dp).size(48.dp), tint = MaterialTheme.colorScheme.tertiary)
                 }
             }
@@ -76,7 +76,7 @@ private fun Welcome(connect: () -> Unit) {
             Text(label("Your private cloud gallery", "আপনার ব্যক্তিগত ক্লাউড গ্যালারি"), style = MaterialTheme.typography.titleMedium)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                 listOf(Icons.Outlined.Photo, Icons.Outlined.PlayCircle, Icons.Outlined.Description, Icons.Outlined.MusicNote).forEach { icon ->
-                    Surface(shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceContainer) { Icon(icon, null, Modifier.padding(14.dp), tint = MaterialTheme.colorScheme.primary) }
+                    AppSurface(shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceContainer) { Icon(icon, null, Modifier.padding(14.dp), tint = MaterialTheme.colorScheme.primary) }
                 }
             }
             Text(stringResource(R.string.disclosure), style = MaterialTheme.typography.bodyMedium)
@@ -166,7 +166,7 @@ private fun Login(auth: AuthSnapshot, submit: (AuthProtocol.Action, String, Stri
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Box(Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 8.dp), contentAlignment = Alignment.Center) {
-                Surface(shape = androidx.compose.foundation.shape.CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
+                AppSurface(shape = androidx.compose.foundation.shape.CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
                     Icon(Icons.Outlined.Send, null, Modifier.padding(20.dp).size(36.dp), tint = MaterialTheme.colorScheme.primary)
                 }
             }

@@ -25,4 +25,17 @@ public class DeviceIndexAccessTest {
     @Test public void noPriorSnapshotDoesNotAdvanceTheGenerationOnEveryRefresh() {
         assertFalse(DeviceIndexAccess.invalidate("","selected-grant",true));
     }
+    @Test public void stablePartialCategoryAndSafGrantsCanRestoreExactStampedSnapshot() {
+        assertTrue(DeviceIndexAccess.cachedSnapshotAllowed(DeviceIndexAccess.limitedVisual(false,true,false,false),true,3000));
+        assertTrue(DeviceIndexAccess.cachedSnapshotAllowed(DeviceIndexAccess.limitedVisual(false,false,false,false),true,0));
+    }
+    @Test public void changedSelectedPhotoMembershipNeverRestoresCachedRows() {
+        assertFalse(DeviceIndexAccess.cachedSnapshotAllowed(true,true,1000));
+        assertFalse(DeviceIndexAccess.cachedSnapshotAllowed(false,false,1000));
+    }
+    @Test public void staleOrFutureClockSnapshotsMustRequeryProviders() {
+        assertFalse(DeviceIndexAccess.cachedSnapshotAllowed(false,true,-1));
+        assertFalse(DeviceIndexAccess.cachedSnapshotAllowed(false,true,86400000L));
+        assertTrue(DeviceIndexAccess.cachedSnapshotAllowed(false,true,86399999L));
+    }
 }

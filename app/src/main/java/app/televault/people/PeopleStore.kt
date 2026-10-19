@@ -18,10 +18,11 @@ import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
 
-internal data class PersonCard(val id: String, val name: String, val cover: ByteArray, val members: Set<String>, val suggestion: String? = null, val provisional: Boolean = false, val model: String = PeopleStore.MODEL)
+internal data class PersonCard(val id: String, val name: String, val cover: ByteArray, val members: Set<String>, val suggestion: String? = null, val provisional: Boolean = false, val model: String = PeopleStore.MODEL, val reviewAnswer: Boolean? = null)
 internal data class PeopleState(val enabled: Boolean = false, val people: List<PersonCard> = emptyList(), val scanned: Int = 0, val busy: Boolean = false, val pendingSync: Boolean = false, val notice: String = "", val faceCounts: Map<String, Int> = emptyMap(), val selfId: String? = null)
-private class Person(val id: String, var name: String = "", val references: MutableList<FaceSample> = mutableListOf(), val members: MutableSet<String> = linkedSetOf(), var suggestion: String? = null, var deleted: Boolean = false, var remote: Long = 0, var dirty: Boolean = false, val different: MutableSet<String> = linkedSetOf(), var reviewed: Boolean = false, val excludedMembers: MutableSet<String> = linkedSetOf(), var pendingName: Boolean = false, val photoHashes: MutableSet<String> = linkedSetOf(), val excludedHashes: MutableSet<String> = linkedSetOf(), var selfSelected: Boolean = false, var selfChangedAt: Long = 0, var embeddingModel: String = PeopleStore.MODEL, var rescanAutomatic: Boolean = false) {
+private class Person(val id: String, var name: String = "", val references: MutableList<FaceSample> = mutableListOf(), val members: MutableSet<String> = linkedSetOf(), var suggestion: String? = null, var deleted: Boolean = false, var remote: Long = 0, var dirty: Boolean = false, val different: MutableSet<String> = linkedSetOf(), var reviewed: Boolean = false, val excludedMembers: MutableSet<String> = linkedSetOf(), var pendingName: Boolean = false, val photoHashes: MutableSet<String> = linkedSetOf(), val excludedHashes: MutableSet<String> = linkedSetOf(), var selfSelected: Boolean = false, var selfChangedAt: Long = 0, var embeddingModel: String = PeopleStore.MODEL, var rescanAutomatic: Boolean = false, var reviewVote: FaceReviewVote = FaceReviewVote()) {
     fun wipe() {
+        reviewVote = FaceReviewVote()
         references.forEach { it.wipe() }
         references.clear()
         members.clear()
@@ -74,6 +75,7 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
             .put("faceCounts", JSONObject(faceCounts.filterKeys { it in person.members && (!remote || ForgottenVaultPolicy.validId(it)) }))
             .put("suggestion", if (remote) JSONObject.NULL else person.suggestion ?: JSONObject.NULL).put("model", person.embeddingModel).put("rescanAutomatic", person.rescanAutomatic)
             .put("remote", person.remote).put("dirty", person.dirty).put("members", JSONArray(person.members.filter { !remote || ForgottenVaultPolicy.validId(it) }))
+            .put("pendingReview", if (remote || person.reviewVote.count != 1) JSONObject.NULL else JSONObject().put("target", person.reviewVote.target).put("same", person.reviewVote.same))
             .put("references", JSONArray(base.map(::sampleJson))).put("reviewReferences", JSONArray(extra.map(::sampleJson)))
     }
     private fun decode(data: JSONObject): Person {
@@ -131,6 +133,9 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
                 check(rejected.length() <= 1000)
                 for (i in 0 until rejected.length()) rejected.getString(i).takeIf { ForgottenVaultPolicy.validId(it) && it != id }?.let { person.different += it }
             }
+            val vote = data.optJSONObject("pendingReview")
+            val voteTarget = vote?.optString("target").orEmpty()
+            if (ForgottenVaultPolicy.validId(voteTarget) && voteTarget != id) person.reviewVote = FaceReviewVote(voteTarget, vote!!.getBoolean("same"), 1)
             person.suggestion = data.optString("suggestion").takeIf { ForgottenVaultPolicy.validId(it) }
             return person
         } catch (error: Throwable) {
@@ -144,7 +149,7 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
         val ownId = selectedSelf()?.id
         val previous = mutable.value.people.associateBy { it.id }
         val reused = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<ByteArray, Boolean>())
-        val cards = persons.values.filter { !it.deleted && it.members.isNotEmpty() }.map { PersonCard(it.id, it.name, it.references.firstOrNull()?.jpeg?.let { jpeg -> previous[it.id]?.cover?.takeIf { cover -> cover.contentEquals(jpeg) }?.also { cover -> reused.add(cover) } ?: jpeg.clone() } ?: byteArrayOf(), it.members.toSet(), it.suggestion, app.televault.domain.FaceGrouping.provisional(it.name, it.reviewed || it.id == ownId, if (it.photoHashes.isNotEmpty()) it.photoHashes.size else it.members.size), it.embeddingModel) }.sortedWith(compareBy<PersonCard> { it.name.isBlank() }.thenBy { it.name }.thenBy { it.id })
+        val cards = persons.values.filter { !it.deleted && it.members.isNotEmpty() }.map { PersonCard(it.id, it.name, it.references.firstOrNull()?.jpeg?.let { jpeg -> previous[it.id]?.cover?.takeIf { cover -> cover.contentEquals(jpeg) }?.also { cover -> reused.add(cover) } ?: jpeg.clone() } ?: byteArrayOf(), it.members.toSet(), it.suggestion, app.televault.domain.FaceGrouping.provisional(it.name, it.reviewed || it.id == ownId, if (it.photoHashes.isNotEmpty()) it.photoHashes.size else it.members.size), it.embeddingModel, it.reviewVote.takeIf { vote -> vote.count == 1 && vote.target == it.suggestion }?.same) }.sortedWith(compareBy<PersonCard> { it.name.isBlank() }.thenBy { it.name }.thenBy { it.id })
         synchronized(publicationGuard) {
             if (generation.get() != token) {
                 cards.forEach { it.cover.fill(0) }
@@ -408,6 +413,7 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
                 incoming.photoHashes += old.photoHashes
                 incoming.dirty = true
             }
+            if (old != null && !old.deleted && !incoming.deleted) incoming.reviewVote = old.reviewVote
             if (old != null && old.selfChangedAt > incoming.selfChangedAt) {
                 incoming.selfChangedAt = old.selfChangedAt
                 incoming.selfSelected = old.selfSelected
@@ -525,11 +531,12 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
     }
     private fun consolidateAutomaticGroups() {
         val ownId = selectedSelf()?.id
-        val sources = persons.values.filter { !it.deleted && app.televault.domain.FaceGrouping.automatic(it.name, it.reviewed, it.id == ownId) && it.embeddingModel == MODEL }
+        val pendingReviewIds = persons.values.filter { !it.deleted && it.reviewVote.count == 1 }.flatMap { listOf(it.id, it.reviewVote.target) }.toSet()
+        val sources = persons.values.filter { it.id !in pendingReviewIds && !it.deleted && app.televault.domain.FaceGrouping.automatic(it.name, it.reviewed, it.id == ownId) && it.embeddingModel == MODEL }
         for (source in sources) {
             if (source.deleted || source.references.isEmpty()) continue
             val ranked = persons.values.asSequence().filter { target ->
-                !target.deleted && target.id != source.id && target.embeddingModel == MODEL && target.references.isNotEmpty() && target.id !in source.different && source.id !in target.different && !app.televault.domain.FaceGrouping.cooccur(source.members, target.members, source.photoHashes, target.photoHashes) && !app.televault.domain.FaceGrouping.conflictingTags(source.excludedHashes, target.photoHashes, target.excludedHashes, source.photoHashes) &&
+                target.id !in pendingReviewIds && !target.deleted && target.id != source.id && target.embeddingModel == MODEL && target.references.isNotEmpty() && target.id !in source.different && source.id !in target.different && !app.televault.domain.FaceGrouping.cooccur(source.members, target.members, source.photoHashes, target.photoHashes) && !app.televault.domain.FaceGrouping.conflictingTags(source.excludedHashes, target.photoHashes, target.excludedHashes, source.photoHashes) &&
                     (target.name.isNotBlank() || target.reviewed || target.id == ownId || target.members.size > source.members.size || target.members.size == source.members.size && target.id < source.id)
             }.map { target -> target to source.references.maxOf { a -> target.references.maxOf { b -> FaceSimilarity.cosine(a.embedding, b.embedding) } } }.sortedByDescending { it.second }.toList()
             val best = ranked.firstOrNull() ?: continue
@@ -783,6 +790,12 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
     private fun refreshSuggestions() {
         val active = persons.values.filter { !it.deleted && it.embeddingModel == MODEL && it.references.isNotEmpty() }
         for (person in active) {
+            val pendingTarget = active.find { it.id == person.reviewVote.target }
+            if (person.reviewVote.count == 1 && pendingTarget != null && pendingTarget.id != person.id) {
+                person.suggestion = pendingTarget.id
+                continue
+            }
+            if (person.reviewVote.count == 1) person.reviewVote = FaceReviewVote()
             if (person.reviewed && person.suggestion == null) continue
             person.suggestion = active.asSequence().filter { other ->
                 other.id != person.id && other.id !in person.different && person.id !in other.different && !app.televault.domain.FaceGrouping.cooccur(person.members, other.members, person.photoHashes, other.photoHashes) && !app.televault.domain.FaceGrouping.conflictingTags(person.excludedHashes, other.photoHashes, other.excludedHashes, person.photoHashes)
@@ -841,9 +854,15 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
         val person = persons.getValue(id)
         check(expectedTarget == null || person.suggestion == expectedTarget) { "This match changed; review the new pair" }
         val target = persons[expectedTarget ?: person.suggestion]
-        if (same && target != null && !target.deleted && !person.deleted) {
+        check(target != null && !target.deleted && !person.deleted && target.id != person.id) { "This pair is no longer available" }
+        person.reviewVote = person.reviewVote.next(target.id, same)
+        // First/contradictory answers are encrypted local draft votes only. They must
+        // not train references, reject a match, create a profile or send cloud truth.
+        if (!person.reviewVote.confirmed) return@mutate
+        person.reviewVote = FaceReviewVote()
+        if (same) {
             mergeLocked(person, target)
-        } else if (!same && target != null) {
+        } else {
             person.different += target.id
             target.different += person.id
             target.dirty = true

@@ -177,7 +177,7 @@ private class PdfSession(context: Context, private val reads: app.televault.data
                 error = false
                 retry++
             }) { Text(label("Page unavailable · retry", "পৃষ্ঠা পাওয়া যায়নি · আবার চেষ্টা করুন")) }
-            else -> Surface(Modifier.fillMaxWidth().height(200.dp), shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) { Box(contentAlignment = Alignment.Center) { Text(label("Page", "পৃষ্ঠা") + " ${index + 1}", style = MaterialTheme.typography.labelSmall) } }
+            else -> AppSurface(Modifier.fillMaxWidth().height(200.dp), shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) { Box(contentAlignment = Alignment.Center) { Text(label("Page", "পৃষ্ঠা") + " ${index + 1}", style = MaterialTheme.typography.labelSmall) } }
         }
     }
 }
@@ -231,7 +231,7 @@ private class PdfSession(context: Context, private val reads: app.televault.data
                             }
                         }
                         itemsIndexed(selected.rows) { index, row ->
-                            Surface(color = if (index % 2 == 0) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surface) {
+                            AppSurface(color = if (index % 2 == 0) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surface) {
                                 Row { row.forEach { cell -> SelectionContainer(Modifier.width(150.dp).padding(8.dp)) { Text(cell, style = MaterialTheme.typography.bodySmall) } } }
                             }
                         }

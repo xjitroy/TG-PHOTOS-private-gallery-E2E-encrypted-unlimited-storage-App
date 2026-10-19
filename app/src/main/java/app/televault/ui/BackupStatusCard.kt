@@ -37,7 +37,7 @@ internal fun BackupStatusCard(model: DriveViewModel, sync: () -> Unit, close: ()
     val confirmed = state.files.count { it.trashedAt == 0L && (it.mime.startsWith("image/") || it.mime.startsWith("video/")) }
     // Expanded queues never push the gallery/navigation off small or rotated screens.
     val maxHeight = (LocalConfiguration.current.screenHeightDp * .48f).coerceIn(160f, 440f).dp
-    Surface(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).heightIn(max = maxHeight), shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
+    AppSurface(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).heightIn(max = maxHeight), shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Outlined.CloudDone, null, tint = MaterialTheme.colorScheme.primary)
@@ -56,7 +56,7 @@ internal fun BackupStatusCard(model: DriveViewModel, sync: () -> Unit, close: ()
                     if (overview.blocked > 0) Text("${overview.blocked} " + label("files need attention", "ফাইলে আপনার সিদ্ধান্ত প্রয়োজন"), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
                 }
                 if (active != null) {
-                    Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.secondaryContainer) {
+                    AppSurface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.secondaryContainer) {
                         BackupFolderRow(active, details = true, modifier = Modifier.padding(12.dp))
                     }
                 }

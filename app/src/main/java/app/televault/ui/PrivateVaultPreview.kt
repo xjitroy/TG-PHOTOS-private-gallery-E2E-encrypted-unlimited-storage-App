@@ -4,6 +4,7 @@ import android.net.Uri
 import android.view.WindowManager
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
@@ -14,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -21,6 +23,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
@@ -32,6 +35,17 @@ import kotlinx.coroutines.*
 @Composable
 internal fun PrivateVaultPreview(item: PrivateVaultItem, uri: Uri, model: DriveViewModel, exportCopy: () -> Unit, close: () -> Unit) {
     val context = LocalContext.current
+    val tapOnly by model.preferences.tapToRevealControls.collectAsStateWithLifecycle(initialValue = false)
+    val chrome = remember(item.id) { ViewerChromeState(item.id, tapOnly) }
+    val tapOnlyNow by rememberUpdatedState(tapOnly)
+    LaunchedEffect(tapOnly) { chrome.select(item.id, tapOnly) }
+    LaunchedEffect(tapOnly, chrome.visible, chrome.revision, chrome.held) {
+        if (tapOnly && chrome.visible && !chrome.held) {
+            val revision = chrome.revision
+            delay(5000)
+            chrome.expire(revision)
+        }
+    }
     val zoom = remember(item.id, uri) { MediaZoomState() }
     val reads = remember(item.id, uri) { app.televault.data.MediaReadSession.open(context, uri) }
     DisposableEffect(reads) { onDispose { reads.close() } }
@@ -48,11 +62,18 @@ internal fun PrivateVaultPreview(item: PrivateVaultItem, uri: Uri, model: DriveV
             }
             onDispose {}
         }
-        Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).safeDrawingPadding()) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(close) { Icon(Icons.Outlined.ArrowBack, label("Close", "বন্ধ")) }
-                Text(item.name, Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, maxLines = 2)
-                Icon(Icons.Outlined.Lock, null, Modifier.padding(12.dp))
+        Column(
+            Modifier.fillMaxSize().holdViewerChrome(chrome).background(MaterialTheme.colorScheme.background).safeDrawingPadding().pointerInput(item.id, tapOnly) {
+                if (!tapOnly) return@pointerInput
+                detectTapGestures { chrome.toggle(item.id) }
+            }
+        ) {
+            androidx.compose.animation.AnimatedVisibility(chrome.visible, enter = androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(120)), exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(100))) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(close) { Icon(Icons.Outlined.ArrowBack, label("Close", "বন্ধ")) }
+                    Text(item.name, Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, maxLines = 2)
+                    Icon(Icons.Outlined.Lock, null, Modifier.padding(12.dp))
+                }
             }
             when {
                 item.mime.startsWith("image/") -> {
@@ -149,13 +170,24 @@ internal fun PrivateVaultPreview(item: PrivateVaultItem, uri: Uri, model: DriveV
                             PlayerView(it).apply {
                                 this.player = player
                                 useController = true
+                                controllerAutoShow = !tapOnly
+                                controllerHideOnTouch = true
+                                controllerShowTimeoutMs = 5000
+                                setControllerVisibilityListener(PlayerView.ControllerVisibilityListener { visibility -> if (tapOnlyNow && chrome.visible != (visibility == android.view.View.VISIBLE)) chrome.setVisible(item.id, visibility == android.view.View.VISIBLE) })
+                                if (tapOnly) hideController()
                                 setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
                             }
-                        }, modifier = Modifier.fillMaxSize(), onRelease = { it.player = null })
+                        }, update = { view ->
+                            view.controllerAutoShow = !tapOnly
+                            if (tapOnly && !chrome.visible && view.isControllerFullyVisible) view.hideController()
+                        }, modifier = Modifier.fillMaxSize(), onRelease = {
+                            it.setControllerVisibilityListener(null as PlayerView.ControllerVisibilityListener?)
+                            it.player = null
+                        })
                         if (showBuffering && !failed) VaultMediaVerification(loading = true, verified = authenticated, doubleEncrypted = item.cloud != null)
                         if (authenticated && !buffering && !failed) Box(Modifier.align(Alignment.TopStart).padding(12.dp)) { VaultMediaVerification(loading = false, verified = true, doubleEncrypted = item.cloud != null) }
                         if (failed) {
-                            Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.errorContainer) {
+                            AppSurface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.errorContainer) {
                                 Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                                     Icon(Icons.Outlined.ErrorOutline, null)
                                     Text(label("Playback or integrity check failed. No unverified media is shown.", "প্লেব্যাক বা যাচাই ব্যর্থ হয়েছে। অযাচাই করা মিডিয়া দেখানো হবে না।"), style = MaterialTheme.typography.bodyMedium)
@@ -181,7 +213,7 @@ internal fun PrivateVaultPreview(item: PrivateVaultItem, uri: Uri, model: DriveV
 /** Reports record authentication and encryption layers, never an invented security score. */
 @Composable
 private fun VaultMediaVerification(loading: Boolean, verified: Boolean, doubleEncrypted: Boolean) {
-    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.94f)) {
+    AppSurface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.94f)) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Box(Modifier.size(if (loading) 38.dp else 22.dp), contentAlignment = Alignment.Center) {

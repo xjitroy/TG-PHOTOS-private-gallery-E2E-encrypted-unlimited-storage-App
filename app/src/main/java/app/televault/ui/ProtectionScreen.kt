@@ -39,7 +39,7 @@ import app.televault.security.DeviceProtection
             media.changes.collect { items -> files = items.filterNot { it.trashed }.map { MediaEntry(it.uri.toString(), it.name, it.mime, it.size, it.date, local = it) } }
         }
     }
-    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+    AppSurface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
             Icon(Icons.Outlined.Security, null, Modifier.padding(start = 20.dp, top = 16.dp).size(32.dp), tint = MaterialTheme.colorScheme.primary)
             Text(

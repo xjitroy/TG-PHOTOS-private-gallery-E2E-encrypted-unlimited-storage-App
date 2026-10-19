@@ -116,7 +116,7 @@ import app.televault.crypto.PatternRecovery
                     repeat(3) { column ->
                         val dot = row * 3 + column + 1
                         Box(Modifier.weight(1f).fillMaxHeight().clickable(enabled = enabled) { callback(PatternRecovery.append(current, dot)) }, contentAlignment = Alignment.Center) {
-                            Surface(shape = CircleShape, color = if (('0' + dot) in nodes) accent else MaterialTheme.colorScheme.surfaceContainerHighest) {
+                            AppSurface(shape = CircleShape, color = if (('0' + dot) in nodes) accent else MaterialTheme.colorScheme.surfaceContainerHighest) {
                                 Text("$dot", Modifier.padding(10.dp), color = if (('0' + dot) in nodes) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface)
                             }
                         }

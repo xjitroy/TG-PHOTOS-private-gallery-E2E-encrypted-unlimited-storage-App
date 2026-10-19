@@ -15,7 +15,7 @@ internal fun MediaStorageCard(model: DriveViewModel) {
     val usage by model.mediaStorage.collectAsStateWithLifecycle()
     var confirmClear by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { model.refreshMediaStorage() }
-    Surface(shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.surfaceContainer) {
+    AppSurface(shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.surfaceContainer) {
         Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(label("Smart temporary storage", "স্মার্ট অস্থায়ী স্টোরেজ"), style = MaterialTheme.typography.titleLarge)
             Text(label("Used ${sizeLabel(usage.temporary + usage.native)} · Limit ${sizeLabel(usage.limit)}", "ব্যবহৃত ${sizeLabel(usage.temporary + usage.native)} · সীমা ${sizeLabel(usage.limit)}"), style = MaterialTheme.typography.titleSmall)

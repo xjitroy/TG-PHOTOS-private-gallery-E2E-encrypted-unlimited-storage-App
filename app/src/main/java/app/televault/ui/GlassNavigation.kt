@@ -33,10 +33,10 @@ internal fun GlassNavigation(tabs: List<GlassTab>, selected: Int, search: (() ->
     val colors = MaterialTheme.colorScheme
     val glass = LocalInterfaceStyle.current == app.televault.InterfaceStyle.GLASS
     Row(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))).padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Surface(
+        AppSurface(
             modifier = Modifier.weight(1f).widthIn(max = 460.dp),
             shape = RoundedCornerShape(100.dp),
-            color = colors.surfaceContainerHigh,
+            color = chromeColor(),
             tonalElevation = if (glass) 0.dp else 3.dp,
             shadowElevation = 10.dp,
             border = BorderStroke(
@@ -105,7 +105,7 @@ internal fun GlassNavigation(tabs: List<GlassTab>, selected: Int, search: (() ->
             }
         }
         if (search != null) {
-            Surface(shape = RoundedCornerShape(100.dp), color = colors.surfaceContainerHigh, shadowElevation = 8.dp) {
+            AppSurface(shape = RoundedCornerShape(100.dp), color = chromeColor(), shadowElevation = 8.dp) {
                 IconButton(search, Modifier.size(58.dp)) { Icon(Icons.Outlined.Search, label("Search everything", "সবকিছু খুঁজুন"), Modifier.size(26.dp)) }
             }
         }

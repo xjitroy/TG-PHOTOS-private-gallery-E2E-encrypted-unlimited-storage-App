@@ -9,6 +9,8 @@ import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
@@ -19,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -37,7 +40,7 @@ private data class SearchIndexInput(val files: List<MediaEntry>, val people: Peo
 /** One search across normal Photos/device/cloud media; never includes Private Vault or Trash. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun UniversalSearch(files: List<MediaEntry>, people: PeopleState, model: DriveViewModel, initialPerson: String?, close: () -> Unit, open: (MediaEntry, List<MediaEntry>) -> Unit) {
+internal fun UniversalSearch(files: List<MediaEntry>, people: PeopleState, model: DriveViewModel, initialPerson: String?, viewedId: String = "", viewerOpen: Boolean = false, close: () -> Unit, open: (MediaEntry, List<MediaEntry>) -> Unit) {
     val sceneIndex by model.scenes.state.collectAsStateWithLifecycle()
     val textIndex by model.ocr.state.collectAsStateWithLifecycle()
     val mediaState by model.contentState.collectAsStateWithLifecycle()
@@ -45,6 +48,20 @@ internal fun UniversalSearch(files: List<MediaEntry>, people: PeopleState, model
     var start by remember { mutableStateOf("") }
     var end by remember { mutableStateOf("") }
     var dates by remember { mutableStateOf(false) }
+    var draftStart by remember { mutableStateOf("") }
+    var draftEnd by remember { mutableStateOf("") }
+    var calendar by remember { mutableStateOf(false) }
+    val resultFocus = remember { BrowseFocusState() }
+    var wasViewing by remember { mutableStateOf(false) }
+    val returnToItem by model.preferences.returnToViewedItem.collectAsStateWithLifecycle(initialValue = true)
+    LaunchedEffect(viewerOpen, viewedId, returnToItem) {
+        if (viewerOpen) {
+            wasViewing = true
+        } else if (wasViewing) {
+            resultFocus.request(viewedId.takeIf { returnToItem })
+            wasViewing = false
+        }
+    }
     var type by remember { mutableStateOf(if (initialPerson != null) "Photos" else "All") }
     var personId by remember { mutableStateOf(initialPerson) }
     var name by remember(personId) { mutableStateOf(people.people.find { it.id == personId }?.name.orEmpty()) }
@@ -75,6 +92,8 @@ internal fun UniversalSearch(files: List<MediaEntry>, people: PeopleState, model
         query = ""
         start = ""
         end = ""
+        draftStart = ""
+        draftEnd = ""
         type = "All"
         filters.reset()
     }
@@ -95,12 +114,20 @@ internal fun UniversalSearch(files: List<MediaEntry>, people: PeopleState, model
         val matches = model.ocr.search(candidates.associate { it.id to "${it.name} ${metadata(it)}" }, parsed.text())
         candidates.filter { it.id in matches }.sortedByDescending { it.date }
     }
+    val draftDates = remember(draftStart, draftEnd) { UniversalMediaSearch.parse("", draftStart, draftEnd) }
+    fun applyDates() {
+        if (!draftDates.valid()) return
+        start = draftStart
+        end = draftEnd
+        keyboard?.hide()
+        focus.clearFocus()
+    }
     val results = projection.value
     Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
-        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        AppSurface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
                 TopAppBar(title = { Text(person?.name?.ifBlank { label("People", "মানুষ") } ?: label("Search everything", "সবকিছু খুঁজুন"), maxLines = 1, overflow = TextOverflow.Ellipsis) }, navigationIcon = { IconButton(close) { Icon(Icons.Outlined.ArrowBack, label("Back", "পিছনে")) } }, actions = {
-                    if (query.isNotBlank() || personId != null || type != "All" || dates || filters.options.active) {
+                    if (query.isNotBlank() || personId != null || type != "All" || dates || start.isNotBlank() || end.isNotBlank() || filters.options.active) {
                         TextButton({
                             resetSearch()
                             dates = false
@@ -114,17 +141,54 @@ internal fun UniversalSearch(files: List<MediaEntry>, people: PeopleState, model
                             TextSearchControls(model)
                             SmartSuggestionControls(model)
                         }
-                        OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth().padding(horizontal = 16.dp), placeholder = { Text(label("Search people, dates, text or subjects", "নাম, তারিখ বা ছবির লেখা খুঁজুন")) }, leadingIcon = { Icon(Icons.Outlined.Search, null) }, trailingIcon = if (query.isNotBlank()) ({ IconButton({ query = "" }) { Icon(Icons.Outlined.Close, label("Clear search", "সার্চ মুছুন")) } }) else null, singleLine = true, shape = RoundedCornerShape(28.dp))
+                        OutlinedTextField(
+                            query, { query = it }, Modifier.fillMaxWidth().padding(horizontal = 16.dp), placeholder = { Text(label("Search people, dates, text or subjects", "নাম, তারিখ বা ছবির লেখা খুঁজুন")) }, leadingIcon = { Icon(Icons.Outlined.Search, null) }, trailingIcon = {
+                                Row {
+                                    if (query.isNotBlank()) IconButton({ query = "" }) { Icon(Icons.Outlined.Close, label("Clear search", "সার্চ মুছুন")) }
+                                    IconButton({
+                                        keyboard?.hide()
+                                        focus.clearFocus()
+                                        projection.retry()
+                                    }) { Icon(Icons.Outlined.Search, label("Search", "সার্চ করুন")) }
+                                }
+                            }, singleLine = true, keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                            keyboardActions = KeyboardActions(onSearch = {
+                                keyboard?.hide()
+                                focus.clearFocus()
+                                projection.retry()
+                            }),
+                            shape = RoundedCornerShape(28.dp)
+                        )
                         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
                             listOf("All", "Photos", "Videos", "Audio", "Files", "Favorites").forEach { key -> FilterChip(type == key, { type = key }, label = { Text(sectionLabel(key)) }, modifier = Modifier.padding(end = 6.dp), shape = RoundedCornerShape(24.dp)) }
-                            FilterChip(dates, { dates = !dates }, label = { Text(label("Dates", "তারিখ")) }, leadingIcon = { Icon(Icons.Outlined.DateRange, null, Modifier.size(18.dp)) })
+                            FilterChip(dates || start.isNotBlank() || end.isNotBlank(), { dates = !dates }, label = { Text(label("Dates", "তারিখ")) }, leadingIcon = { Icon(Icons.Outlined.DateRange, null, Modifier.size(18.dp)) })
                         }
                         MediaFilterBar(filters)
                         if (dates) {
-                            Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OutlinedTextField(start, { start = it }, Modifier.weight(1f), label = { Text(label("From", "শুরু")) }, placeholder = { Text("17/10/2026") }, singleLine = true, shape = RoundedCornerShape(16.dp))
-                                OutlinedTextField(end, { end = it }, Modifier.weight(1f), label = { Text(label("Through", "শেষ")) }, placeholder = { Text("17/10/2026") }, singleLine = true, shape = RoundedCornerShape(16.dp))
+                            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedTextField(draftStart, { draftStart = it }, Modifier.weight(1f), label = { Text(label("From", "শুরু")) }, placeholder = { Text("DD/MM/YYYY") }, singleLine = true, isError = !draftDates.valid(), shape = RoundedCornerShape(16.dp))
+                                OutlinedTextField(draftEnd, { draftEnd = it }, Modifier.weight(1f), label = { Text(label("Through", "শেষ")) }, placeholder = { Text("DD/MM/YYYY") }, singleLine = true, isError = !draftDates.valid(), keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search), keyboardActions = KeyboardActions(onSearch = { applyDates() }), shape = RoundedCornerShape(16.dp))
                             }
+                            Row(Modifier.padding(horizontal = 16.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton({
+                                    keyboard?.hide()
+                                    focus.clearFocus()
+                                    calendar = true
+                                }) {
+                                    Icon(Icons.Outlined.DateRange, null, Modifier.size(18.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(label("Choose dates", "তারিখ বাছুন"))
+                                }
+                                Button({ applyDates() }, enabled = draftDates.valid() && (draftStart.isNotBlank() || draftEnd.isNotBlank())) { Text(label("Apply dates", "তারিখে সার্চ করুন")) }
+                                TextButton({
+                                    draftStart = ""
+                                    draftEnd = ""
+                                    start = ""
+                                    end = ""
+                                }) { Text(label("Clear", "মুছুন")) }
+                            }
+                            if (!draftDates.valid()) Text(label("Use DD/MM/YYYY or YYYY-MM-DD; start must be before the end.", "DD/MM/YYYY অথবা YYYY-MM-DD দিন; শুরু শেষের আগে হবে।"), Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.error)
+                            if (start.isNotBlank() || end.isNotBlank()) Text(label("Applied: ", "সক্রিয়: ") + start + " – " + end, Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.labelMedium)
                         }
                         if (!parsed.valid()) Text(label("Enter valid dates, with the start before the end.", "সঠিক তারিখ দিন; শুরু শেষের আগে হবে।"), Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.error)
                         if (initialPerson == null && people.people.any { it.name.isNotBlank() }) {
@@ -195,16 +259,36 @@ internal fun UniversalSearch(files: List<MediaEntry>, people: PeopleState, model
                         }
                     }
                 }
-                MediaGrid(results, emptySet(), model, false, {
-                    keyboard?.hide()
-                    focus.clearFocus()
-                    open(it, results)
-                }, {
-                    keyboard?.hide()
-                    focus.clearFocus()
-                    open(it, results)
-                }, density, { density = it }, grid = grid, mosaic = mosaic, leadingContent = introduction)
+                CompositionLocalProvider(LocalBrowseFocus provides resultFocus) {
+                    MediaGrid(results, emptySet(), model, false, {
+                        keyboard?.hide()
+                        focus.clearFocus()
+                        open(it, results)
+                    }, {
+                        keyboard?.hide()
+                        focus.clearFocus()
+                        open(it, results)
+                    }, density, { density = it }, grid = grid, mosaic = mosaic, leadingContent = introduction)
+                }
             }
+        }
+    }
+    if (calendar) {
+        fun utcMillis(text: String): Long? = SearchCalendarDates.utcMillis(text)
+        val range = rememberDateRangePickerState(initialSelectedStartDateMillis = if (draftDates.valid()) utcMillis(draftStart) ?: utcMillis(draftEnd) else null, initialSelectedEndDateMillis = if (draftDates.valid() && draftStart.isNotBlank() && draftEnd.isNotBlank()) utcMillis(draftEnd) else null)
+        DatePickerDialog(onDismissRequest = { calendar = false }, confirmButton = {
+            TextButton({
+                fun day(value: Long?) = value?.let { java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneOffset.UTC).toLocalDate().toString() }.orEmpty()
+                draftStart = day(range.selectedStartDateMillis)
+                draftEnd = day(range.selectedEndDateMillis)
+                start = draftStart
+                end = draftEnd
+                keyboard?.hide()
+                focus.clearFocus()
+                calendar = false
+            }, enabled = range.selectedStartDateMillis != null && range.selectedEndDateMillis != null) { Text(label("Apply dates", "তারিখে সার্চ করুন")) }
+        }, dismissButton = { TextButton({ calendar = false }) { Text(label("Cancel", "বাতিল")) } }) {
+            DateRangePicker(range, Modifier.heightIn(max = 520.dp), title = { Text(label("Search date range", "তারিখ অনুযায়ী সার্চ"), Modifier.padding(20.dp)) }, showModeToggle = true)
         }
     }
     if (editingName && person != null) {

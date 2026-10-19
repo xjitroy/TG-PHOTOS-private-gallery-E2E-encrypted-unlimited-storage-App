@@ -46,7 +46,7 @@ internal fun rememberFileChrome(scroll: LazyListState, vararg keys: Any?): Brows
 @Composable
 internal fun BrowseCompactBar(show: Boolean, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
     AnimatedVisibility(show, modifier.statusBarsPadding().padding(top = 8.dp, start = 16.dp, end = 16.dp), enter = fadeIn(), exit = fadeOut()) {
-        Surface(shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, shadowElevation = 4.dp) {
+        AppSurface(shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, shadowElevation = 4.dp) {
             Column(content = content)
         }
     }

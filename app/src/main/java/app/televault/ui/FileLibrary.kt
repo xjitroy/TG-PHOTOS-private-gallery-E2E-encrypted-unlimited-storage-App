@@ -1,7 +1,9 @@
 package app.televault.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.*
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -220,9 +222,11 @@ internal fun FileLibrary(files: List<MediaEntry>, cloud: Boolean, chooseCloud: (
             }) { Text(label("Choose & enable backup", "বেছে ব্যাকআপ চালু করুন")) }
         }, dismissButton = { TextButton({ folderBackupMenu = null }) { Text(label("Cancel", "বাতিল")) } })
     }
+    val focusPositions = remember(directories, direct) { direct.mapIndexed { index, entry -> entry.file.id to index + directories.size + 1 }.toMap() }
+    LocateBrowseFocus(focusPositions, { scroll.firstVisibleItemIndex }, { scroll.scrollToItem(it) }, { scroll.animateScrollBy(it, tween(180)) })
     val managerChrome = rememberFileChrome(scroll, cloud, folder, category, search)
     Box(modifier.fillMaxSize().nestedScroll(managerChrome.connection)) {
-        LazyColumn(Modifier.fillMaxSize().clipToBounds(), state = scroll, contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 140.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        LazyColumn(Modifier.fillMaxSize().browseFocusViewport().clipToBounds(), state = scroll, contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = browseFocusBottom(140.dp)), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             item(key = "browse-introduction") {
                 Column(Modifier.fillMaxWidth()) {
                     leadingContent?.invoke()
@@ -361,7 +365,7 @@ internal fun FileLibrary(files: List<MediaEntry>, cloud: Boolean, chooseCloud: (
             }
             items(directories, key = { "folder:${it.key}" }) { directory ->
                 val colors = folderColors(directory.key)
-                Surface(
+                AppSurface(
                     Modifier.clickable {
                         folder = directory.key
                         selection(emptySet())
@@ -381,14 +385,14 @@ internal fun FileLibrary(files: List<MediaEntry>, cloud: Boolean, chooseCloud: (
                 val file = entry.file
                 val checked = file.id in selected
                 val backed = cloud || file.local?.fingerprint in backedSources
-                Surface(Modifier.combinedClickable(onClick = { if (selected.isEmpty()) openCurrent(file) else selectCurrent(if (checked) selected - file.id else selected + file.id) }, onLongClick = { selectCurrent(selected + file.id) }), shape = RoundedCornerShape(20.dp), color = if (checked) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow) {
+                AppSurface(Modifier.browseFocus(file.id).combinedClickable(onClick = { if (selected.isEmpty()) openCurrent(file) else selectCurrent(if (checked) selected - file.id else selected + file.id) }, onLongClick = { selectCurrent(selected + file.id) }), shape = RoundedCornerShape(20.dp), color = if (checked) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow) {
                     ListItem(headlineContent = { Text(originalMediaName(file.name), maxLines = 2, overflow = TextOverflow.Ellipsis) }, supportingContent = { Text(sizeLabel(file.size) + " · " + DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(file.libraryTime)) + if (!cloud && file.local?.addedAt == 0L) " · " + label("File time", "ফাইলের সময়") else "", style = MaterialTheme.typography.bodySmall) }, leadingContent = {
                         if (checked) {
                             Icon(Icons.Outlined.CheckCircle, label("Selected", "নির্বাচিত"))
                         } else if (model != null && (file.mime.startsWith("image/") || file.mime.startsWith("video/"))) {
                             MediaThumbnail(file, model, Modifier.size(48.dp), 96)
                         } else {
-                            Surface(shape = RoundedCornerShape(14.dp), color = mediaAccentContainer(file.mime)) {
+                            AppSurface(shape = RoundedCornerShape(14.dp), color = mediaAccentContainer(file.mime)) {
                                 Icon(mediaTypeIcon(file.mime), null, Modifier.padding(12.dp), tint = mediaAccent(file.mime))
                             }
                         }

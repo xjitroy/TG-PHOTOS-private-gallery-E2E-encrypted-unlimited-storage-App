@@ -437,7 +437,7 @@ internal class RegionImageView(context: Context) : View(context) {
         // Loading is conveyed by the existing thumbnail, not an animated overlay.
         if (!hasPixels) placeholder()
         if (error) {
-            Surface(Modifier.align(Alignment.BottomCenter).padding(12.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = .94f), shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp)) {
+            AppSurface(Modifier.align(Alignment.BottomCenter).padding(12.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = .94f), shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp)) {
                 Row(Modifier.padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(label("Original unavailable", "মূল ছবি খোলা যায়নি"), style = MaterialTheme.typography.bodySmall)
                     TextButton({ retry++ }) { Text(label("Retry", "আবার চেষ্টা করুন")) }
