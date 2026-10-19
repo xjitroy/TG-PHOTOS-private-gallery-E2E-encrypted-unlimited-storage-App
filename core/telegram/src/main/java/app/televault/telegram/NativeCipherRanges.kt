@@ -9,7 +9,7 @@ import kotlinx.coroutines.withTimeout
 
 /** TDLib's prefix counter alone does not validate an uploaded file's local path. */
 internal object NativeCipherRanges {
-    suspend fun read(offset: Long, count: Int, prefix: suspend () -> Long, localFile: suspend () -> File?, download: suspend () -> Unit, access: () -> Unit): ByteArray {
+    suspend fun read(offset: Long, count: Int, prefix: suspend () -> Long, localFile: suspend () -> File?, download: suspend () -> Unit, access: () -> Unit, awaitChange: suspend () -> Unit = { delay(150) }): ByteArray {
         require(offset >= 0 && count in 1..2 * 1024 * 1024 && offset <= Long.MAX_VALUE - count)
         fun readable(file: File?): Boolean = file != null && file.isFile && file.canRead() && file.length() >= offset + count
         access()
@@ -24,7 +24,7 @@ internal object NativeCipherRanges {
                 coroutineContext.ensureActive()
                 file = localFile()
                 if (prefix() >= count && readable(file)) break
-                delay(150)
+                awaitChange()
             }
             val bytes = ByteArray(count)
             var returned = false

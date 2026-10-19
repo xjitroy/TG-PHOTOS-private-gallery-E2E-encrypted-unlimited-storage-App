@@ -11,7 +11,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -29,13 +28,19 @@ internal fun MemoryStory(card: PhotoMemory, model: DriveViewModel, close: () -> 
     var held by remember { mutableStateOf(false) }
     var elapsed by remember(page) { mutableLongStateOf(0) }
     var loaded by remember(page) { mutableStateOf(false) }
+    var detailReady by remember(page) { mutableStateOf(false) }
+    var waitingForDetail by remember(page) { mutableLongStateOf(0) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val lifecycleState by lifecycle.currentStateFlow.collectAsState()
     val latestClose by rememberUpdatedState(close)
     val item = card.entries[page.coerceIn(card.entries.indices)]
     LaunchedEffect(card.key, page) {
         while (elapsed < 6000) {
             delay(50)
-            if (!paused && !held && loaded && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) elapsed += 50
+            if (loaded && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                waitingForDetail += 50
+                if (!paused && !held && (detailReady || waitingForDetail >= 4000)) elapsed += 50
+            }
         }
         if (page < card.entries.lastIndex) page++ else latestClose()
     }
@@ -81,7 +86,8 @@ internal fun MemoryStory(card: PhotoMemory, model: DriveViewModel, close: () -> 
                 },
                 contentAlignment = Alignment.Center
             ) {
-                MediaThumbnail(item, model, Modifier.fillMaxSize(), pixels = 1024, contentScale = ContentScale.Fit, onReady = { loaded = true })
+                ScrubMediaPreview(item, model, onReady = { loaded = true }, onDetailReady = { detailReady = true })
+                PrepareScrubPreviews(card.entries, page, scrubbing = true, enabled = lifecycleState.isAtLeast(Lifecycle.State.RESUMED), model = model)
             }
             Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
                 IconButton({ if (page > 0) page-- }, enabled = page > 0) { Icon(Icons.Outlined.ChevronLeft, "Previous photo", tint = if (page > 0) Color.White else Color.Gray) }

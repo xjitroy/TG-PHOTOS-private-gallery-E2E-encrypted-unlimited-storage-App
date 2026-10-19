@@ -20,14 +20,17 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import org.drinkless.tdlib.JsonClient
 import org.json.JSONObject
 
@@ -52,6 +55,7 @@ class TdlibTelegramGateway(context: Context, private val credentials: TelegramCr
 
     @Volatile private var explicitlyClosed = false
     private val files = ConcurrentHashMap<Int, JSONObject>()
+    private val fileChanges = MutableSharedFlow<Int>(extraBufferCapacity = 64)
     private val fileLocks = Array(64) { Mutex() }
     private val nativeRetainedBytes = ConcurrentHashMap<Int, Long>()
     private var restartAttempts = 0
@@ -212,6 +216,7 @@ class TdlibTelegramGateway(context: Context, private val credentials: TelegramCr
             val id = file.getInt("id")
             if (files.size >= 1024 && !files.containsKey(id)) files.keys.firstOrNull()?.let { files.remove(it) }
             files[id] = file
+            fileChanges.tryEmit(id)
         }
         if (type == "updateMessageSendSucceeded" || type == "updateMessageSendFailed") {
             sent[event.getLong("old_message_id")] = event
@@ -720,7 +725,12 @@ class TdlibTelegramGateway(context: Context, private val credentials: TelegramCr
                         checked(json("downloadFile").put("file_id", id).put("priority", priority.coerceIn(1, 32)).put("offset", offset).put("limit", count).put("synchronous", false))
                         Unit
                     },
-                    access = access
+                    access = access,
+                    awaitChange = {
+                        // Native completion wakes this file immediately; bounded polling covers a missed event.
+                        withTimeoutOrNull(100) { fileChanges.first { it == id } }
+                        Unit
+                    }
                 )
             } catch (failure: Throwable) {
                 kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { runCatching { withTimeout(5000) { checked(json("cancelDownloadFile").put("file_id", id).put("only_if_pending", false)) } } }

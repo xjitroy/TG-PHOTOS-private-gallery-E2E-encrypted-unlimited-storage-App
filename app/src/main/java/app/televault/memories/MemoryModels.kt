@@ -2,6 +2,7 @@ package app.televault.memories
 
 import android.content.Context
 import androidx.work.*
+import app.televault.data.BackgroundBattery
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -41,7 +42,7 @@ internal class MemoryModels(context: Context) {
         hash.digest().joinToString("") { "%02x".format(it) }
     }
     fun install() {
-        val work = OneTimeWorkRequestBuilder<MemoryModelsWorker>().setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).setRequiresStorageNotLow(true).build()).addTag("memory-models-v1").build()
+        val work = OneTimeWorkRequestBuilder<MemoryModelsWorker>().setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).setRequiresStorageNotLow(true).apply { if (!BackgroundBattery.analysis(app)) setRequiresCharging(true) }.build()).addTag("memory-models-v1").build()
         WorkManager.getInstance(app).enqueueUniqueWork("memory-models-v1", ExistingWorkPolicy.KEEP, work)
     }
     fun cancel() {
@@ -124,7 +125,7 @@ internal class MemoryModels(context: Context) {
 class MemoryModelsWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result = try {
         (applicationContext as app.televault.TeleVaultApplication).memoryModels.download()
-        app.televault.data.MediaIntelligenceScheduling.request(applicationContext, afterCurrent = true)
+        app.televault.data.MediaIntelligenceScheduling.request(applicationContext)
         Result.success()
     } catch (cancel: CancellationException) {
         throw cancel

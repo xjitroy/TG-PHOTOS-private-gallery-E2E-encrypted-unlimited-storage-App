@@ -26,7 +26,7 @@
         android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher" android:label="@string/app_launcher_name" android:theme="@style/Theme.TeleVault"
         android:dataExtractionRules="@xml/data_extraction_rules" android:supportsRtl="true">
         <receiver android:name=".data.BackupEventReceiver" android:exported="false">
-            <intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /><action android:name="android.intent.action.MY_PACKAGE_REPLACED" /></intent-filter>
+            <intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /><action android:name="android.intent.action.MY_PACKAGE_REPLACED" /><action android:name="android.intent.action.ACTION_POWER_CONNECTED" /><action android:name="android.intent.action.BATTERY_OKAY" /></intent-filter>
         </receiver>
         <!-- App-only passwords, no web credential sharing/RP. DAL lint assumes a website;
              suppress this one association rule rather than invent an owned domain. Provider QA pending. -->
@@ -34,9 +34,24 @@
         <provider android:name=".data.EncryptedPreviewProvider" android:authorities="${applicationId}.private-media" android:exported="false" android:grantUriPermissions="true" />
         <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.files" android:exported="false" android:grantUriPermissions="true"><meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/shared_paths" /></provider>
         <service android:name="androidx.work.impl.foreground.SystemForegroundService" android:foregroundServiceType="dataSync" tools:node="merge" />
-        <activity android:name=".MainActivity" android:exported="true" android:supportsPictureInPicture="true"
+        <activity android:name=".MainActivity" android:exported="true" android:supportsPictureInPicture="true" android:launchMode="singleTop"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:mimeType="image/*" /><data android:mimeType="video/*" /><data android:mimeType="audio/*" />
+                <data android:mimeType="application/pdf" /><data android:mimeType="text/*" />
+                <data android:mimeType="application/json" /><data android:mimeType="application/xml" />
+            </intent-filter>
         </activity>
+        <activity-alias android:name="${applicationId}.BackupReceiver" android:targetActivity=".MainActivity" android:exported="true" android:label="Back up with TG Photos">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" /><action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+        </activity-alias>
         <activity-alias android:name="${applicationId}.DefaultLauncher" android:targetActivity=".MainActivity" android:enabled="true" android:exported="true" android:label="@string/app_launcher_name" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher">
             <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
         </activity-alias>

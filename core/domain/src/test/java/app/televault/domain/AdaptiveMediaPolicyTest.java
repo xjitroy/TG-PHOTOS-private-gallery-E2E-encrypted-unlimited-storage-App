@@ -3,9 +3,9 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 public class AdaptiveMediaPolicyTest {
     @Test public void photoTiersHaveExactBoundariesAndNoUnboundedTail() {
-        assertEquals(80, AdaptiveMediaPolicy.photoPercent(29));assertEquals(60, AdaptiveMediaPolicy.photoPercent(30));
-        assertEquals(40, AdaptiveMediaPolicy.photoPercent(80));assertEquals(20, AdaptiveMediaPolicy.photoPercent(130));
-        assertEquals(0, AdaptiveMediaPolicy.photoPercent(180));assertEquals(0, AdaptiveMediaPolicy.photoPercent(-1));
+        for (int batch=0;batch<4;batch++) for (int i=0;i<50;i++) assertEquals(80-batch*20,AdaptiveMediaPolicy.photoPercent(batch*50+i));
+        assertEquals(200,AdaptiveMediaPolicy.WARM_COUNT);
+        assertEquals(0, AdaptiveMediaPolicy.photoPercent(200));assertEquals(0, AdaptiveMediaPolicy.photoPercent(-1));
     }
     @Test public void rotationScrollAndRepeatedCallbacksDoNotManufactureHotness() {
         long now=1700000000000L;

@@ -49,6 +49,7 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
     @Volatile private var binding: Pair<Long, String>? = null
     private var changedSinceSave = 0
     private var enabled = false
+    private var restorePending = true
 
     private val generation = java.util.concurrent.atomic.AtomicLong()
     private var engine: FaceEngine? = null
@@ -156,7 +157,7 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
     }
     private fun save(scope: Pair<Long, String>, token: Long) {
         access(scope, token)
-        val body = JSONObject().put("version", 1).put("scanModel", scanModel).put("enabled", enabled).put("people", JSONArray(persons.values.map { encode(it, false) })).put("scanned", JSONObject(scanned.toMap())).put("scanQuality", JSONObject(scanQuality.toMap())).put("faceCounts", JSONObject(faceCounts.toMap())).put("sourceHashes", JSONObject(sourceHashes.toMap())).put("hashCounts", JSONObject(hashCounts.toMap())).toString().toByteArray()
+        val body = JSONObject().put("version", 1).put("scanModel", scanModel).put("enabled", enabled).put("restorePending", restorePending).put("people", JSONArray(persons.values.map { encode(it, false) })).put("scanned", JSONObject(scanned.toMap())).put("scanQuality", JSONObject(scanQuality.toMap())).put("faceCounts", JSONObject(faceCounts.toMap())).put("sourceHashes", JSONObject(sourceHashes.toMap())).put("hashCounts", JSONObject(hashCounts.toMap())).toString().toByteArray()
         try {
             check(body.size <= 12 * 1024 * 1024) { "People index is full; remove unused groups to continue" }
             val sealed = drive.peopleEnvelope(body, "catalog", scope, false)
@@ -201,6 +202,7 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
                         scanModel = body.optString("scanModel", LEGACY_MODEL)
                         check(body.getInt("version") == 1)
                         enabled = body.getBoolean("enabled")
+                        restorePending = body.optBoolean("restorePending", false)
                         val rows = body.getJSONArray("people")
                         check(rows.length() <= 1000)
                         for (i in 0 until rows.length()) {
@@ -236,8 +238,13 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
                     return@withLock
                 }
             }
+            if (!target.baseFile.exists() && !File(target.baseFile.path + ".bak").exists()) {
+                enabled = true
+                restorePending = true
+                save(scope, token)
+            }
             persons.values.forEach(::sanitize)
-            publish(scope, token)
+            publish(scope, token, if (restorePending && enabled) "Restoring encrypted People references before scanning…" else "")
             if (enabled && syncRemote) {
                 try {
                     syncLocked(scope, token)
@@ -248,6 +255,25 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
                     publish(scope, token, "Encrypted People sync will retry when you open People.")
                 }
             }
+        }
+    }
+    suspend fun prepareForScan(): Boolean = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val scope = drive.privateVaultBinding()
+            val token = generation.get()
+            if (binding != scope || !enabled) return@withLock false
+            if (restorePending) {
+                try {
+                    syncLocked(scope, token)
+                    publish(scope, token)
+                } catch (cancel: CancellationException) {
+                    throw cancel
+                } catch (_: Exception) {
+                    publish(scope, token, "Waiting to restore encrypted People references. Scanning resumes automatically when connected.")
+                    return@withLock false
+                }
+            }
+            !restorePending
         }
     }
     suspend fun enable(value: Boolean) = withContext(Dispatchers.IO) {
@@ -416,6 +442,7 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
                 sanitize(incoming)
             }
         }
+        restorePending = false
         save(scope, token)
         for (person in persons.values.filter { it.dirty && (it.name.isNotBlank() || it.deleted || it.remote > 0 || it.reviewed || it.different.isNotEmpty() || it.members.any(ForgottenVaultPolicy::validId) || it.photoHashes.isNotEmpty() || it.selfChangedAt > 0) }) {
             access(scope, token)
@@ -457,7 +484,7 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
         publish(scope, token)
     }
     suspend fun prepareAnalysis(): Boolean {
-        if (!models.prepareInstalled()) return false
+        if (!prepareForScan() || !models.prepareInstalled()) return false
         return withContext(Dispatchers.IO) {
             mutex.withLock {
                 val scope = drive.privateVaultBinding()
@@ -515,7 +542,8 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
         mutex.withLock {
             val scope = drive.privateVaultBinding()
             val token = generation.get()
-            if (!enabled || binding != scope || scanModel != MODEL) return@withLock false
+            if (!enabled || restorePending || binding != scope || scanModel != MODEL) return@withLock false
+            val upgrading = ownedSource && scanned[id] != null && (scanQuality[id] ?: 0) < 2
             val knownFaces = faceCounts[id]?.takeIf { it > 0 } ?: if (persons.values.any { !it.deleted && id in it.members }) 1 else 0
             if (!app.televault.domain.FaceScanCache.shouldScan(scanned[id], stamp, ForgottenVaultPolicy.validId(id), knownFaces, scanQuality[id] ?: 0, ownedSource)) {
                 if (id !in sourceHashes) {
@@ -530,8 +558,9 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
                 }
                 return@withLock false
             }
-            if (ForgottenVaultPolicy.validId(id) && id in faceCounts && persons.values.any { !it.deleted && it.references.isNotEmpty() && id in it.members }) {
+            if (!upgrading && ForgottenVaultPolicy.validId(id) && id in faceCounts && persons.values.any { !it.deleted && it.references.isNotEmpty() && id in it.members }) {
                 scanned[id] = stamp
+                scanQuality[id] = 2
                 changedSinceSave++
                 if (changedSinceSave % 10 == 0) save(scope, token)
                 return@withLock false
@@ -545,10 +574,11 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
                 sourceHashes[id] = contentHash
                 val restored = persons.values.filter { !it.deleted && contentHash in it.photoHashes && contentHash !in it.excludedHashes && drive.privateAi.identity(id) !in it.excludedMembers && contentHash !in it.excludedHashes }
                 val count = hashCounts[contentHash]
-                if (restored.isNotEmpty() && count != null) {
+                if (!upgrading && restored.isNotEmpty() && count != null) {
                     restored.forEach { if (it.members.add(id) && ForgottenVaultPolicy.validId(id)) it.dirty = true }
                     faceCounts[id] = count
                     scanned[id] = stamp
+                    scanQuality[id] = 2
                     changedSinceSave++
                     if (changedSinceSave % 10 == 0) save(scope, token)
                     if (changedSinceSave % 10 == 0) publish(scope, token)
@@ -568,7 +598,7 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
             } ?: return@withLock false
             try {
                 access(scope, token)
-                for (person in persons.values.filter { !it.deleted && it.rescanAutomatic && it.name.isBlank() && !it.reviewed && it.id != selectedSelf()?.id && id in it.members }) {
+                for (person in persons.values.filter { !it.deleted && (it.rescanAutomatic || upgrading) && it.name.isBlank() && !it.reviewed && it.id != selectedSelf()?.id && id in it.members }) {
                     person.members.remove(id)
                     if (contentHash.isNotEmpty() && person.members.none { mediaHash(it) == contentHash }) person.photoHashes.remove(contentHash)
                     person.dirty = true
@@ -886,6 +916,7 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
         sourceHashes.clear()
         hashCounts.clear()
         enabled = false
+        restorePending = true
         binding = null
         mutable.value.people.forEach { it.cover.fill(0) }
         mutable.value = PeopleState()

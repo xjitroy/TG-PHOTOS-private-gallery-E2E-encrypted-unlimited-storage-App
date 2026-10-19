@@ -5,6 +5,16 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PhotoLoadPriorityTest {
+    @Test fun queuedSpeculationRechecksSelectionBeforeOpeningNativeReads() {
+        val priority = PhotoLoadPriority()
+        assertTrue(priority.permits("tile"))
+        val token = priority.begin("story")
+        assertFalse(priority.permits("tile"))
+        assertTrue(priority.permits("story"))
+        priority.ready(token)
+        assertTrue(priority.permits("tile"))
+    }
+
     @Test fun selectedPhotoProceedsWhileSpeculationWaitsForAuthenticatedPixels() = runBlocking {
         val priority = PhotoLoadPriority()
         val token = priority.begin("selected")

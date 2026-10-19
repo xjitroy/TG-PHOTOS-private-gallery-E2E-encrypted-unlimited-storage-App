@@ -6,6 +6,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
@@ -16,7 +17,7 @@ import app.televault.data.PreviewSequence
 import app.televault.domain.ScrubPreviewQuality
 
 @Composable
-internal fun ScrubMediaPreview(item: MediaEntry, model: DriveViewModel) {
+internal fun ScrubMediaPreview(item: MediaEntry, model: DriveViewModel, onReady: (() -> Unit)? = null, onDetailReady: (() -> Unit)? = null) {
     val previewKey = item.id + ":" + (item.local?.fingerprint ?: item.cloud?.hash.orEmpty())
     val revision by model.photoPreviews.revision.collectAsStateWithLifecycle()
     val generation = remember(revision) { model.photoPreviews.epoch() }
@@ -26,27 +27,42 @@ internal fun ScrubMediaPreview(item: MediaEntry, model: DriveViewModel) {
     val previous = retained
     val frame = if (available != null && (previous == null || app.televault.domain.ThumbnailQuality.preferNew(previous.bitmap.width, previous.bitmap.height, available.bitmap.width, available.bitmap.height))) available else previous
     SideEffect { if (frame != null) retained = frame }
-    if (frame != null) {
-        val paint = remember { Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG) }
-        val rect = remember { RectF() }
-        Canvas(Modifier.fillMaxSize()) {
-            val bitmap = frame.bitmap
-            val quarterTurn = frame.orientation in 5..8
-            val factor = minOf(size.width / (if (quarterTurn) bitmap.height else bitmap.width), size.height / (if (quarterTurn) bitmap.width else bitmap.height))
-            val canvas = drawContext.canvas.nativeCanvas
-            canvas.save()
-            try {
-                canvas.translate(size.width / 2f, size.height / 2f)
-                canvas.rotate(ScrubPreviewQuality.rotation(frame.orientation).toFloat())
-                if (ScrubPreviewQuality.mirrored(frame.orientation)) canvas.scale(-1f, 1f)
-                rect.set(-bitmap.width * factor / 2f, -bitmap.height * factor / 2f, bitmap.width * factor / 2f, bitmap.height * factor / 2f)
-                canvas.drawBitmap(bitmap, null, rect, paint)
-            } finally {
-                canvas.restore()
-            }
+    val ready by rememberUpdatedState(onReady)
+    val detailReady by rememberUpdatedState(onDetailReady)
+    LaunchedEffect(frame) {
+        if (frame != null) {
+            ready?.invoke()
+            detailReady?.invoke()
         }
+    }
+    if (frame != null) {
+        DecodedPhotoImage(frame)
     } else {
-        key(item.id) { MediaThumbnail(item, model, Modifier.fillMaxSize(), if (item.mime.startsWith("image/")) 1024 else 384, ContentScale.Fit) }
+        key(item.id) { MediaThumbnail(item, model, Modifier.fillMaxSize(), if (item.mime.startsWith("image/")) 1024 else 384, ContentScale.Fit, onReady = onReady) }
+    }
+}
+
+@Composable
+internal fun DecodedPhotoImage(frame: app.televault.data.DecodedPhotoCache.Frame, modifier: Modifier = Modifier, contentScale: ContentScale = ContentScale.Fit) {
+    val paint = remember { Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG) }
+    val rect = remember { RectF() }
+    Canvas(modifier.fillMaxSize().clipToBounds()) {
+        val bitmap = frame.bitmap
+        val quarterTurn = frame.orientation in 5..8
+        val x = size.width / (if (quarterTurn) bitmap.height else bitmap.width)
+        val y = size.height / (if (quarterTurn) bitmap.width else bitmap.height)
+        val factor = if (contentScale == ContentScale.Crop) maxOf(x, y) else minOf(x, y)
+        val canvas = drawContext.canvas.nativeCanvas
+        canvas.save()
+        try {
+            canvas.translate(size.width / 2f, size.height / 2f)
+            canvas.rotate(ScrubPreviewQuality.rotation(frame.orientation).toFloat())
+            if (ScrubPreviewQuality.mirrored(frame.orientation)) canvas.scale(-1f, 1f)
+            rect.set(-bitmap.width * factor / 2f, -bitmap.height * factor / 2f, bitmap.width * factor / 2f, bitmap.height * factor / 2f)
+            canvas.drawBitmap(bitmap, null, rect, paint)
+        } finally {
+            canvas.restore()
+        }
     }
 }
 

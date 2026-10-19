@@ -98,7 +98,7 @@ internal fun PrivateProfileScreen(model: DriveViewModel, favorites: List<MediaEn
     Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false, securePolicy = SecureFlagPolicy.SecureOn)) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Column(Modifier.fillMaxSize().safeDrawingPadding()) {
-                TopAppBar(title = { Text(label("Private profile", "ব্যক্তিগত প্রোফাইল")) }, navigationIcon = { IconButton(close) { Icon(Icons.Outlined.ArrowBack, label("Back", "ফিরুন")) } }, actions = {
+                TopAppBar(title = { Text(label("Profile", "প্রোফাইল")) }, navigationIcon = { IconButton(close) { Icon(Icons.Outlined.ArrowBack, label("Back", "ফিরুন")) } }, actions = {
                     IconButton({
                         try {
                             val text = listOfNotNull(profile?.name, profile?.username?.takeIf { it.isNotBlank() }?.let { "@$it" }, profile?.bio?.takeIf { it.isNotBlank() }).joinToString("\n")
@@ -109,11 +109,21 @@ internal fun PrivateProfileScreen(model: DriveViewModel, favorites: List<MediaEn
                     }, enabled = profile != null) { Icon(Icons.Outlined.Share, label("Share profile details", "প্রোফাইলের তথ্য শেয়ার")) }
                 })
                 Row(Modifier.padding(horizontal = 24.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    ProfileAvatar(profile, Modifier.size(72.dp))
+                    ProfileAvatar(profile, Modifier.size(88.dp))
                     Column(Modifier.weight(1f)) {
                         Text(profile?.name.orEmpty().ifBlank { label("Your private collection", "আপনার ব্যক্তিগত সংগ্রহ") }, style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         if (!profile?.username.isNullOrBlank()) Text("@${profile?.username}", style = MaterialTheme.typography.bodyMedium)
                         Text(label("Only you · Cloud E2EE", "শুধু আপনি · Cloud E2EE"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    listOf("Photos" to favorites.count { it.mime.startsWith("image/") }, "Videos" to favorites.count { it.mime.startsWith("video/") }, "Favorites" to favorites.size).forEach { (title, count) ->
+                        Surface(Modifier.weight(1f), shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+                            Column(Modifier.padding(vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("$count", style = MaterialTheme.typography.titleLarge)
+                                Text(title, style = MaterialTheme.typography.labelMedium)
+                            }
+                        }
                     }
                 }
                 if (!profile?.bio.isNullOrBlank()) Text(profile?.bio.orEmpty(), Modifier.padding(horizontal = 24.dp), maxLines = 3, overflow = TextOverflow.Ellipsis)
@@ -136,7 +146,7 @@ internal fun PrivateProfileScreen(model: DriveViewModel, favorites: List<MediaEn
                         Column(Modifier.clip(RoundedCornerShape(20.dp)).clickable { open(item, items) }.background(MaterialTheme.colorScheme.surfaceContainer)) {
                             Text(dateFormat.format(Date(item.date)), Modifier.padding(horizontal = 12.dp, vertical = 8.dp), style = MaterialTheme.typography.labelSmall, maxLines = 2)
                             Box(Modifier.fillMaxWidth().aspectRatio(if (category == "Reels") 9f / 16f else 1f)) {
-                                MediaThumbnail(item, model, Modifier.fillMaxSize(), 256, ContentScale.Crop)
+                                MediaThumbnail(item, model, Modifier.fillMaxSize(), 384, ContentScale.Crop, adaptive = true)
                                 if (item.mime.startsWith("video/")) Icon(Icons.Outlined.PlayCircle, null, Modifier.align(Alignment.BottomEnd).padding(8.dp), tint = androidx.compose.ui.graphics.Color.White)
                             }
                         }

@@ -54,7 +54,6 @@ internal fun PersonPortrait(person: PersonCard, modifier: Modifier = Modifier) {
 @Composable
 internal fun PeopleAlbums(state: PeopleState, model: DriveViewModel, open: (PersonCard) -> Unit) {
     var allPeople by remember { mutableStateOf(false) }
-    var faceQuery by remember { mutableStateOf("") }
     var consent by remember { mutableStateOf(false) }
     var review by remember { mutableStateOf<PersonCard?>(null) }
     var deferred by remember { mutableStateOf(setOf<String>()) }
@@ -88,14 +87,14 @@ internal fun PeopleAlbums(state: PeopleState, model: DriveViewModel, open: (Pers
             Surface(shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.secondaryContainer) {
                 Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("New on-device face recognition", style = MaterialTheme.typography.titleMedium)
-                    Text("Download YuNet + SFace once (39 MB). Recognition runs on-device; no photo goes to an AI service. Previous names and confirmed tags are kept; automatic groups are rechecked with the new models.", style = MaterialTheme.typography.bodySmall)
+                    Text("YuNet + SFace (39 MB) downloads automatically after setup. Recognition runs on-device; no photo goes to an AI service. Previous names and confirmed tags are kept; automatic groups are rechecked with the new models.", style = MaterialTheme.typography.bodySmall)
                     if (pack.busy) {
                         val progress = (pack.downloaded.toFloat() / pack.total.coerceAtLeast(1)).coerceIn(0f, 1f)
                         LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
                         Text("${(progress * 100).toInt()}% downloaded")
                         TextButton({ model.people.models.cancel() }) { Text("Pause download") }
                     } else {
-                        Button({ model.people.models.install() }) { Text("Download & start") }
+                        Button({ model.people.models.install() }) { Text("Retry download") }
                     }
                     if (pack.notice.isNotBlank()) Text(pack.notice, style = MaterialTheme.typography.bodySmall)
                 }
@@ -138,31 +137,9 @@ internal fun PeopleAlbums(state: PeopleState, model: DriveViewModel, open: (Pers
         }
     }
     if (allPeople) {
-        Dialog(onDismissRequest = { allPeople = false }, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false, securePolicy = androidx.compose.ui.window.SecureFlagPolicy.SecureOn)) {
-            Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                Column(Modifier.fillMaxSize().safeDrawingPadding().padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(label("People", "মানুষ"), Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall)
-                        IconButton({ allPeople = false }) { Icon(Icons.Outlined.Close, label("Close", "বন্ধ")) }
-                    }
-                    OutlinedTextField(faceQuery, { faceQuery = it }, Modifier.fillMaxWidth(), singleLine = true, placeholder = { Text(label("Find by name", "নাম দিয়ে খুঁজুন")) }, leadingIcon = { Icon(Icons.Outlined.Search, null) }, shape = RoundedCornerShape(24.dp))
-                    LazyVerticalGrid(GridCells.Adaptive(96.dp), Modifier.weight(1f), contentPadding = PaddingValues(top = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
-                        items(state.people.filter { it.name.contains(faceQuery, ignoreCase = true) }, key = { it.id }) { person ->
-                            Column(
-                                Modifier.clickable {
-                                    allPeople = false
-                                    open(person)
-                                },
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                PersonPortrait(person, Modifier.size(88.dp))
-                                Text(person.name.ifBlank { if (person.provisional) label("Unsorted face", "অসম্পূর্ণ মুখ") else label("Add name", "নাম দিন") }, Modifier.padding(top = 6.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text("${person.members.size}", style = MaterialTheme.typography.labelSmall)
-                            }
-                        }
-                    }
-                }
-            }
+        AllPeopleDialog(state, { allPeople = false }) { person ->
+            allPeople = false
+            open(person)
         }
     }
     if (consent) {
@@ -230,6 +207,36 @@ internal fun PeopleAlbums(state: PeopleState, model: DriveViewModel, open: (Pers
             })
         } else {
             LaunchedEffect(candidate.id) { review = null }
+        }
+    }
+}
+
+@Composable
+internal fun AllPeopleDialog(state: PeopleState, close: () -> Unit, open: (PersonCard) -> Unit) {
+    var faceQuery by remember { mutableStateOf("") }
+    Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false, securePolicy = androidx.compose.ui.window.SecureFlagPolicy.SecureOn)) {
+        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+            Column(Modifier.fillMaxSize().safeDrawingPadding().padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(label("People", "মানুষ"), Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall)
+                    IconButton(close) { Icon(Icons.Outlined.Close, label("Close", "বন্ধ")) }
+                }
+                OutlinedTextField(faceQuery, { faceQuery = it }, Modifier.fillMaxWidth(), singleLine = true, placeholder = { Text(label("Find by name", "নাম দিয়ে খুঁজুন")) }, leadingIcon = { Icon(Icons.Outlined.Search, null) }, shape = RoundedCornerShape(24.dp))
+                LazyVerticalGrid(GridCells.Adaptive(96.dp), Modifier.weight(1f), contentPadding = PaddingValues(top = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                    items(state.people.filter { it.name.contains(faceQuery, ignoreCase = true) }, key = { it.id }) { person ->
+                        Column(
+                            Modifier.clickable {
+                                open(person)
+                            },
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            PersonPortrait(person, Modifier.size(88.dp))
+                            Text(person.name.ifBlank { if (person.provisional) label("Unsorted face", "অসম্পূর্ণ মুখ") else label("Add name", "নাম দিন") }, Modifier.padding(top = 6.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text("${person.members.size}", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
+            }
         }
     }
 }

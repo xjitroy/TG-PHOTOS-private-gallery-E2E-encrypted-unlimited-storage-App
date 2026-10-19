@@ -162,6 +162,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
         photoPreviews.clear()
         documentPreviews.clear()
         thumbnails.evictAll()
+        intelligenceHashes.evictAll()
         localMedia.trimThumbnails()
         metadataCache.clear()
         transferDisplayCache.evictAll()
@@ -587,6 +588,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
             photoPreviews.clear()
             documentPreviews.clear()
             thumbnails.evictAll()
+            intelligenceHashes.evictAll()
             val nextStage = if (root != null) {
                 VaultStage.LOCKED
             } else if (state.value.stage == VaultStage.CREATE) {
@@ -661,11 +663,15 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
         val uri = if (cloud != null) preferredDeviceSource(id) ?: if (allowCloud) privateMediaUri(id) else return@withContext null else localMedia.changes.value.find { it.uri.toString() == id && !it.trashed && !it.galleryHidden }?.uri ?: return@withContext null
         decodeOcrPhoto(app, uri)
     }
+    private val intelligenceHashes = LruCache<String, String>(256)
     internal suspend fun intelligenceContentHash(id: String): String = withContext(Dispatchers.IO) {
         val scope = privateVaultBinding()
         state.value.files.find { it.id == id }?.let { return@withContext it.hash }
         val local = localMedia.changes.value.find { it.uri.toString() == id && !it.trashed } ?: return@withContext ""
         if (!local.mime.startsWith("image/") || local.size !in 1..64L * 1024 * 1024)return@withContext ""
+        val epoch = playbackEpoch
+        val cacheKey = "$epoch:${local.fingerprint}"
+        intelligenceHashes.get(cacheKey)?.let { return@withContext it }
         val digest = MessageDigest.getInstance("SHA-256")
         var total = 0L
         app.contentResolver.openInputStream(local.uri)!!.use { input ->
@@ -685,7 +691,10 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
             }
         }
         check(total == local.size && privateVaultBinding() == scope)
-        encode(digest.digest())
+        synchronized(this@DriveRepository) {
+            check(epoch == playbackEpoch && privateVaultBinding() == scope)
+            encode(digest.digest()).also { intelligenceHashes.put(cacheKey, it) }
+        }
     }
     internal suspend fun notePrivateIntelligenceHash(hash: ByteArray) {
         privateAi.activate()
@@ -1381,7 +1390,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
     }
     private fun scheduleUploadQueue(task: CacheRow, manual: Boolean, wifi: Boolean = false, delaySeconds: Long = 0): Operation {
         val builder = OneTimeWorkRequestBuilder<UploadQueueWorker>().setInputData(workDataOf("job" to task.id, "queueDelay" to delaySeconds))
-            .setConstraints(Constraints.Builder().setRequiredNetworkType(if (wifi) NetworkType.UNMETERED else NetworkType.CONNECTED).build())
+            .setConstraints(Constraints.Builder().setRequiredNetworkType(if (wifi) NetworkType.UNMETERED else NetworkType.CONNECTED).apply { if (!manual && !BackgroundBattery.backup(app)) setRequiresCharging(true) }.build())
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).addTag("tgdrive").addTag("tgdrive-transfer")
         if (manual && delaySeconds == 0L) builder.setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
         if (delaySeconds > 0) builder.setInitialDelay(delaySeconds, TimeUnit.SECONDS)
@@ -1478,6 +1487,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
         }
     }.sortedWith { a, b -> UploadQueuePolicy.compare(a.second.optBoolean("manual"), a.second.optLong("requestedAt"), a.first.id, b.second.optBoolean("manual"), b.second.optLong("requestedAt"), b.first.id) }
     private fun uploadEligible(task: CacheRow, ticket: JSONObject): Boolean {
+        if (!ticket.optBoolean("manual") && !BackgroundBattery.backup(app)) return false
         val settings = policy.settings()
         val required = if (task.total >= 0) VaultCrypto.encryptedLength(task.total) + 1024 * 1024 else -1L
         val phase = if (task.phase == "DAILY_PHOTO_LIMIT" && UploadQueuePolicy.photoAllowance(settings.photoLimitMb * 1024 * 1024, settings.usedBytes, required, settings.overrideToday)) "WAITING" else task.phase
@@ -1643,7 +1653,10 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
                 if (state.value.stage == VaultStage.READY) {
                     when (data.optString("action")) {
                         "download" -> refreshTransfers()
-                        "upload" -> publishUploadResult(task, key)
+                        "upload" -> {
+                            publishUploadResult(task, key)
+                            MediaIntelligenceScheduling.request(app)
+                        }
                         else -> refreshLocal()
                     }
                 }
@@ -1752,6 +1765,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
     }
     private fun enforceAutomaticPolicy(data: JSONObject, mime: String) {
         if (!data.has("backupId") || data.optBoolean("manualRequested")) return
+        if (!BackgroundBattery.backup(app)) throw DataPolicyBlocked("WAITING")
         val settings = policy.settings()
         if (!MediaBackupPolicy.automaticAllowed(settings.dataSaver, data.getString("backupId") == "camera:$account:$vault", mime, data.optLong("capturedAt", Long.MIN_VALUE), settings.saverSince)) throw DataPolicyBlocked("DATA_SAVER_AUTO_PAUSED")
     }
@@ -2051,7 +2065,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
     suspend fun openPreview(id: String): Uri = withContext(Dispatchers.IO) { privateMediaUri(id) }
     fun cachedThumbnail(id: String, pixels: Int): Bitmap? = synchronized(this) {
         if (state.value.stage != VaultStage.READY) return@synchronized null
-        for (tier in intArrayOf(96, 192, 384, 640, 768, 960, 1024)) if (ThumbnailQuality.reusableTier(pixels, tier)) thumbnails.get("$id:$tier")?.let { return@synchronized it }
+        for (tier in intArrayOf(96, 192, 384, 640, 768, 960, 1024, 1280, 1536)) if (ThumbnailQuality.reusableTier(pixels, tier)) thumbnails.get("$id:$tier")?.let { return@synchronized it }
         null
     }
     fun canPrefetchPhotos() = runningTransfers.isEmpty() && !state.value.uploadSettings.dataSaver && !policy.cellular()
@@ -2100,12 +2114,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
                 existing.drop(1).forEach { stopBackupLocked(it.id, key) }
                 val backup = row(id, "backup", JSONObject().put("uri", uri.toString()).put("name", directory.name ?: "Backup").put("wifi", wifiOnly), key)
                 dao.put(backup)
-                val request = PeriodicWorkRequestBuilder<FolderBackupWorker>(15, TimeUnit.MINUTES)
-                    .setInputData(workDataOf("folder" to id)).setConstraints(
-                        Constraints.Builder()
-                            .setRequiredNetworkType(if (wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED).build()
-                    ).addTag("tgdrive").build()
-                work.enqueueUniquePeriodicWork("backup:$id", ExistingPeriodicWorkPolicy.UPDATE, request)
+                work.cancelUniqueWork("backup:$id")
                 val scan = OneTimeWorkRequestBuilder<FolderBackupWorker>().setInputData(workDataOf("folder" to id)).addTag("tgdrive").build()
                 work.enqueueUniqueWork("backup-now:$id", ExistingWorkPolicy.KEEP, scan)
                 watchCamera(id)
@@ -2165,8 +2174,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
     private fun startCameraLocked(key: ByteArray) {
         val id = "camera:$account:$vault"
         dao.put(row(id, "backup", JSONObject().put("uri", "camera").put("name", "Camera").put("wifi", false), key))
-        val request = PeriodicWorkRequestBuilder<FolderBackupWorker>(15, TimeUnit.MINUTES).setInputData(workDataOf("folder" to id)).setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()).addTag("tgdrive").build()
-        work.enqueueUniquePeriodicWork("backup:$id", ExistingPeriodicWorkPolicy.UPDATE, request)
+        work.cancelUniqueWork("backup:$id")
         val now = OneTimeWorkRequestBuilder<FolderBackupWorker>().setInputData(workDataOf("folder" to id)).setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()).addTag("tgdrive").build()
         work.enqueueUniqueWork("backup-now:$id", ExistingWorkPolicy.KEEP, now)
     }
@@ -2195,6 +2203,10 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
     }
     suspend fun scanBackup(id: String) = withContext(Dispatchers.IO) {
         if (state.value.indexNeedsRepair) throw DataPolicyBlocked("INDEX_REPAIR_REQUIRED")
+        if (!BackgroundBattery.backup(app)) {
+            BackupScheduling.whenCharging(app)
+            return@withContext
+        }
         backupControl.withLock {
             val record = dao.get(id) ?: return@withLock
             val key = backgroundKey(record)
@@ -2290,21 +2302,21 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
         val copy = deviceCopies.preferred(file, items, state.value.backedDeviceFiles) ?: return@withContext null
         copy.uri.takeIf { epoch == accessEpoch.get() && state.value.stage == VaultStage.READY && state.value.files.any { it.id == id && it.hash == file.hash && it.trashedAt == 0L } }
     }
-    internal suspend fun scrubPreview(id: String, key: String, local: Uri?, cloud: Boolean, width: Int, height: Int, adjacent: Boolean, allowCloud: Boolean, owner: PreviewRequestOwner) {
-        if (adjacent) photoPriority.await(id)
+    internal suspend fun scrubPreview(id: String, key: String, local: Uri?, cloud: Boolean, width: Int, height: Int, adjacent: Boolean, allowCloud: Boolean, owner: PreviewRequestOwner, cover: Boolean = false) {
+        if (adjacent || cover) photoPriority.await(id)
         val epoch = photoPreviews.epoch()
         val access = accessEpoch.get()
         photoPreviews.get(key)?.let { frame ->
             val rotated = frame.orientation in 5..8
-            val target = ScrubPreviewQuality.fit(frame.width, frame.height, if (rotated) height else width, if (rotated) width else height, photoPreviews.scrubPixelBudget(), adjacent)
+            val target = if (cover) ScrubPreviewQuality.cover(frame.width, frame.height, if (rotated) height else width, if (rotated) width else height, photoPreviews.tilePixelBudget()) else ScrubPreviewQuality.fit(frame.width, frame.height, if (rotated) height else width, if (rotated) width else height, photoPreviews.scrubPixelBudget(), adjacent)
             if (photoPreviews.sufficient(key, target.width(), target.height())) return
         }
-        if (adjacent && local != null && !onDevicePreviewSource(local)) return
-        val device = local ?: if (cloud) preferredDeviceSource(id, localOnly = adjacent) else null
+        if ((adjacent || cover) && local != null && !onDevicePreviewSource(local)) return
+        val device = local ?: if (cloud) preferredDeviceSource(id, localOnly = adjacent || cover) else null
         owner.ensureOpen()
         val source = device ?: if (cloud && allowCloud && access == accessEpoch.get() && state.value.stage == VaultStage.READY) privateMediaUri(id) else return
         if (access != accessEpoch.get()) return
-        ScrubPhotoDecoder.decode(app, source, photoPreviews, key, epoch, width, height, adjacent, owner)
+        ScrubPhotoDecoder.decode(app, source, photoPreviews, key, epoch, width, height, adjacent, owner, cover) { !(adjacent || cover) || photoPriority.permits(id) }
     }
     private fun onDevicePreviewSource(uri: Uri) = uri.scheme == "file" || uri.scheme == "content" && uri.authority in setOf("media", "com.android.externalstorage.documents", "com.android.providers.media.documents", "com.android.providers.downloads.documents")
     suspend fun verifiedDeviceCopies(cloudIds: Set<String>? = null, sources: Set<String>? = null): List<BackedDeviceCopy> = withContext(Dispatchers.IO) {
@@ -2858,7 +2870,8 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
         startupWarm.withLock {
             val epoch = accessEpoch.get()
             if (state.value.stage != VaultStage.READY || !state.value.indexLoaded) return@withLock
-            val chosen = ids.distinct().take(180).mapNotNull { id -> state.value.files.find { it.id == id && it.trashedAt == 0L } }
+            val activePhotos = state.value.files.asSequence().filter { it.trashedAt == 0L && it.mime.startsWith("image/") }.associateBy { it.id }
+            val chosen = ids.distinct().mapNotNull { activePhotos[it] }.take(AdaptiveMediaPolicy.WARM_COUNT)
             if (chosen.isEmpty()) return@withLock
             val key = unlockedKey()
             try {
@@ -3237,8 +3250,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
             } finally {
                 key.fill(0)
             }
-            val request = PeriodicWorkRequestBuilder<FolderBackupWorker>(15, TimeUnit.MINUTES).setInputData(workDataOf("folder" to id)).setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()).addTag("tgdrive").build()
-            work.enqueueUniquePeriodicWork("backup:$id", ExistingPeriodicWorkPolicy.UPDATE, request)
+            work.cancelUniqueWork("backup:$id")
             watchCamera(id)
             val now = OneTimeWorkRequestBuilder<FolderBackupWorker>().setInputData(workDataOf("folder" to id)).setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()).addTag("tgdrive").build()
             work.enqueueUniqueWork("backup-now:$id", ExistingWorkPolicy.KEEP, now)
@@ -3332,8 +3344,15 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
         activeJobs(account, vault).filter { MediaBackupPolicy.retryEligible(it.phase, settings.dataSaver, settings.mobileVideos, notices) }.forEach { retry(it.id) }
     }
     suspend fun watchCamera(id: String, rearm: Boolean = false) = withContext(Dispatchers.IO) {
-        if (dao.get(id) == null) return@withContext
+        val record = dao.get(id) ?: return@withContext
+        val key = backgroundKey(record)
+        val source = try {
+            payload(record, key).optString("uri").takeIf { it.startsWith("content://") }?.let(Uri::parse)
+        } finally {
+            releaseWorkKey(key)
+        }
         val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED)
+            .apply { if (source != null) addContentUriTrigger(source, true) }
             .addContentUriTrigger(android.provider.MediaStore.Files.getContentUri("external"), true)
             .addContentUriTrigger(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, true)
             .addContentUriTrigger(android.provider.MediaStore.Video.Media.EXTERNAL_CONTENT_URI, true)
@@ -3357,8 +3376,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
             try {
                 val data = payload(record, key)
                 val constraint = Constraints.Builder().setRequiredNetworkType(if (data.optBoolean("wifi", true)) NetworkType.UNMETERED else NetworkType.CONNECTED).build()
-                val periodic = PeriodicWorkRequestBuilder<FolderBackupWorker>(15, TimeUnit.MINUTES).setInputData(workDataOf("folder" to record.id)).setConstraints(constraint).addTag("tgdrive").build()
-                work.enqueueUniquePeriodicWork("backup:${record.id}", ExistingPeriodicWorkPolicy.KEEP, periodic)
+                work.cancelUniqueWork("backup:${record.id}")
                 watchCamera(record.id)
                 val now = OneTimeWorkRequestBuilder<FolderBackupWorker>().setInputData(workDataOf("folder" to record.id)).setConstraints(constraint).addTag("tgdrive").build()
                 work.enqueueUniqueWork("backup-now:${record.id}", ExistingWorkPolicy.KEEP, now)

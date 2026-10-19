@@ -9,6 +9,17 @@ public final class ThumbnailQuality {
         if (columns == 2) return 640;
         return columns <= 4 ? 384 : 192;
     }
+    /** Physical pixels, including a mosaic cell's row span; independent of scroll velocity. */
+    public static int tilePixels(int width, int height, int minimum) {
+        int edge = Math.max(Math.max(width, height), minimum);
+        for (int tier : new int[]{192, 384, 640, 768, 960, 1024, 1280, 1536}) {
+            if (edge <= tier) return tier;
+        }
+        return 1536;
+    }
+    public static boolean needsDetail(int width, int height, int bitmapWidth, int bitmapHeight) {
+        return width > 0 && height > 0 && (bitmapWidth < width || bitmapHeight < height);
+    }
     /** Use the largest power-of-two sample that does not undershoot the requested long edge. */
     public static int sample(int width, int height, int requested) {
         int edge = Math.max(width, height);

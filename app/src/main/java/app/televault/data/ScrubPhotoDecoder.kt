@@ -12,12 +12,13 @@ import kotlinx.coroutines.*
 /** One bounded, sampled bitmap. Never constructs a player/view or writes plaintext to disk. */
 internal object ScrubPhotoDecoder {
     private val serial = PreviewWorkGate(1)
-    suspend fun decode(context: Context, uri: Uri, cache: DecodedPhotoCache, key: String, epoch: Long, width: Int, height: Int, adjacent: Boolean, owner: PreviewRequestOwner) = withContext(Dispatchers.IO) {
+    suspend fun decode(context: Context, uri: Uri, cache: DecodedPhotoCache, key: String, epoch: Long, width: Int, height: Int, adjacent: Boolean, owner: PreviewRequestOwner, cover: Boolean = false, permitted: () -> Boolean = { true }) = withContext(Dispatchers.IO) {
         owner.ensureOpen()
         serial.run {
             PreviewWorkGate.originals.run {
                 withContext(NonCancellable) native@{
                     owner.ensureOpen()
+                    if (!permitted()) return@native
                     val reads = owner.register(MediaReadSession.open(context, uri))
                     var bitmap: Bitmap? = null
                     try {
@@ -27,7 +28,7 @@ internal object ScrubPhotoDecoder {
                         reads.descriptor(context).use { BitmapFactory.decodeFileDescriptor(it.fileDescriptor, null, bounds) }
                         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@native
                         val rotated = orientation in 5..8
-                        val target = ScrubPreviewQuality.fit(bounds.outWidth, bounds.outHeight, if (rotated) height else width, if (rotated) width else height, cache.scrubPixelBudget(), adjacent)
+                        val target = if (cover) ScrubPreviewQuality.cover(bounds.outWidth, bounds.outHeight, if (rotated) height else width, if (rotated) width else height, cache.tilePixelBudget()) else ScrubPreviewQuality.fit(bounds.outWidth, bounds.outHeight, if (rotated) height else width, if (rotated) width else height, cache.scrubPixelBudget(), adjacent)
                         if (cache.sufficient(key, target.width(), target.height())) return@native
                         owner.ensureOpen()
                         bitmap = reads.descriptor(context).use {

@@ -357,7 +357,7 @@ class LocalMediaRepository(private val context: Context) {
     fun cachedThumbnail(item: LocalMedia, pixels: Int): Bitmap? {
         thumbnails.get("${item.fingerprint}:$pixels")?.let { return it }
         // Reuse sufficient detail without pinning screen-sized bitmaps in every tiny strip tile.
-        for (size in intArrayOf(192, 384, 640, 768, 960)) {
+        for (size in intArrayOf(192, 384, 640, 768, 960, 1024, 1280, 1536)) {
             if (app.televault.domain.ThumbnailQuality.reusableTier(pixels, size)) thumbnails.get("${item.fingerprint}:$size")?.let { return it }
         }
         return null
@@ -366,8 +366,18 @@ class LocalMediaRepository(private val context: Context) {
         if (!item.mime.startsWith("image/") && !item.mime.startsWith("video/")) return@withContext null
         val key = "${item.fingerprint}:$pixels"
         cachedThumbnail(item, pixels)?.let { return@withContext it }
-        runCatching {
-            val providerThumbnail = if (Build.VERSION.SDK_INT >= 29 && item.uri.scheme == "content") runCatching { context.contentResolver.loadThumbnail(item.uri, android.util.Size(pixels, pixels), null) }.getOrNull() else null
+        val loaded = try {
+            val providerThumbnail = if (Build.VERSION.SDK_INT >= 29 && item.uri.scheme == "content") {
+                try {
+                    context.contentResolver.loadThumbnail(item.uri, android.util.Size(pixels, pixels), null)
+                } catch (cancel: kotlinx.coroutines.CancellationException) {
+                    throw cancel
+                } catch (_: Exception) {
+                    null
+                }
+            } else {
+                null
+            }
             if (providerThumbnail != null) {
                 providerThumbnail
             } else if (item.mime.startsWith("video/")) {
@@ -382,10 +392,15 @@ class LocalMediaRepository(private val context: Context) {
             } else {
                 val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 context.contentResolver.openInputStream(item.uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
-                if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching null
+                if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@withContext null
                 val sample = app.televault.domain.ThumbnailQuality.sample(bounds.outWidth, bounds.outHeight, pixels)
                 context.contentResolver.openInputStream(item.uri)?.use { BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample }) }?.let { MediaTools.orientThumbnail(context, item.uri, it) }
             }
-        }.getOrNull()?.also { thumbnails.put(key, it) }
+        } catch (cancel: kotlinx.coroutines.CancellationException) {
+            throw cancel
+        } catch (_: Exception) {
+            null
+        }
+        loaded?.also { thumbnails.put(key, it) }
     }
 }

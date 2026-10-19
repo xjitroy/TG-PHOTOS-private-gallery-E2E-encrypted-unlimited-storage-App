@@ -4,6 +4,30 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class ScrubPreviewQualityTest {
+    @Test public void portraitMosaicNeedsMoreDetailThanFitToAvoidUpscalingTheCrop() {
+        var tile=ScrubPreviewQuality.cover(4000,3000,540,810,1024L*1024);
+        assertEquals(new ScrubPreviewQuality.Size(1080,810),tile);
+        assertTrue(ScrubPreviewQuality.fit(4000,3000,540,810,1024L*1024,false).height()<tile.height());
+        assertEquals(new ScrubPreviewQuality.Size(320,240),ScrubPreviewQuality.cover(320,240,1080,1080,1024L*1024));
+    }
+    @Test public void coverIsBoundedForPanoramasLargeDisplaysAndSmallMemoryBudgets() {
+        for(int[] source:new int[][]{{8000,6000},{6000,8000},{Integer.MAX_VALUE,1},{1,Integer.MAX_VALUE},{Integer.MAX_VALUE,Integer.MAX_VALUE}}) {
+            for(long budget:new long[]{1,393216,1024L*1024}) {
+                var target=ScrubPreviewQuality.cover(source[0],source[1],1440,3200,budget);
+                assertTrue(target.width()>0 && target.height()>0);
+                assertTrue((long)target.width()*target.height()<=budget);
+                assertTrue(target.width()<=source[0] && target.height()<=source[1]);
+                int sample=ScrubPreviewQuality.sample(source[0],source[1],target);
+                assertTrue((long)Math.max(1,source[0]/sample)*Math.max(1,source[1]/sample)<=4L*budget);
+            }
+        }
+    }
+    @Test public void coverPreservesQuarterTurnGeometryAndRejectsInvalidBounds() {
+        var normal=ScrubPreviewQuality.cover(4000,3000,540,810,1024L*1024);
+        var rotated=ScrubPreviewQuality.cover(3000,4000,810,540,1024L*1024);
+        assertEquals(normal.width(),rotated.height());assertEquals(normal.height(),rotated.width());
+        assertThrows(IllegalArgumentException.class,()->ScrubPreviewQuality.cover(4000,3000,0,810,1024));
+    }
     @Test public void localPhotoTargetsRealViewportInsteadOfThumbnailEdge() {
         assertEquals(new ScrubPreviewQuality.Size(1080,810), ScrubPreviewQuality.fit(4000,3000,1080,2240,2L*1024*1024,false));
         assertEquals(new ScrubPreviewQuality.Size(320,240), ScrubPreviewQuality.fit(320,240,1080,2240,2L*1024*1024,false));

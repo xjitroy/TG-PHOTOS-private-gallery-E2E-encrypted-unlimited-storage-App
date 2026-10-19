@@ -4,6 +4,18 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class ThumbnailQualityTest {
+    @Test public void tallMosaicUsesItsActualRowSpanAndPhysicalPixels() {
+        assertEquals(384, ThumbnailQuality.tilePixels(268,268,192));
+        assertEquals(960, ThumbnailQuality.tilePixels(538,808,640));
+        assertEquals(1280, ThumbnailQuality.tilePixels(1078,1078,640));
+        assertEquals(1536, ThumbnailQuality.tilePixels(1440,2560,960));
+    }
+    @Test public void cropDetailRequiresBothAxesRatherThanOnlyTheLongEdge() {
+        assertTrue(ThumbnailQuality.needsDetail(540,810,1024,512));
+        assertTrue(ThumbnailQuality.needsDetail(540,810,480,960));
+        assertFalse(ThumbnailQuality.needsDetail(540,810,810,1080));
+        assertFalse(ThumbnailQuality.needsDetail(0,810,0,0));
+    }
     @Test public void tinyStripTilesDoNotRetainEveryScreenPreview() {
         assertTrue(ThumbnailQuality.reusableTier(192,192));
         assertTrue(ThumbnailQuality.reusableTier(192,384));

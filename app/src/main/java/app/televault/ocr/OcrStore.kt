@@ -115,7 +115,7 @@ internal class OcrStore(private val context: Context, private val drive: DriveRe
             searchCache.evictAll()
             val generation = token.incrementAndGet()
             val enabled = try {
-                read(scope, "settings")?.optBoolean("enabled") ?: false
+                read(scope, "settings")?.optBoolean("enabled") ?: true
             } catch (cancel: CancellationException) {
                 throw cancel
             } catch (_: Exception) {

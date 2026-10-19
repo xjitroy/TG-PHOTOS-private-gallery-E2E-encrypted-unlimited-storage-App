@@ -2,6 +2,7 @@ package app.televault.ocr
 
 import android.content.Context
 import androidx.work.*
+import app.televault.data.BackgroundBattery
 import app.televault.data.MediaIntelligenceScheduling
 import app.televault.domain.BackgroundAnalysisPolicy
 import java.io.File
@@ -33,8 +34,8 @@ internal class OcrModels(context: Context) {
     fun backgroundAllowed(needsNetwork: Boolean = true): Boolean = BackgroundAnalysisPolicy.allowed(app.getSystemService(android.os.PowerManager::class.java).isPowerSaveMode, app.getSystemService(android.net.ConnectivityManager::class.java).isActiveNetworkMetered, needsNetwork)
     fun installedBytes(): Long = packs.sumOf { File(directory, "tessdata/${it.path}").takeIf(File::isFile)?.length() ?: 0L }
     fun install(all: Boolean = false) {
-        val work = OneTimeWorkRequestBuilder<OcrModelsWorker>().setInputData(workDataOf("all" to all)).setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).setRequiresStorageNotLow(true).build()).addTag("ocr-models").build()
-        WorkManager.getInstance(app).enqueueUniqueWork("ocr-models", ExistingWorkPolicy.APPEND_OR_REPLACE, work)
+        val work = OneTimeWorkRequestBuilder<OcrModelsWorker>().setInputData(workDataOf("all" to all)).setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).setRequiresStorageNotLow(true).apply { if (!BackgroundBattery.analysis(app)) setRequiresCharging(true) }.build()).addTag("ocr-models").build()
+        WorkManager.getInstance(app).enqueueUniqueWork("ocr-models", ExistingWorkPolicy.KEEP, work)
     }
     fun cancel() {
         WorkManager.getInstance(app).cancelUniqueWork("ocr-models")

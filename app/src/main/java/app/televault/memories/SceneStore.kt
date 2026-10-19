@@ -100,6 +100,10 @@ internal class SceneStore(private val context: Context, private val drive: Drive
                     return@withLock
                 }
             }
+            if (!target.baseFile.exists() && !File(target.baseFile.path + ".bak").exists()) {
+                enabled = true
+                save(scope, token)
+            }
             publish(scope, token)
         }
     }
@@ -143,29 +147,29 @@ internal class SceneStore(private val context: Context, private val drive: Drive
             if (value) models.install()
         }
     }
-    suspend fun analyze(id: String, stamp: String, preview: (suspend () -> android.graphics.Bitmap?)? = null, source: suspend () -> Uri) = withContext(Dispatchers.IO) {
+    suspend fun analyze(id: String, stamp: String, preview: (suspend () -> android.graphics.Bitmap?)? = null, source: suspend () -> Uri): Boolean = withContext(Dispatchers.IO) {
         gate.withLock {
-            if (!enabled || full) return@withLock
+            if (!enabled || full) return@withLock false
             val scope = checkNotNull(binding)
             val token = generation.get()
             guard(scope, token)
-            if (!drive.normalIntelligenceMedia(id)) return@withLock
-            records[id]?.takeIf { it.stamp == stamp && !drive.privateAi.excluded(id, it.hash) }?.let { return@withLock }
+            if (!drive.normalIntelligenceMedia(id)) return@withLock false
+            records[id]?.takeIf { it.stamp == stamp && !drive.privateAi.excluded(id, it.hash) }?.let { return@withLock false }
             val hash = drive.intelligenceContentHash(id)
-            if (drive.privateAi.excluded(id, hash)) return@withLock
+            if (drive.privateAi.excluded(id, hash)) return@withLock false
             val text = app.televault.OnDeviceAnalysis.run {
                 guard(scope, token)
                 check(models.prepareInstalled())
                 if (preview == null) SceneEngine(context, models).use { it.classify(context, source()) } else preview()?.let { image -> SceneEngine(context, models).use { it.classifyPixels(image) } }
-            } ?: return@withLock
+            } ?: return@withLock false
             guard(scope, token)
-            if (drive.privateAi.excluded(id, hash)) return@withLock
+            if (drive.privateAi.excluded(id, hash)) return@withLock false
             val record = Record(stamp, hash, text)
             if (records.size >= 50000 && id !in records || !budget.replace(id, weight(id, record))) {
                 full = true
                 publish(scope, token)
                 save(scope, token)
-                return@withLock
+                return@withLock false
             }
             records[id] = record
             dirty++
@@ -173,6 +177,7 @@ internal class SceneStore(private val context: Context, private val drive: Drive
                 save(scope, token)
                 publish(scope, token)
             }
+            true
         }
     }
     suspend fun finish() = withContext(Dispatchers.IO) {

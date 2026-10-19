@@ -117,10 +117,10 @@ internal suspend fun projectLibrary(input: LibraryProjectionInput, scope: Librar
 
 /** Browsing never enables a backup subscription. Backup callbacks are explicit user actions. */
 @Composable
-internal fun FileLibrary(files: List<MediaEntry>, cloud: Boolean, chooseCloud: (Boolean) -> Unit, selected: Set<String>, selection: (Set<String>) -> Unit, open: (MediaEntry, List<MediaEntry>) -> Unit, backup: ((MediaEntry) -> Unit)?, search: String, changeSearch: (String) -> Unit, model: DriveViewModel? = null, backedSources: Set<String> = emptySet(), access: (() -> Unit)? = null, chooseFolder: (() -> Unit)? = null, refresh: (() -> Unit)? = null, utilities: ((String) -> Unit)? = null, fileAction: ((MediaEntry, String) -> Unit)? = null, cloudFolders: List<String> = emptyList(), cloudAvailable: Boolean = true, loading: Boolean = false, scanFailed: Boolean = false, modifier: Modifier = Modifier, shownFilesChanged: (Set<String>) -> Unit = {}, scroll: androidx.compose.foundation.lazy.LazyListState = rememberLazyListState(), leadingContent: (@Composable () -> Unit)? = null) {
+internal fun FileLibrary(files: List<MediaEntry>, cloud: Boolean, chooseCloud: (Boolean) -> Unit, selected: Set<String>, selection: (Set<String>) -> Unit, open: (MediaEntry, List<MediaEntry>) -> Unit, backup: ((MediaEntry) -> Unit)?, search: String, changeSearch: (String) -> Unit, model: DriveViewModel? = null, backedSources: Set<String> = emptySet(), access: (() -> Unit)? = null, chooseFolder: (() -> Unit)? = null, refresh: (() -> Unit)? = null, utilities: ((String) -> Unit)? = null, fileAction: ((MediaEntry, String) -> Unit)? = null, cloudFolders: List<String> = emptyList(), cloudAvailable: Boolean = true, loading: Boolean = false, scanFailed: Boolean = false, modifier: Modifier = Modifier, shownFilesChanged: (Set<String>) -> Unit = {}, scroll: androidx.compose.foundation.lazy.LazyListState = rememberLazyListState(), leadingContent: (@Composable () -> Unit)? = null, initialFolder: String = "", initialCategory: String = "All files", initialRecent: Boolean = false, locationChanged: (String, String, Boolean) -> Unit = { _, _, _ -> }) {
     val offlineIds by (model?.offlineIds ?: kotlinx.coroutines.flow.MutableStateFlow(emptySet<String>())).collectAsStateWithLifecycle()
-    var folder by rememberSaveable(cloud) { mutableStateOf("") }
-    var category by rememberSaveable(cloud) { mutableStateOf("All files") }
+    var folder by rememberSaveable(cloud) { mutableStateOf(initialFolder) }
+    var category by rememberSaveable(cloud) { mutableStateOf(initialCategory) }
     var temporarySort by rememberSaveable(cloud) { mutableStateOf("Newest") }
     val sortFlow = remember(model, cloud) { model?.preferences?.fileSort(cloud) ?: kotlinx.coroutines.flow.MutableStateFlow("Newest") }
     val savedSort by sortFlow.collectAsStateWithLifecycle(initialValue = "Newest")
@@ -131,7 +131,8 @@ internal fun FileLibrary(files: List<MediaEntry>, cloud: Boolean, chooseCloud: (
     val mediaFilter = mediaFilters.options
     val backupState by (model?.contentState ?: kotlinx.coroutines.flow.MutableStateFlow(app.televault.data.DriveSnapshot())).collectAsStateWithLifecycle()
     var folderBackupMenu by remember { mutableStateOf<Map.Entry<String, List<MediaEntry>>?>(null) }
-    var recent by rememberSaveable(cloud) { mutableStateOf(false) }
+    var recent by rememberSaveable(cloud) { mutableStateOf(initialRecent) }
+    SideEffect { locationChanged(folder, category, recent) }
     var menu by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(cloud, folder, category, recent, search, sort, mediaFilter) { scroll.scrollToItem(0) }
     val projectionScope = LibraryProjectionScope(model?.playbackEpoch ?: 0L, cloud, folder, category, recent, search, sort, mediaFilter)

@@ -116,6 +116,11 @@ class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
                         people.activate(syncRemote = false)
                         ocr.activate()
                         scenes.activate()
+                        val application = repository.localMediaContext() as TeleVaultApplication
+                        if (people.state.value.enabled) application.faceModels.install()
+                        if (ocr.state.value.enabled) application.ocrModels.install()
+                        if (scenes.state.value.enabled) application.memoryModels.install()
+                        requestIntelligence()
                         people.cleanPrivateSources()
                         ocr.cleanPrivateSources()
                         if (people.state.value.enabled) {
@@ -165,7 +170,10 @@ class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
     }
     internal fun setPeopleEnabled(value: Boolean) = peopleAction {
         people.enable(value)
-        if (value) requestIntelligence()
+        if (value) {
+            (repository.localMediaContext() as TeleVaultApplication).faceModels.install()
+            requestIntelligence()
+        }
     }
     internal fun requestIntelligence() = app.televault.data.MediaIntelligenceScheduling.request(repository.localMediaContext())
     internal fun indexPeople(cloud: List<app.televault.data.DriveFile>, local: List<app.televault.data.LocalMedia>, restart: Boolean = true) {
@@ -219,7 +227,9 @@ class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
     val localMedia = repository.localMedia
     internal val deviceFileTrash = repository.deviceFileTrash
     val photoPreviews = repository.photoPreviews
+    internal val selectedPhoto = repository.photoPriority.selected
     internal suspend fun scrubPreview(item: app.televault.ui.MediaEntry, width: Int, height: Int, adjacent: Boolean, allowCloud: Boolean, owner: app.televault.data.PreviewRequestOwner) = repository.scrubPreview(item.id, item.id + ":" + (item.local?.fingerprint ?: item.cloud?.hash.orEmpty()), item.local?.uri, item.cloud != null, width, height, adjacent, allowCloud, owner)
+    internal suspend fun tilePreview(item: app.televault.ui.MediaEntry, width: Int, height: Int, owner: app.televault.data.PreviewRequestOwner) = repository.scrubPreview(item.id, "tile:" + item.id + ":" + (item.local?.fingerprint ?: item.cloud?.hash.orEmpty()), item.local?.uri, item.cloud != null, width, height, false, repository.canPrefetchPhotos() && item.size <= 16L * 1024 * 1024, owner, cover = true)
     internal val documentPreviews = repository.documentPreviews
     fun activeTelegramSessions(finished: (List<app.televault.telegram.TelegramSessionInfo>?) -> Unit) = action {
         try {
@@ -251,6 +261,18 @@ class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
     fun backupAndTrash(items: List<app.televault.data.LocalMedia>, origin: String) = action { repository.backupAndTrash(items, origin) }
     fun finishDeviceCleanup(ids: Set<String>) = action { repository.finishDeviceCleanup(ids) }
     fun localFavorite(uri: String, value: Boolean) = action { repository.localFavorite(uri, value) }
+    internal val browsePositions = app.televault.data.BrowsePositionStore(repository.localMediaContext(), repository)
+    private var browseSaveJob: Job? = null
+    internal fun saveBrowsePosition(position: app.televault.data.BrowsePosition, epoch: Long) {
+        browseSaveJob?.cancel()
+        browseSaveJob = viewModelScope.launch(Dispatchers.IO) {
+            try {
+                browsePositions.save(position, epoch)
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (_: Exception) { }
+        }
+    }
     val playbackEpoch get() = repository.playbackEpoch
     suspend fun playbackPosition(identity: String, epoch: Long) = repository.playbackPosition(identity, epoch)
     fun savePlaybackPosition(identity: String, position: Long, duration: Long, ended: Boolean, epoch: Long) {

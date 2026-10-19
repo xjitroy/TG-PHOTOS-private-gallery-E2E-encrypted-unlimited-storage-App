@@ -25,6 +25,8 @@ import app.televault.DriveViewModel
 import app.televault.data.AudioTrim
 import java.util.UUID
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -52,6 +54,8 @@ internal fun AudioPlayer(uri: Uri, item: MediaEntry, model: DriveViewModel, edit
     var seek by remember(currentUri) { mutableStateOf<Float?>(null) }
     var speed by remember(currentUri) { mutableFloatStateOf(1f) }
     var previewRange by remember(currentUri) { mutableStateOf<Pair<Long, Long>?>(null) }
+    var livePreview by remember(currentUri) { mutableStateOf(true) }
+    var previewOffset by remember(currentUri) { mutableLongStateOf(0) }
     var resumeAt by remember(currentUri) { mutableLongStateOf(0) }
     var saving by remember(uri) { mutableStateOf(false) }
     var progress by remember(uri) { mutableFloatStateOf(0f) }
@@ -74,6 +78,7 @@ internal fun AudioPlayer(uri: Uri, item: MediaEntry, model: DriveViewModel, edit
                 player.play()
             }
         } else {
+            previewOffset = 0
             previewRange = (range.start * duration).toLong() to (range.endInclusive * duration).toLong()
         }
     }
@@ -83,11 +88,27 @@ internal fun AudioPlayer(uri: Uri, item: MediaEntry, model: DriveViewModel, edit
         val selection = previewRange
         if (selection != null) {
             player.setMediaSource(ClippingMediaSource(source, selection.first * 1000, selection.second * 1000))
+            player.seekTo(previewOffset)
         } else {
             player.setMediaSource(source, resumeAt)
         }
         player.prepare()
         player.playWhenReady = selection != null || !trim
+    }
+    LaunchedEffect(player, trim, livePreview, saving, pendingSave) {
+        if (!trim || !livePreview || saving || pendingSave != null) return@LaunchedEffect
+        snapshotFlow { range }.distinctUntilChanged().conflate().collect { selection ->
+            val start = (selection.start * duration).toLong()
+            val end = (selection.endInclusive * duration).toLong()
+            if (end - start >= 250 && previewRange != (start to end)) {
+                previewOffset = if (previewRange?.first == start) (end - start - 2000).coerceAtLeast(0) else 0
+                previewRange = start to end
+            } else if (end - start < 250) {
+                stopPreview()
+            }
+            // Coalesce fast handle movement; never queue a player/source for every touch event.
+            delay(250)
+        }
     }
     val savedMessage = label("Edited copy saved. Original unchanged. Upload this copy manually if wanted.", "এডিট করা কপি সেভ হয়েছে। মূল ফাইল বদলায়নি। চাইলে কপিটি ম্যানুয়ালি আপলোড করুন।")
     val saveFailedMessage = label("Could not save. Choose a local folder with space; the phone must support this audio codec. Original unchanged.", "সেভ হয়নি। জায়গা আছে এমন লোকাল ফোল্ডার বাছুন; অডিও codec ফোনে সমর্থিত হতে হবে। মূল ফাইল বদলায়নি।")
@@ -147,8 +168,17 @@ internal fun AudioPlayer(uri: Uri, item: MediaEntry, model: DriveViewModel, edit
                 position = player.currentPosition + (previewRange?.first ?: 0)
                 if (previewRange == null && player.duration > 0) duration = player.duration
                 playing = player.isPlaying
+                val clipped = previewRange
+                if (clipped != null) {
+                    val length = (clipped.second - clipped.first).coerceAtLeast(1)
+                    val at = player.currentPosition.coerceAtLeast(0)
+                    val fade = minOf(if (fadeIn) at / 1000f else 1f, if (fadeOut) (length - at).coerceAtLeast(0) / 1000f else 1f).coerceIn(0f, 1f)
+                    player.volume = gain.coerceAtMost(1f) * fade
+                } else {
+                    player.volume = gain.coerceAtMost(1f)
+                }
                 ready = player.playbackState == Player.STATE_READY || player.playbackState == Player.STATE_ENDED
-                delay(250)
+                delay(if (previewRange != null) 50 else 250)
             }
         }
     }
@@ -222,9 +252,17 @@ internal fun AudioPlayer(uri: Uri, item: MediaEntry, model: DriveViewModel, edit
                 Text(label("Cut audio · new copy", "অডিও কাটুন · নতুন কপি"), style = MaterialTheme.typography.titleLarge)
                 Text("${playbackTime((range.start * duration).toLong())} — ${playbackTime((range.endInclusive * duration).toLong())}", style = MaterialTheme.typography.titleMedium)
                 RangeSlider(range, {
-                    stopPreview()
                     range = it
-                }, onValueChangeFinished = { if ((range.endInclusive - range.start) * duration < 250) invalidCuts++ }, enabled = !saving && pendingSave == null)
+                }, onValueChangeFinished = {
+                    if ((range.endInclusive - range.start) * duration < 250) invalidCuts++
+                }, enabled = !saving && pendingSave == null)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Live preview", Modifier.weight(1f))
+                    Switch(livePreview, {
+                        livePreview = it
+                        if (!it) stopPreview()
+                    }, enabled = !saving && pendingSave == null)
+                }
                 Text(label("Volume", "ভলিউম"))
                 Slider(gain, {
                     gain = it
@@ -241,7 +279,7 @@ internal fun AudioPlayer(uri: Uri, item: MediaEntry, model: DriveViewModel, edit
                         Text(label("Fade out · 1s", "শেষে fade · ১ সেকেন্ড"))
                     }
                 }
-                Text(label("Fades are applied to the saved copy.", "সেভ করা কপিতে fade প্রয়োগ হবে।"), style = MaterialTheme.typography.bodySmall)
+                Text("Preview follows the selected range and fades. Gain above 100% applies to the saved copy; preview is capped at 100%.", style = MaterialTheme.typography.bodySmall)
                 UsageGuidance(model, "audio-cut", invalidCuts, "Drag both handles to select at least a quarter second. Preview it, then Save as copy.", "দুটি হ্যান্ডেল টেনে অন্তত এক-চতুর্থাংশ সেকেন্ড বাছুন। প্রিভিউ শুনে নতুন কপি হিসেবে সেভ করুন।")
                 if (previewRange != null) Text(label("Playing selection: ", "নির্বাচিত অংশ চলছে: ") + playbackTime(position), style = MaterialTheme.typography.labelLarge)
 

@@ -7,10 +7,12 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.*
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.*
@@ -27,6 +29,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -60,6 +63,7 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
     }
     val requestClose = { closing = true }
     val context = LocalContext.current
+    val exploreMovie = LocalExploreMode.current in setOf("Movies", "Normal videos")
     val activity = remember(context) { videoActivity(context) }
     val pipVisible by (activity?.videoPipVisible ?: kotlinx.coroutines.flow.MutableStateFlow(false)).collectAsStateWithLifecycle()
     val videoSession = remember(model) { ViewerPlaybackSession(context, model) }
@@ -84,7 +88,7 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
     val pager = rememberPagerState(initialPage = media.indexOfFirst { it.id == entry.id }.coerceAtLeast(0)) { media.size }
     var videoFullscreen by remember { mutableStateOf(false) }
     var fullscreenExit by remember { mutableIntStateOf(0) }
-    var vertical by remember { mutableStateOf(entry.mime.startsWith("video/") && app.televault.domain.VideoPresentation.shortLayout(entry.cloud?.facts?.width ?: entry.local?.width ?: 0, entry.cloud?.facts?.height ?: entry.local?.height ?: 0, 1f)) }
+    var vertical by remember { mutableStateOf(entry.mime.startsWith("video/") && !exploreMovie && app.televault.domain.VideoPresentation.shortLayout(entry.cloud?.facts?.width ?: entry.local?.width ?: 0, entry.cloud?.facts?.height ?: entry.local?.height ?: 0, 1f)) }
     var photoVertical by remember { mutableStateOf(false) }
     var portraitPage by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
     var controls by remember { mutableStateOf(true) }
@@ -222,13 +226,13 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
     }
     LaunchedEffect(pager.settledPage, scrubbing) {
         videoSession.visible(if (!scrubbing && current.mime.startsWith("video/")) "${current.id}|${current.size}|${current.date}" else null)
-        if (!scrubbing) videoFullscreen = current.mime.startsWith("video/") && app.televault.domain.VideoPresentation.shortLayout(current.cloud?.facts?.width ?: current.local?.width ?: 0, current.cloud?.facts?.height ?: current.local?.height ?: 0, 1f)
+        if (!scrubbing) videoFullscreen = current.mime.startsWith("video/") && !exploreMovie && app.televault.domain.VideoPresentation.shortLayout(current.cloud?.facts?.width ?: current.local?.width ?: 0, current.cloud?.facts?.height ?: current.local?.height ?: 0, 1f)
         menu = false
         details = false
     }
     LaunchedEffect(pager.settledPage, pager.isScrollInProgress, portraitPage, photoVertical, scrubbing, closing) {
         if (pager.isScrollInProgress || scrubbing || closing) return@LaunchedEffect
-        vertical = if (current.mime.startsWith("video/")) {
+        vertical = if (current.mime.startsWith("video/") && !exploreMovie) {
             portraitPage?.takeIf { it.first == current.id }?.second ?: app.televault.domain.VideoPresentation.shortLayout(current.cloud?.facts?.width ?: current.local?.width ?: 0, current.cloud?.facts?.height ?: current.local?.height ?: 0, 1f)
         } else {
             photoVertical
@@ -344,6 +348,28 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
             }
         }
     }
+    val inlineFilmstrip = current.mime.startsWith("video/") && !vertical && !videoFullscreen
+    val filmstrip: @Composable () -> Unit = {
+        if (media.size > 1) {
+            ViewerFilmstrip(
+                media, pager, model, !busy && !closing, scrubbing,
+                start = {
+                    navigation.cancel()
+                    scrubbing = true
+                    scrubPreview = pager.currentPage
+                },
+                preview = { scrubPreview = it },
+                finish = { navigate(it, false) },
+                cancel = {
+                    navigation.cancel()
+                    scrubPreview = null
+                    scrubbing = false
+                },
+                pick = { navigate(it) },
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    }
     val movieDetails: @Composable () -> Unit = {
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (message.isNotBlank()) Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
@@ -366,6 +392,7 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
                 if (current.cloud != null) MovieActionChip(Icons.Outlined.Download, label("Download", "ডাউনলোড"), !busy) { save(current) }
                 MovieActionChip(if (trashed) Icons.Outlined.Restore else Icons.Outlined.DeleteOutline, if (trashed) label("Restore", "ফিরিয়ে আনুন") else label("Trash", "ট্র্যাশ"), !busy) { if (trashed) restore(current) else trash(current) }
             }
+            if (inlineFilmstrip) AnimatedVisibility(controls, enter = fadeIn(tween(100)), exit = fadeOut(tween(100))) { filmstrip() }
         }
     }
     Dialog(onDismissRequest = {
@@ -428,7 +455,7 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
                                 prepared = it
                                 preparedId = media[index].id
                             }
-                        }, videos, ::select, { direction -> app.televault.domain.ViewerOrder.adjacent(media, index, direction)?.let(::select) }, vertical, { portrait -> if (index == pager.settledPage) portraitPage = media[index].id to portrait }, videoSession, fullscreenExit, { if (index == pager.settledPage) videoFullscreen = it }, { controls = !controls }, if (vertical) null else ({ details = true }), { favorite(media[index]) }, { send(Intent.ACTION_SEND) }, { send(Intent.ACTION_VIEW) }, { cleanup -> backup(media[index], cleanup) }, { removeDevice(media[index]) }, snapshot.backedDeviceFiles, { copy -> editedAudio[stableIds[index]] = copy }, profile, resolvedSources[media[index].id], requestClose, movieDetails, { if (index == pager.settledPage) readText(true) }, scrubbing, { visible -> if (index == pager.settledPage && !scrubbing) controls = visible })
+                        }, videos, ::select, { direction -> app.televault.domain.ViewerOrder.adjacent(media, index, direction)?.let(::select) }, vertical, { portrait -> if (index == pager.settledPage) portraitPage = media[index].id to portrait }, videoSession, fullscreenExit, { if (index == pager.settledPage) videoFullscreen = it }, { controls = !controls }, if (vertical) null else ({ details = true }), { favorite(media[index]) }, { send(Intent.ACTION_SEND) }, { send(Intent.ACTION_VIEW) }, { cleanup -> backup(media[index], cleanup) }, { removeDevice(media[index]) }, snapshot.backedDeviceFiles, { copy -> editedAudio[stableIds[index]] = copy }, profile, resolvedSources[media[index].id], requestClose, movieDetails, { if (index == pager.settledPage) readText(true) }, scrubbing, { visible -> if (index == pager.settledPage && !scrubbing) controls = visible }, controls)
                     }
                     if (vertical) VerticalPager(pager, key = { media[it].id }, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = 1, userScrollEnabled = !busy && !scrubbing && !closing) { page(it) } else HorizontalPager(pager, key = { media[it].id }, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = 1, userScrollEnabled = !busy && !scrubbing && !closing) { page(it) }
                 }
@@ -474,27 +501,9 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
                         if (busy && !current.mime.startsWith("image/") && !current.mime.startsWith("video/")) LinearProgressIndicator(Modifier.fillMaxWidth())
                         if (!videoLayout && message.isNotBlank()) Text(message, Modifier.padding(horizontal = 20.dp, vertical = 6.dp), style = MaterialTheme.typography.bodySmall)
                         Spacer(Modifier.weight(1f))
-                        AnimatedVisibility(controls, enter = fadeIn(tween(100)), exit = fadeOut(tween(100))) {
+                        AnimatedVisibility(controls && !inlineFilmstrip, enter = fadeIn(tween(100)), exit = fadeOut(tween(100))) {
                             Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                if (media.size > 1) {
-                                    ViewerFilmstrip(
-                                        media, pager, model, !busy && !closing, scrubbing,
-                                        start = {
-                                            navigation.cancel()
-                                            scrubbing = true
-                                            scrubPreview = pager.currentPage
-                                        },
-                                        preview = { scrubPreview = it },
-                                        finish = { navigate(it, false) },
-                                        cancel = {
-                                            navigation.cancel()
-                                            scrubPreview = null
-                                            scrubbing = false
-                                        },
-                                        pick = { navigate(it) },
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                }
+                                filmstrip()
                                 if (chrome.mime.startsWith("video/")) {
                                     Spacer(Modifier.height(104.dp).then(if (videoFullscreen) Modifier.navigationBarsPadding() else Modifier))
                                 } else {
@@ -558,7 +567,7 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
     }
 }
 
-@Composable private fun MediaPage(item: MediaEntry, active: Boolean, preload: Boolean, model: DriveViewModel, pixelsReady: () -> Unit, ready: (Uri) -> Unit, videos: List<MediaEntry>, choose: (MediaEntry) -> Unit, adjacent: (Int) -> Unit, verticalPaging: Boolean, portraitChanged: (Boolean) -> Unit, videoSession: ViewerPlaybackSession, fullscreenExit: Int, fullScreenChanged: (Boolean) -> Unit, tap: () -> Unit, info: (() -> Unit)?, favorite: () -> Unit, share: () -> Unit, openWith: () -> Unit, backup: (Boolean) -> Unit, removeDevice: () -> Unit, backedDeviceFiles: Map<String, String>, editedCopy: (MediaEntry) -> Unit, profile: () -> Unit, cachedSource: Uri?, closeViewer: () -> Unit, movieDetails: @Composable () -> Unit, longHold: () -> Unit, previewOnly: Boolean, controlsChanged: (Boolean) -> Unit) {
+@Composable private fun MediaPage(item: MediaEntry, active: Boolean, preload: Boolean, model: DriveViewModel, pixelsReady: () -> Unit, ready: (Uri) -> Unit, videos: List<MediaEntry>, choose: (MediaEntry) -> Unit, adjacent: (Int) -> Unit, verticalPaging: Boolean, portraitChanged: (Boolean) -> Unit, videoSession: ViewerPlaybackSession, fullscreenExit: Int, fullScreenChanged: (Boolean) -> Unit, tap: () -> Unit, info: (() -> Unit)?, favorite: () -> Unit, share: () -> Unit, openWith: () -> Unit, backup: (Boolean) -> Unit, removeDevice: () -> Unit, backedDeviceFiles: Map<String, String>, editedCopy: (MediaEntry) -> Unit, profile: () -> Unit, cachedSource: Uri?, closeViewer: () -> Unit, movieDetails: @Composable () -> Unit, longHold: () -> Unit, previewOnly: Boolean, controlsChanged: (Boolean) -> Unit, chromeVisible: Boolean) {
     val context = LocalContext.current
     var uri by remember(item.id) { mutableStateOf(cachedSource) }
     var deviceSource by remember(item.id) { mutableStateOf(false) }
@@ -601,7 +610,11 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
             uri = null
         }
     }
-    Box(Modifier.fillMaxSize().clipToBounds().background(Color.Black).then(if (!item.mime.startsWith("image/") && !item.mime.startsWith("video/")) Modifier.safeDrawingPadding().padding(top = 76.dp, bottom = 176.dp) else Modifier), contentAlignment = Alignment.Center) {
+    val latestTap by rememberUpdatedState(tap)
+    val nonVisual = !item.mime.startsWith("image/") && !item.mime.startsWith("video/")
+    val contentTop by animateDpAsState(if (chromeVisible) 76.dp else 0.dp, tween(120), label = "Viewer top inset")
+    val contentBottom by animateDpAsState(if (chromeVisible) 176.dp else 0.dp, tween(120), label = "Viewer bottom inset")
+    Box(Modifier.fillMaxSize().clipToBounds().background(Color.Black).then(if (nonVisual) Modifier.pointerInput(item.id) { detectTapGestures { latestTap() } }.safeDrawingPadding().padding(top = contentTop, bottom = contentBottom) else Modifier), contentAlignment = Alignment.Center) {
         val source = uri
         when {
             previewOnly && (source == null || !item.mime.startsWith("image/")) -> MediaThumbnail(item, model, Modifier.fillMaxSize(), 768, ContentScale.Fit)

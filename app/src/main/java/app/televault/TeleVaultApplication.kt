@@ -18,6 +18,7 @@ class TeleVaultApplication : Application() {
     internal val faceModels by lazy { app.televault.people.FaceModels(this) }
     internal val memoryModels by lazy { app.televault.memories.MemoryModels(this) }
     internal val ocrModels by lazy { app.televault.ocr.OcrModels(this) }
+    internal val appLockStore by lazy { app.televault.security.AppLockStore(this) }
     val motion by lazy { AppMotion(this) }
     private val privateVaultLazy = lazy { app.televault.data.PrivateVaultRepository(this) }
     internal val privateVault get() = privateVaultLazy.value

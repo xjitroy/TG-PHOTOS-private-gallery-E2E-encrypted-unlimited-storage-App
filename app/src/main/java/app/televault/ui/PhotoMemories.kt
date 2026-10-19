@@ -15,6 +15,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.televault.DriveViewModel
 import app.televault.domain.MediaCategories.Category
@@ -96,7 +97,7 @@ internal fun PhotoMemories(cards: List<PhotoMemory>, model: DriveViewModel, open
     if (settings) {
         AlertDialog(onDismissRequest = { settings = false }, title = { Text("Memories & suggestions") }, text = {
             Column {
-                Text("Stories use dates and confirmed People tags on this phone. Optional subjects also improve the same universal Search. Private Vault is excluded.")
+                Text("Stories use dates and confirmed People tags on this phone. On-device subject suggestions also improve the same universal Search. Private Vault is excluded.")
                 SmartSuggestionControls(model)
             }
         }, confirmButton = { TextButton({ settings = false }) { Text("Done") } })
@@ -111,11 +112,12 @@ internal fun PhotoMemories(cards: List<PhotoMemory>, model: DriveViewModel, open
             items(cards, key = { it.key }) { card ->
                 val title = card.title ?: if (card.years > 0) label(if (card.years == 1) "1 year ago" else "${card.years} years ago", "${card.years} বছর আগে") else label("A day to remember", "মনে রাখার একটি দিন")
                 Box(Modifier.width(152.dp).height(168.dp).clip(RoundedCornerShape(26.dp)).clickable { open(card) }) {
-                    MediaThumbnail(card.entries.first(), model, Modifier.fillMaxSize(), pixels = 384)
-                    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .78f)))))
+                    MediaThumbnail(card.entries.first(), model, Modifier.fillMaxSize(), pixels = 384, adaptive = true)
+                    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color.Transparent, .35f to Color.Transparent, 1f to Color.Black.copy(alpha = .82f))))
                     Column(Modifier.align(Alignment.BottomStart).padding(14.dp)) {
-                        Text(title, color = Color.White, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        Text(card.date.format(DateTimeFormatter.ofPattern("d MMM yyyy", Locale.getDefault())), color = Color.White.copy(alpha = .85f), style = MaterialTheme.typography.labelSmall)
+                        Text(title, color = Color.White, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Spacer(Modifier.height(4.dp))
+                        Text(card.date.format(DateTimeFormatter.ofPattern("d MMM yyyy", Locale.getDefault())), color = Color.White.copy(alpha = .9f), style = MaterialTheme.typography.labelSmall, maxLines = 1)
                     }
                 }
             }

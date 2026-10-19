@@ -6,6 +6,6 @@ public final class FaceScanCache {
   return content!=null && !content.isEmpty() && previous!=null && (previous.equals(content) || cloud && previous.startsWith(content+":"));
  }
  public static boolean shouldScan(String previous,String content,boolean cloud,int faces,int quality,boolean originalPhoto) {
-  return !current(previous,content,cloud) || originalPhoto && faces<=0 && quality<2;
+  return !current(previous,content,cloud) || originalPhoto && quality<2;
  }
 }

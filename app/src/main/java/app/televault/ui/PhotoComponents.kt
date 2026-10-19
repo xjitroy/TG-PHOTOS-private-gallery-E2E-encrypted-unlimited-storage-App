@@ -28,10 +28,12 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.televault.DriveViewModel
@@ -47,16 +49,20 @@ import kotlinx.coroutines.*
 internal data class AlbumTile(val id: String, val name: String, val items: List<MediaEntry>, val cloud: Boolean = false, val folder: String? = null, val album: String? = null, val section: String = "All", val collage: Boolean = false)
 
 @Composable
-internal fun MediaThumbnail(entry: MediaEntry, model: DriveViewModel, modifier: Modifier = Modifier, pixels: Int = 384, contentScale: ContentScale = ContentScale.Crop, onReady: (() -> Unit)? = null) {
+internal fun MediaThumbnail(entry: MediaEntry, model: DriveViewModel, modifier: Modifier = Modifier, pixels: Int = 384, contentScale: ContentScale = ContentScale.Crop, onReady: (() -> Unit)? = null, adaptive: Boolean = false) {
+    var tile by remember { mutableStateOf(IntSize.Zero) }
+    val measuredPhoto = adaptive && entry.mime.startsWith("image/")
+    val requested = if (measuredPhoto) ThumbnailQuality.tilePixels(tile.width, tile.height, pixels) else pixels
     val accessRevision by model.localMedia.accessRevision.collectAsStateWithLifecycle()
-    var bitmap by remember(entry.id, entry.local?.modified) { mutableStateOf(entry.local?.let { model.localMedia.cachedThumbnail(it, pixels) } ?: model.cachedThumbnail(entry.id, pixels)) }
+    var bitmap by remember(entry.id, entry.local?.modified) { mutableStateOf(entry.local?.let { model.localMedia.cachedThumbnail(it, requested) } ?: model.cachedThumbnail(entry.id, requested)) }
+    var completedRequest by remember(entry.id, entry.local?.modified) { mutableIntStateOf(0) }
     val ready by rememberUpdatedState(onReady)
     LaunchedEffect(bitmap) { if (bitmap != null) ready?.invoke() }
-    LaunchedEffect(entry.id, entry.local?.modified, entry.cloud?.thumbnail, pixels, if (entry.local != null) accessRevision else 0L) {
+    LaunchedEffect(entry.id, entry.local?.modified, entry.cloud?.thumbnail, requested, if (entry.local != null) accessRevision else 0L) {
         repeat(3) { attempt ->
             val loaded = try {
                 app.televault.data.PreviewWorkGate.thumbnails.run {
-                    if (entry.local != null) model.localMedia.thumbnail(entry.local, pixels) else model.thumbnail(entry.id, pixels)
+                    if (entry.local != null) model.localMedia.thumbnail(entry.local, requested) else model.thumbnail(entry.id, requested)
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -69,12 +75,14 @@ internal fun MediaThumbnail(entry: MediaEntry, model: DriveViewModel, modifier: 
             if (loaded != null) {
                 val previous = bitmap
                 if (previous == null || ThumbnailQuality.preferNew(previous.width, previous.height, loaded.width, loaded.height)) bitmap = loaded
+                completedRequest = requested
                 return@LaunchedEffect
             }
             if (attempt < 2) delay(400L * (attempt + 1))
         }
+        completedRequest = requested
     }
-    Box(modifier.background(if (contentScale == ContentScale.Fit) Color.Black else MaterialTheme.colorScheme.surfaceContainerHighest), contentAlignment = Alignment.Center) {
+    Box(modifier.then(if (measuredPhoto) Modifier.onSizeChanged { tile = it } else Modifier).background(if (contentScale == ContentScale.Fit) Color.Black else MaterialTheme.colorScheme.surfaceContainerHighest), contentAlignment = Alignment.Center) {
         bitmap?.let { Image(it.asImageBitmap(), entry.name, Modifier.fillMaxSize(), contentScale = contentScale) } ?: Icon(
             if (entry.mime.startsWith("video/")) {
                 Icons.Outlined.PlayCircle
@@ -88,6 +96,9 @@ internal fun MediaThumbnail(entry: MediaEntry, model: DriveViewModel, modifier: 
             entry.name,
             tint = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        if (adaptive && requested >= 640 && tile.width > 0 && tile.height > 0 && entry.mime.startsWith("image/")) {
+            PhotoTileDetail(entry, model, tile, completedRequest == requested && ThumbnailQuality.needsDetail(tile.width, tile.height, bitmap?.width ?: 0, bitmap?.height ?: 0))
+        }
     }
 }
 
@@ -151,7 +162,7 @@ private fun AlbumCover(tile: AlbumTile, model: DriveViewModel, modifier: Modifie
                     }
                 }
             } else {
-                tile.items.firstOrNull()?.let { MediaThumbnail(it, model, Modifier.fillMaxSize()) } ?: Icon(
+                tile.items.firstOrNull()?.let { MediaThumbnail(it, model, Modifier.fillMaxSize(), adaptive = true) } ?: Icon(
                     when (tile.section) {
                         "Favorites" -> Icons.Outlined.FavoriteBorder
                         "Videos" -> Icons.Outlined.PlayCircle
@@ -332,10 +343,14 @@ internal fun MediaGrid(files: List<MediaEntry>, selected: Set<String>, model: Dr
         if (leadingContent != null) item(key = "timeline-introduction", span = { GridItemSpan(maxLineSpan) }, contentType = "timeline-introduction") { leadingContent() }
         groups.forEach { (date, group) ->
             stickyHeader(key = "date:$date") {
-                Box(Modifier.fillMaxWidth().alpha(if (showDateHeaders) 1f else 0f).padding(top = if (leadingContent != null) WindowInsets.statusBars.asPaddingValues().calculateTopPadding() else 0.dp, bottom = 8.dp), contentAlignment = Alignment.Center) {
-                    Surface(shape = RoundedCornerShape(32.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = .94f), shadowElevation = 3.dp) {
-                        Text(date, Modifier.padding(horizontal = 18.dp, vertical = 10.dp), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium)
+                if (showDateHeaders) {
+                    Box(Modifier.fillMaxWidth().padding(top = if (leadingContent != null) WindowInsets.statusBars.asPaddingValues().calculateTopPadding() else 0.dp, bottom = 8.dp), contentAlignment = Alignment.Center) {
+                        Surface(shape = RoundedCornerShape(32.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = .94f), shadowElevation = 3.dp) {
+                            Text(date, Modifier.padding(horizontal = 18.dp, vertical = 10.dp), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium)
+                        }
                     }
+                } else {
+                    Spacer(Modifier.fillMaxWidth().height(0.dp))
                 }
             }
             if (useMosaic) {
@@ -402,7 +417,7 @@ private fun MosaicPhotoBlock(files: List<MediaEntry>, block: MosaicLayout.Block,
 private fun MediaGridCell(entry: MediaEntry, selected: Set<String>, snapshot: DriveSnapshot, model: DriveViewModel, pixels: Int, click: (MediaEntry) -> Unit, hold: (MediaEntry) -> Unit, modifier: Modifier) {
     val chosen = entry.id in selected
     val scale by animateFloatAsState(if (chosen) .89f else 1f, tween(170), label = "Selection")
-    Box(modifier.clip(RoundedCornerShape(if (chosen) 16.dp else 4.dp)).background(MaterialTheme.colorScheme.primaryContainer).combinedClickable(onClick = { click(entry) }, onLongClick = { hold(entry) })) {
+    Box(modifier.clip(RoundedCornerShape(if (chosen) 16.dp else 4.dp)).background(MaterialTheme.colorScheme.surfaceContainerHighest).combinedClickable(onClick = { click(entry) }, onLongClick = { hold(entry) })) {
         MediaThumbnail(
             entry,
             model,
@@ -410,7 +425,8 @@ private fun MediaGridCell(entry: MediaEntry, selected: Set<String>, snapshot: Dr
                 scaleX = scale
                 scaleY = scale
             },
-            pixels
+            pixels,
+            adaptive = true
         )
         if (!entry.mime.startsWith("image/") && !entry.mime.startsWith("video/")) {
             Text(entry.name, Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHigh).padding(5.dp), maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall)
@@ -432,7 +448,9 @@ internal fun DocumentTimeline(files: List<MediaEntry>, selected: Set<String>, mo
     LazyColumn(Modifier.fillMaxSize().timelinePinch(density, changed), state = scroll, contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 110.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (leadingContent != null) item(key = "browse-introduction") { leadingContent() }
         groups.forEach { (date, entries) ->
-            stickyHeader(key = "date:$date") { Text(date, Modifier.fillMaxWidth().alpha(if (showDateHeaders) 1f else 0f).background(MaterialTheme.colorScheme.background).padding(top = if (leadingContent != null) WindowInsets.statusBars.asPaddingValues().calculateTopPadding() else 0.dp).padding(vertical = 12.dp), style = MaterialTheme.typography.titleSmall) }
+            stickyHeader(key = "date:$date") {
+                if (showDateHeaders) Text(date, Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).padding(top = if (leadingContent != null) WindowInsets.statusBars.asPaddingValues().calculateTopPadding() else 0.dp).padding(vertical = 12.dp), style = MaterialTheme.typography.titleSmall) else Spacer(Modifier.fillMaxWidth().height(0.dp))
+            }
             items(entries, key = { it.id }) { entry ->
                 Surface(shape = RoundedCornerShape(22.dp), color = if (entry.id in selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.animateItem().combinedClickable(onClick = { open(entry) }, onLongClick = { hold(entry) })) {
                     Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {

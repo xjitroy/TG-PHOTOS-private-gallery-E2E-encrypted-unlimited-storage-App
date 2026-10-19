@@ -71,6 +71,8 @@ internal fun VideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>, cho
 @Composable
 private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>, choose: (MediaEntry) -> Unit, model: DriveViewModel, current: MediaEntry, modifier: Modifier, session: ViewerPlaybackSession, fullScreenChanged: (Boolean) -> Unit, adjacent: (Int) -> Unit, verticalPaging: Boolean, portraitChanged: (Boolean) -> Unit, openWith: () -> Unit, fullscreenExit: Int, favorite: () -> Unit, share: () -> Unit, backup: (Boolean) -> Unit, removeDevice: () -> Unit, profile: () -> Unit, identity: String, epoch: Long, resume: Long, closeViewer: () -> Unit, movieDetails: @Composable () -> Unit, controlsChanged: (Boolean) -> Unit) {
     val context = LocalContext.current
+    val exploreFeed = LocalExploreFeed.current
+    val exploreMovie = LocalExploreMode.current in setOf("Movies", "Normal videos")
     val owner = LocalLifecycleOwner.current
     val activity = remember(context) { videoActivity(context) }
     val pipVisible by (activity?.videoPipVisible ?: kotlinx.coroutines.flow.MutableStateFlow(false)).collectAsStateWithLifecycle()
@@ -108,7 +110,7 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
     var frameRatio by remember(identity) { mutableFloatStateOf(if (initialWidth > 0 && initialHeight > 0) initialWidth * player.videoSize.pixelWidthHeightRatio / initialHeight else 16f / 9f) }
     LaunchedEffect(player, identity) { if (session.owns(identity)) player.play() }
     var frameKnown by remember(identity) { mutableStateOf(initialWidth > 0 && initialHeight > 0) }
-    var short by remember(uri) { mutableStateOf(verticalPaging || VideoPresentation.shortLayout(initialWidth, initialHeight, 1f)) }
+    var short by remember(uri) { mutableStateOf(!exploreMovie && (verticalPaging || VideoPresentation.shortLayout(initialWidth, initialHeight, 1f))) }
 
     var wrongSwipes by remember { mutableIntStateOf(0) }
     var actionsVisible by remember(uri) { mutableStateOf(true) }
@@ -248,7 +250,7 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
                 if (state == Player.STATE_ENDED) savePosition()
                 if (state == Player.STATE_ENDED && short) {
                     if (current.cloud != null) scope.launch { runCatching { model.recordMediaView(current.id) } }
-                    if (VideoPresentation.replayAfterEnd(session.completionCount(identity))) {
+                    if (!exploreFeed && VideoPresentation.replayAfterEnd(session.completionCount(identity))) {
                         player.seekTo(0)
                         player.play()
                     } else {
@@ -265,7 +267,7 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
             override fun onVideoSizeChanged(size: VideoSize) {
                 if (!session.owns(identity) || size.width <= 0 || size.height <= 0) return
                 frameKnown = true
-                short = verticalPaging || VideoPresentation.shortLayout(size.width, size.height, size.pixelWidthHeightRatio)
+                short = !exploreMovie && (verticalPaging || VideoPresentation.shortLayout(size.width, size.height, size.pixelWidthHeightRatio))
                 frameRatio = size.width * size.pixelWidthHeightRatio / size.height
                 quality = "${size.width} × ${size.height}"
                 badge = true

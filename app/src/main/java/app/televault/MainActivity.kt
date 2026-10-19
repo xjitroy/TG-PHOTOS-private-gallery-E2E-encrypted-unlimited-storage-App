@@ -59,6 +59,12 @@ class MainActivity : ComponentActivity() {
     // Notification navigation waits behind the normal authentication and Drive-readiness gates.
     private var exportRequestToken by mutableStateOf(0)
     private var exportRequestSequence = 0
+    private var incomingMedia by mutableStateOf<IncomingMedia?>(null)
+    private fun parseIncoming(intent: Intent) = try {
+        IncomingMedia.read(intent, packageName)
+    } catch (_: Exception) {
+        null
+    }
     private fun acceptExportNavigation(request: Intent?) {
         if (request?.getBooleanExtra("openCloudExports", false) != true) return
         request.removeExtra("openCloudExports")
@@ -69,6 +75,7 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         acceptExportNavigation(intent)
+        parseIncoming(intent)?.let { incomingMedia = it }
     }
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putInt("exportRequestSequence", exportRequestSequence)
@@ -121,7 +128,10 @@ class MainActivity : ComponentActivity() {
     private var screenReceiverRegistered = false
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == Intent.ACTION_SCREEN_OFF) expireAuthentication()
+            if (intent?.action == Intent.ACTION_SCREEN_OFF) {
+                revokePiP()
+                (application as TeleVaultApplication).lockExistingPrivateVault()
+            }
         }
     }
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
@@ -136,6 +146,7 @@ class MainActivity : ComponentActivity() {
     private var authenticationGeneration = 0L
     private fun openPassword() {
         if (!appPasswordAvailable) return
+        appLock.revoke()
         authenticationGeneration++
         signal?.cancel()
         pending = null
@@ -150,10 +161,25 @@ class MainActivity : ComponentActivity() {
     private var credentialInFlight = false
     private var backgroundAt = -1L
     private var graceMinutes = 2
+    private val appLock by lazy { (application as TeleVaultApplication).appLockStore }
+    private val grantChecked = mutableStateOf(false)
+    private var authenticatedDay = ""
+    private fun currentLockDay() = java.time.LocalDate.now().toString() + "@" + java.time.ZoneId.systemDefault().id
     private var vaultModel: DriveViewModel? = null
     private val lockHandler = Handler(Looper.getMainLooper())
     private val expireLock = Runnable { expireAuthentication() }
+    private fun markAuthenticated() {
+        authenticated.value = true
+        authenticatedDay = currentLockDay()
+        grantChecked.value = true
+        val scope = vaultModel?.guidanceScope ?: return
+        val mode = graceMinutes
+        val token = appLock.generation()
+        lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) { runCatching { appLock.save(scope, mode, token) } }
+    }
     private fun expireAuthentication() {
+        appLock.revoke()
+        grantChecked.value = false
         revokePiP()
         authenticationGeneration++
         signal?.cancel()
@@ -181,7 +207,7 @@ class MainActivity : ComponentActivity() {
         if (result.resultCode == RESULT_OK) {
             failures.value = 0
             passwordRequested.value = false
-            authenticated.value = true
+            markAuthenticated()
             complete?.invoke()
         }
     }
@@ -236,7 +262,7 @@ class MainActivity : ComponentActivity() {
                     promptRunning.value = false
                     failures.value = 0
                     passwordRequested.value = false
-                    authenticated.value = true
+                    markAuthenticated()
                     action?.invoke()
                 }
                 override fun onAuthenticationError(code: Int, message: CharSequence) {
@@ -258,17 +284,31 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) { runCatching { (application as TeleVaultApplication).telegram.reconnect() } }
         lockHandler.removeCallbacks(expireLock)
         if (LockGrace.expired(backgroundAt, SystemClock.elapsedRealtime(), graceMinutes)) expireAuthentication()
+        if (graceMinutes == LockGrace.DAILY && authenticated.value && authenticatedDay != currentLockDay()) expireAuthentication()
         backgroundAt = -1L
-        lockHandler.post {
-            if (!isFinishing && !isDestroyed && lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED) && deviceGateRequired && !authenticated.value && !passwordRequested.value && (getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager).isDeviceSecure) authenticate {}
-        }
     }
     override fun onStop() {
         super.onStop()
         if (!isChangingConfigurations && !videoPipVisible.value) {
             backgroundAt = SystemClock.elapsedRealtime()
             lockHandler.removeCallbacks(expireLock)
-            lockHandler.postDelayed(expireLock, LockGrace.durationMillis(graceMinutes))
+            if (authenticated.value && graceMinutes !in setOf(LockGrace.OFF, LockGrace.DAILY)) {
+                val scope = vaultModel?.guidanceScope
+                val mode = graceMinutes
+                val token = appLock.generation()
+                val wall = System.currentTimeMillis()
+                val elapsed = backgroundAt
+                if (scope != null) lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) { runCatching { appLock.save(scope, mode, token, wall, elapsed) } }
+            }
+            if (graceMinutes != LockGrace.OFF) {
+                val delay = if (graceMinutes == LockGrace.DAILY) {
+                    val now = java.time.ZonedDateTime.now()
+                    java.time.Duration.between(now, now.toLocalDate().plusDays(1).atStartOfDay(now.zone)).toMillis().coerceAtLeast(1)
+                } else {
+                    LockGrace.durationMillis(graceMinutes)
+                }
+                lockHandler.postDelayed(expireLock, delay)
+            }
         }
     }
     override fun onDestroy() {
@@ -294,6 +334,7 @@ class MainActivity : ComponentActivity() {
         // Saved state owns an already handled/pending request after recreation. The system
         // can restore the original launch Intent, whose notification extra must not replay.
         if (savedInstanceState == null) acceptExportNavigation(intent) else intent?.removeExtra("openCloudExports")
+        if (savedInstanceState == null) incomingMedia = intent?.let(::parseIncoming)
         window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
         enableEdgeToEdge()
         if (Build.VERSION.SDK_INT >= 31) window.setHideOverlayWindows(true)
@@ -306,7 +347,8 @@ class MainActivity : ComponentActivity() {
             val dynamicColor by preferences.dynamicColor.collectAsStateWithLifecycle(initialValue = true)
             val appearanceMode by preferences.appearanceMode.collectAsStateWithLifecycle(initialValue = AppearanceMode.SYSTEM)
             val interfaceStyle by preferences.interfaceStyle.collectAsStateWithLifecycle(initialValue = InterfaceStyle.GLASS)
-            val lockGraceMinutes by preferences.lockGraceMinutes.collectAsStateWithLifecycle(initialValue = 2)
+            val configuredLock by preferences.lockGraceMinutes.collectAsStateWithLifecycle(initialValue = null)
+            val lockGraceMinutes = configuredLock ?: 2
             LaunchedEffect(lockGraceMinutes) { graceMinutes = lockGraceMinutes }
             var startupAttempt by remember { mutableStateOf(0) }
             var startupFailed by remember(startupAttempt) { mutableStateOf(false) }
@@ -338,6 +380,21 @@ class MainActivity : ComponentActivity() {
             var discoveredSession by remember(auth.stage) { mutableStateOf(false) }
             deviceGateRequired = protectionReason == app.televault.security.DeviceProtection.Reason.NONE && discoveredSession && auth.stage == AuthProtocol.State.READY && driveState.quickUnlockAvailable && driveState.stage in setOf(app.televault.data.VaultStage.LOCKED, app.televault.data.VaultStage.READY)
             appPasswordAvailable = protectionReason == app.televault.security.DeviceProtection.Reason.NONE && auth.stage == AuthProtocol.State.READY && driveState.stage in setOf(app.televault.data.VaultStage.LOCKED, app.televault.data.VaultStage.READY)
+            val grantScope = if (discoveredSession) drive.guidanceScope else ""
+            LaunchedEffect(discoveredSession, deviceGateRequired, authenticated.value, configuredLock, grantScope, passwordRequested.value) {
+                if (authenticated.value) return@LaunchedEffect
+                grantChecked.value = false
+                if (!deviceGateRequired || configuredLock == null || passwordRequested.value) return@LaunchedEffect
+                val generation = authenticationGeneration
+                val permitted = appLock.permits(grantScope, lockGraceMinutes)
+                if (generation == authenticationGeneration && grantScope == drive.guidanceScope && !protection.blocked()) {
+                    if (permitted) {
+                        authenticatedDay = currentLockDay()
+                        authenticated.value = true
+                    }
+                    grantChecked.value = true
+                }
+            }
             LaunchedEffect(authenticated.value, driveState.stage, auth.stage, discoveredSession) {
                 if (discoveredSession && authenticated.value && auth.stage == AuthProtocol.State.READY && driveState.stage == app.televault.data.VaultStage.LOCKED) drive.quickUnlock()
             }
@@ -374,7 +431,7 @@ class MainActivity : ComponentActivity() {
                                     VaultForm(driveState, drive) { verified ->
                                         if (verified && setupGeneration == authenticationGeneration) {
                                             failures.value = 0
-                                            authenticated.value = true
+                                            markAuthenticated()
                                         }
                                     }
                                 }
@@ -382,16 +439,19 @@ class MainActivity : ComponentActivity() {
                         } else if (authenticated.value) {
                             TeleVaultRoot(auth, model::submit, dynamicColor, preferences::setDynamicColor, phoneCountries, model::preparePhoneCountries) {
                                 PhotosScreen(drive, dynamicColor, preferences::setDynamicColor, appearanceMode, preferences::setAppearanceMode, interfaceStyle, preferences::setInterfaceStyle, lockGraceMinutes, { minutes ->
-                                    graceMinutes = LockGrace.minutes(minutes)
+                                    val token = appLock.generation()
+                                    appLock.save(drive.guidanceScope, LockGrace.minutes(minutes), token)
                                     preferences.setLockGraceMinutes(minutes)
+                                    graceMinutes = LockGrace.minutes(minutes)
+                                    authenticatedDay = currentLockDay()
                                 }, logout = { model.submit(AuthProtocol.Action.LOGOUT) }, exportRequestToken = exportRequestToken, onExportRequestHandled = { handled ->
                                     if (exportRequestToken == handled) exportRequestToken = 0
-                                })
+                                }, incomingMedia = incomingMedia, onIncomingHandled = { incomingMedia = null })
                             }
                         } else {
                             // Do not compose photos or viewers behind a translucent system prompt.
                             BackHandler { if (passwordRequested.value) expireAuthentication() else moveTaskToBack(true) }
-                            LaunchedEffect(deviceGateRequired) { if (deviceGateRequired) authenticate {} }
+                            LaunchedEffect(deviceGateRequired, grantChecked.value) { if (deviceGateRequired && grantChecked.value && !passwordRequested.value) authenticate {} }
                             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                                 if (passwordRequested.value) {
                                     val passwordGeneration = authenticationGeneration
@@ -402,13 +462,13 @@ class MainActivity : ComponentActivity() {
                                                 if (verified && passwordRequested.value && passwordGeneration == authenticationGeneration) {
                                                     failures.value = 0
                                                     passwordRequested.value = false
-                                                    authenticated.value = true
+                                                    markAuthenticated()
                                                 }
                                             }
                                         }
                                     }
                                 } else {
-                                    UnlockScreen(unlock = { authenticate {} }, busy = promptRunning.value, notice = if (failures.value >= 3) label("Biometric verification failed. Try your phone PIN or available vault-password option.", "বায়োমেট্রিক যাচাই হয়নি। ফোনের PIN বা ভল্ট পাসওয়ার্ডের অপশন ব্যবহার করুন।") else "", recovery = if (appPasswordAvailable) ({ openPassword() }) else null, back = { moveTaskToBack(true) })
+                                    UnlockScreen(unlock = { authenticate {} }, busy = promptRunning.value || !grantChecked.value, notice = if (failures.value >= 3) label("Biometric verification failed. Try your phone PIN or available vault-password option.", "বায়োমেট্রিক যাচাই হয়নি। ফোনের PIN বা ভল্ট পাসওয়ার্ডের অপশন ব্যবহার করুন।") else "", recovery = if (appPasswordAvailable && grantChecked.value) ({ openPassword() }) else null, back = { moveTaskToBack(true) })
                                 }
                             }
                         }

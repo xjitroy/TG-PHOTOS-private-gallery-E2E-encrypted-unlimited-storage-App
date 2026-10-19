@@ -10,18 +10,25 @@ import kotlinx.coroutines.CancellationException
 
 /** Metadata-only recovery; it never reads media on the application main thread. */
 internal object BackupScheduling {
+    fun whenCharging(context: Context) {
+        val request = OneTimeWorkRequestBuilder<BackupRecoveryWorker>().setConstraints(Constraints.Builder().setRequiresCharging(true).setRequiredNetworkType(NetworkType.CONNECTED).build()).addTag("tgdrive").build()
+        WorkManager.getInstance(context).enqueueUniqueWork("backup-charge-recovery", ExistingWorkPolicy.KEEP, request)
+    }
     fun request(context: Context) {
         val work = WorkManager.getInstance(context)
         val request = OneTimeWorkRequestBuilder<BackupRecoveryWorker>().setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()).addTag("tgdrive").setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).build()
         work.enqueueUniqueWork("backup-schedule-recovery", ExistingWorkPolicy.KEEP, request)
-        val periodic = PeriodicWorkRequestBuilder<BackupRecoveryWorker>(1, TimeUnit.HOURS).setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()).addTag("tgdrive").build()
-        work.enqueueUniquePeriodicWork("backup-schedule-recovery-periodic", ExistingPeriodicWorkPolicy.KEEP, periodic)
+        work.cancelUniqueWork("backup-schedule-recovery-periodic")
     }
 }
 
 class BackupEventReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action in setOf(Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED)) BackupScheduling.request(context)
+        if (intent.action in setOf(Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED, Intent.ACTION_POWER_CONNECTED, Intent.ACTION_BATTERY_OKAY)) {
+            BackupScheduling.request(context)
+            MediaIntelligenceScheduling.ensure(context)
+            MediaIntelligenceScheduling.request(context)
+        }
     }
 }
 

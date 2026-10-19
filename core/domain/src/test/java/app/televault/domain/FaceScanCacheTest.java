@@ -10,8 +10,9 @@ public class FaceScanCacheTest {
   assertTrue(FaceScanCache.shouldScan("same","same",true,0,0,true));
   assertFalse(FaceScanCache.shouldScan("same","same",true,0,2,true));
  }
- @Test public void existingPositiveTagsAndVideoFramesNeverReinferForQualityAlone() {
-  assertFalse(FaceScanCache.shouldScan("same","same",true,2,0,true));
+ @Test public void legacyPositiveScansUpgradeOnceButVideoFramesStayCached() {
+  assertTrue(FaceScanCache.shouldScan("same","same",true,2,0,true));
+  assertFalse(FaceScanCache.shouldScan("same","same",true,2,2,true));
   assertFalse(FaceScanCache.shouldScan("same","same",true,0,0,false));
  }
  @Test public void editingOriginalContentMakesTheNewPhotoEligibleAgain() {

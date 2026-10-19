@@ -2,6 +2,7 @@ package app.televault.people
 
 import android.content.Context
 import androidx.work.*
+import app.televault.data.BackgroundBattery
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -41,7 +42,7 @@ internal class FaceModels(context: Context) {
         hash.digest().joinToString("") { "%02x".format(it) }
     }
     fun install() {
-        val work = OneTimeWorkRequestBuilder<FaceModelsWorker>().setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).setRequiresStorageNotLow(true).build()).addTag("face-models-v2").build()
+        val work = OneTimeWorkRequestBuilder<FaceModelsWorker>().setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).setRequiresStorageNotLow(true).apply { if (!BackgroundBattery.analysis(app)) setRequiresCharging(true) }.build()).addTag("face-models-v2").build()
         WorkManager.getInstance(app).enqueueUniqueWork("face-models-v2", ExistingWorkPolicy.KEEP, work)
     }
     fun cancel() {

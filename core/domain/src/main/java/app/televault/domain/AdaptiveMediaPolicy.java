@@ -6,10 +6,12 @@ public final class AdaptiveMediaPolicy {
     public static final long OPEN_DEBOUNCE = 30 * 1000L;
     public static final long VIDEO_WINDOW = 30 * 60 * 1000L;
     public static final long WARM_BUDGET = 256L * 1024 * 1024;
+    public static final int PHOTO_BATCH = 50;
+    public static final int WARM_COUNT = PHOTO_BATCH * 4;
     private AdaptiveMediaPolicy() { }
     public static int photoPercent(int index) {
         if (index < 0) return 0;
-        return index < 30 ? 80 : index < 80 ? 60 : index < 130 ? 40 : index < 180 ? 20 : 0;
+        return index < PHOTO_BATCH ? 80 : index < PHOTO_BATCH * 2 ? 60 : index < PHOTO_BATCH * 3 ? 40 : index < WARM_COUNT ? 20 : 0;
     }
     public static int nextViews(int previous, long last, long now) {
         if (now <= 0) return 0;

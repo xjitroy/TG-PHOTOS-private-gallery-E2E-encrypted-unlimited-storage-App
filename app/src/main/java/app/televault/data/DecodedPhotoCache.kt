@@ -14,6 +14,7 @@ class DecodedPhotoCache(private val capacity: Int = 24 * 1024 * 1024) {
     private val changed = MutableStateFlow(0L)
     internal val revision = changed.asStateFlow()
     internal fun scrubPixelBudget() = minOf(2L * 1024 * 1024, capacity.toLong() / 8).coerceAtLeast(1)
+    internal fun tilePixelBudget() = minOf(1024L * 1024, capacity.toLong() / 16).coerceAtLeast(1)
 
     @Synchronized internal fun sufficient(key: String, width: Int, height: Int): Boolean = get(key)?.let { it.bitmap.width >= width && it.bitmap.height >= height } == true
     internal fun adopt(key: String, bitmap: Bitmap, width: Int, height: Int, orientation: Int, epoch: Long): Boolean = put(key, Frame(bitmap, width, height, orientation), epoch)

@@ -41,6 +41,7 @@ class FolderBackupWorker(context: Context, params: WorkerParameters) : Coroutine
         val id = inputData.getString("folder") ?: return Result.failure()
         return try {
             (applicationContext as TeleVaultApplication).drive.scanBackup(id)
+            MediaIntelligenceScheduling.request(applicationContext)
             Result.success()
         } catch (e: CancellationException) {
             throw e
@@ -67,6 +68,7 @@ class CameraChangeWorker(context: Context, params: WorkerParameters) : Coroutine
         val drive = (applicationContext as TeleVaultApplication).drive
         return try {
             drive.scanBackup(id)
+            MediaIntelligenceScheduling.request(applicationContext)
             drive.watchCamera(id, rearm = true)
             Result.success()
         } catch (e: CancellationException) {

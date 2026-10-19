@@ -6,6 +6,23 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class NativeCipherRangesTest {
+    @Test fun nativeCompletionCanWakeAReadWithoutWaitingForThePollingInterval() = runBlocking {
+        val local = File.createTempFile("cipher-notify", ".bin")
+        try {
+            var prefix = 0L
+            var waits = 0
+            val bytes = NativeCipherRanges.read(0, 16, { prefix }, { local }, {}, {}, {
+                waits++
+                local.writeBytes(ByteArray(16) { 3 })
+                prefix = 16
+            })
+            assertEquals(1, waits)
+            assertArrayEquals(ByteArray(16) { 3 }, bytes)
+        } finally {
+            local.delete()
+        }
+    }
+
     @Test fun removedUploadStagingDoesNotMasqueradeAsDownloadedServerBytes() = runBlocking {
         val uploaded = File.createTempFile("cipher-upload", ".bin")
         val downloaded = File.createTempFile("cipher-download", ".bin")

@@ -1,11 +1,11 @@
 {
-  "version": "1.20.31",
-  "code": 43,
+  "version": "1.20.32",
+  "code": 44,
   "checks": {
-    "distinctHostTests": 450,
+    "distinctHostTests": 476,
     "suites": {
       "domain": {
-        "tests": 264,
+        "tests": 288,
         "failures": 0,
         "errors": 0,
         "skipped": 0
@@ -17,38 +17,38 @@
         "skipped": 0
       },
       "telegram": {
-        "tests": 6,
+        "tests": 7,
         "failures": 0,
         "errors": 0,
         "skipped": 0
       },
       "app": {
-        "tests": 120,
+        "tests": 121,
         "failures": 0,
         "errors": 0,
         "skipped": 0
       }
     },
     "lintErrors": 0,
-    "lintWarnings": 101,
+    "lintWarnings": 102,
     "localChecks": 8,
-    "nativeAcceptance": "Unavailable: exact affected-phone crash/ANR, Android Binder/FUSE/codec/UI/OEM/Keystore behavior",
+    "nativeAcceptance": "Unavailable: Android large-tile pixel quality, layout, FPS and exact affected-phone crash/ANR, provider, codec and Keystore behavior",
     "otpRootCauseVerified": false,
-    "runtimeModelPins": "Existing face/OCR/runtime preserved; approved optional MobileNetV2 and labels/licensing pins verified",
+    "runtimeModelPins": "Existing face/OCR/subject/runtime models preserved",
     "privateDataReset": false,
     "privateApkBuilt": false,
-    "additionalAppRegressionPass": "Original cross-dispatcher inference test retained; memory retry/cancellation and encoded catalog admission regressions included in app120 tests"
+    "regressions": "Measured tall mosaic/crop/RAM/source/stage bounds, main-lock receipt expiry/mode/clock/boot/day, external URI isolation, notification wake-up, selected-native priority,25/15percent charging thresholds, normal-tab/Private-Vault fallback and unique Shorts deck/eligibility; prior regressions retained"
   },
   "artifact": {
-    "apk": "TG-Photos-1.20.31-universal.apk",
-    "bytes": 88144854,
-    "sha256": "163ddccaa8a490dfcc146a8f70213625d04163fb299c33c044fad939bfbe577a",
-    "versionCode": 43,
-    "versionName": "1.20.31",
+    "apk": "TG-Photos-1.20.32-universal.apk",
+    "bytes": 88174894,
+    "sha256": "477b085761092742f150557f7005d7ad8083ffd94704e6005f6ac29ca268ed25",
+    "versionCode": 44,
+    "versionName": "1.20.32",
     "package": "app.televault.photos",
     "distribution": "public",
-    "sourceCommit": "ee5592b686f81b0c4b1de204267d777fdd7332a2",
-    "sourceTree": "277f96d6a0734fb5d6282c1eb5552dbfeb5fc027",
+    "sourceCommit": "d0c4633ef8824cdfa0f19f2b3454456756124d67",
+    "sourceTree": "a7c576571e772348cf01b75cf6ff8c29f1332802",
     "certificateSHA256": "3e7c1029cb5e2da80026758abd483b5bd7f0551b6a56bee6b21640b8ae774559",
     "debuggable": false,
     "productionVerified": false,

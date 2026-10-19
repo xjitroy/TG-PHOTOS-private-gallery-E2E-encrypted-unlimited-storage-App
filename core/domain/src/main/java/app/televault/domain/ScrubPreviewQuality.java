@@ -5,8 +5,16 @@ public final class ScrubPreviewQuality {
     private ScrubPreviewQuality() {}
     public record Size(int width, int height) {}
     public static Size fit(int width, int height, int viewportWidth, int viewportHeight, long pixelBudget, boolean adjacent) {
+        return target(width, height, viewportWidth, viewportHeight, pixelBudget, adjacent, false);
+    }
+    /** Preserve enough source detail for center-crop tiles, without upscaling or unbounded panoramas. */
+    public static Size cover(int width, int height, int viewportWidth, int viewportHeight, long pixelBudget) {
+        return target(width, height, viewportWidth, viewportHeight, pixelBudget, false, true);
+    }
+    private static Size target(int width, int height, int viewportWidth, int viewportHeight, long pixelBudget, boolean adjacent, boolean cover) {
         if (width <= 0 || height <= 0 || viewportWidth <= 0 || viewportHeight <= 0 || pixelBudget <= 0) throw new IllegalArgumentException("Invalid preview geometry");
-        double scale = Math.min(1d, Math.min((double) viewportWidth / width, (double) viewportHeight / height));
+        double x = (double) viewportWidth / width, y = (double) viewportHeight / height;
+        double scale = Math.min(1d, cover ? Math.max(x, y) : Math.min(x, y));
         if (adjacent) scale *= Math.sqrt(.5d);
         scale = Math.min(scale, Math.sqrt((double) pixelBudget / ((long) width * height)));
         int w = Math.max(1, (int) (width * scale));

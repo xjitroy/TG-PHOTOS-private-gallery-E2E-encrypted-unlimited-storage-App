@@ -37,6 +37,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -53,6 +54,7 @@ import app.televault.security.LocalDeviceLock
 import java.text.SimpleDateFormat
 import java.util.Locale
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 
 @Composable internal fun label(en: String, bn: String): String = if (LocalConfiguration.current.locales[0].language == "bn") bn else en
@@ -145,9 +147,9 @@ internal fun sizeLabel(bytes: Long) = when {
     else -> "${bytes / 1024} KB"
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDynamicColor: suspend (Boolean) -> Unit, appearanceMode: AppearanceMode, changeAppearanceMode: suspend (AppearanceMode) -> Unit, interfaceStyle: InterfaceStyle, changeInterfaceStyle: suspend (InterfaceStyle) -> Unit, lockGraceMinutes: Int, changeLockGraceMinutes: suspend (Int) -> Unit, logout: () -> Unit, exportRequestToken: Int = 0, onExportRequestHandled: (Int) -> Unit = {}) {
+internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDynamicColor: suspend (Boolean) -> Unit, appearanceMode: AppearanceMode, changeAppearanceMode: suspend (AppearanceMode) -> Unit, interfaceStyle: InterfaceStyle, changeInterfaceStyle: suspend (InterfaceStyle) -> Unit, lockGraceMinutes: Int, changeLockGraceMinutes: suspend (Int) -> Unit, logout: () -> Unit, exportRequestToken: Int = 0, onExportRequestHandled: (Int) -> Unit = {}, incomingMedia: app.televault.IncomingMedia? = null, onIncomingHandled: () -> Unit = {}) {
     val state by model.contentState.collectAsStateWithLifecycle()
     val people by model.people.state.collectAsStateWithLifecycle()
     val textIndex by model.ocr.state.collectAsStateWithLifecycle()
@@ -190,12 +192,20 @@ fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDynamicColo
         }
         return
     }
+    val restoredPosition by produceState<app.televault.data.BrowsePosition?>(null, model.playbackEpoch) {
+        value = model.browsePositions.load(model.playbackEpoch)
+    }
+    val initialPosition = restoredPosition
+    if (initialPosition == null) {
+        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
+        return
+    }
     val telegramWarningSeen by model.preferences.telegramStorageWarningSeen.collectAsStateWithLifecycle(initialValue = true)
     LaunchedEffect(model) { model.refreshCloudExports() }
     val cooldown by model.preferences.trashCooldownEnabled.collectAsStateWithLifecycle(initialValue = true)
     var settingsCategory by rememberSaveable { mutableStateOf("") }
-    var tab by rememberSaveable { mutableStateOf(PhotoTab.TIMELINE) }
-    var galleryCloud by rememberSaveable { mutableStateOf(false) }
+    var tab by remember(model.playbackEpoch) { mutableStateOf(PhotoTab.valueOf(initialPosition.tab)) }
+    var galleryCloud by rememberSaveable { mutableStateOf(initialPosition.galleryCloud) }
     var previousTab by rememberSaveable { mutableStateOf(PhotoTab.TIMELINE) }
     var rootBackPresses by remember { mutableIntStateOf(0) }
     val libraryStateHolder = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
@@ -205,10 +215,10 @@ fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDynamicColo
         tabEntrance.snapTo(.95f)
         tabEntrance.animateTo(1f, androidx.compose.animation.core.tween(260))
     }
-    var section by rememberSaveable { mutableStateOf("All") }
+    var section by rememberSaveable { mutableStateOf(initialPosition.section) }
     var search by remember { mutableStateOf("") }
-    var folder by remember { mutableStateOf<String?>(null) }
-    var album by remember { mutableStateOf<String?>(null) }
+    var folder by remember { mutableStateOf(initialPosition.folder) }
+    var album by remember { mutableStateOf(initialPosition.album) }
     var selected by remember { mutableStateOf(setOf<String>()) }
     var libraryShownIds by remember { mutableStateOf(emptySet<String>()) }
     val mediaFilters = rememberMediaFilters(model) { selected = emptySet() }
@@ -218,6 +228,10 @@ fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDynamicColo
     val allTrashDates = remember(state.deviceTrashDates, storedTrash) { state.deviceTrashDates + storedTrash.associate { it.local.uri.toString() to it.trashedAt } }
     val allTrashOrigins = remember(state.deviceTrashOrigins, storedTrash) { state.deviceTrashOrigins + storedTrash.associate { it.local.uri.toString() to it.origin } }
     var showProfile by remember { mutableStateOf(false) }
+    var exploreMode by remember { mutableStateOf<String?>(initialPosition.explore.takeIf { it.isNotBlank() }) }
+    var allPeopleVisible by remember { mutableStateOf(false) }
+    var exploreShorts by remember { mutableStateOf(false) }
+    var pendingShorts by remember { mutableStateOf(false) }
     var archiveEntries by remember { mutableStateOf<List<MediaEntry>>(emptyList()) }
     var archiveConsent by remember { mutableStateOf(false) }
     var renameEntry by remember { mutableStateOf<MediaEntry?>(null) }
@@ -227,6 +241,56 @@ fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDynamicColo
     var memoryStory by remember { mutableStateOf<PhotoMemory?>(null) }
     var opening by remember { mutableStateOf<MediaEntry?>(null) }
     var viewerEntries by remember { mutableStateOf<List<MediaEntry>?>(null) }
+    var incomingBackup by remember { mutableStateOf<List<LocalMedia>?>(null) }
+    var incomingBusy by remember { mutableStateOf(false) }
+    LaunchedEffect(incomingMedia?.id, model.playbackEpoch) {
+        val request = incomingMedia ?: return@LaunchedEffect
+        incomingBusy = true
+        try {
+            val items = request.resolve(context)
+            if (items.isEmpty()) {
+                model.report("Could not read these files. Share them again from the source app.")
+            } else if (request.backup) {
+                incomingBackup = items
+            } else {
+                val entries = items.map { item -> MediaEntry(item.uri.toString(), item.name, item.mime, item.size, item.date, local = item) }
+                viewerEntries = entries
+                opening = entries.first()
+            }
+            onIncomingHandled()
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (_: Exception) {
+            model.report("Could not open the shared files. Try again from the source app.")
+            onIncomingHandled()
+        } finally {
+            incomingBusy = false
+        }
+    }
+    if (incomingBusy) {
+        AlertDialog(onDismissRequest = {
+            incomingBusy = false
+            onIncomingHandled()
+        }, title = { Text("Opening shared files") }, text = { Text("Reading the selected file details…") }, confirmButton = {
+            TextButton({
+                incomingBusy = false
+                onIncomingHandled()
+            }) { Text("Cancel") }
+        })
+    }
+    incomingBackup?.let { items ->
+        AlertDialog(onDismissRequest = { incomingBackup = null }, title = { Text("Back up with TG Photos") }, text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("${items.size} selected file${if (items.size == 1) "" else "s"} will use your encrypted Photos backup. Existing verified backups are reused.")
+                items.take(5).forEach { Text(it.name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall) }
+            }
+        }, confirmButton = {
+            TextButton({
+                model.upload(items.map { it.uri })
+                incomingBackup = null
+            }) { Text("Back up") }
+        }, dismissButton = { TextButton({ incomingBackup = null }) { Text("Cancel") } })
+    }
     var prompt by remember { mutableStateOf("") }
     var name by remember { mutableStateOf("") }
     var exportIds by remember { mutableStateOf(setOf<String>()) }
@@ -237,14 +301,17 @@ fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDynamicColo
     var pendingNewFolder by remember { mutableStateOf("") }
     var pendingLocalMove by remember { mutableStateOf<List<MediaEntry>>(emptyList()) }
     var localCopy by remember { mutableStateOf(false) }
-    var density by rememberSaveable { mutableFloatStateOf(TimelineZoom.DAY_COLUMNS.toFloat()) }
+    var density by rememberSaveable { mutableFloatStateOf(initialPosition.columns) }
     var showSearch by rememberSaveable { mutableStateOf(false) }
     var overflow by remember { mutableStateOf(false) }
     var galleryIntroduction by rememberSaveable { mutableStateOf(false) }
     var firstLoginPermissions by rememberSaveable { mutableStateOf(false) }
     var allFilesIntroduction by rememberSaveable { mutableStateOf(false) }
     var libraryFolders by rememberSaveable { mutableStateOf(true) }
-    var libraryDevice by rememberSaveable { mutableStateOf(false) }
+    var libraryDevice by rememberSaveable { mutableStateOf(initialPosition.device) }
+    var libraryPath by rememberSaveable { mutableStateOf(initialPosition.libraryPath) }
+    var libraryCategory by rememberSaveable { mutableStateOf(initialPosition.libraryCategory) }
+    var libraryRecent by rememberSaveable { mutableStateOf(initialPosition.libraryRecent) }
     var trashScope by remember { mutableStateOf(TrashScope.DEVICE) }
     var trashFiles by remember { mutableStateOf(false) }
     var permanentDelete by remember { mutableStateOf<List<MediaEntry>?>(null) }
@@ -268,6 +335,44 @@ fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDynamicColo
     val fileLibrary = tab == PhotoTab.LIBRARY && section !in setOf("Transfers", "Trash")
     val browseList = remember(model.playbackEpoch, tab, section, folder, album, libraryDevice) { androidx.compose.foundation.lazy.LazyListState() }
     val usesBrowseList = fileLibrary || section in setOf("Documents", "Audio", "All files") || section == "Trash" && trashFiles
+    val resumeEpoch = model.playbackEpoch
+    val positionReader by rememberUpdatedState({
+        app.televault.data.BrowsePosition(
+            tab.name, section, folder, album, libraryDevice, galleryCloud, libraryPath, libraryCategory, libraryRecent,
+            if (usesBrowseList) browseList.firstVisibleItemIndex else timelineGrid.firstVisibleItemIndex,
+            if (usesBrowseList) browseList.firstVisibleItemScrollOffset else timelineGrid.firstVisibleItemScrollOffset, density, exploreMode.orEmpty()
+        ).safe()
+    })
+    LaunchedEffect(resumeEpoch) {
+        var previous: app.televault.data.BrowsePosition? = null
+        snapshotFlow { positionReader() }.collectLatest { position ->
+            val onlyScroll = previous?.copy(index = position.index, offset = position.offset) == position
+            previous = position
+            if (onlyScroll) delay(350)
+            model.saveBrowsePosition(position, resumeEpoch)
+        }
+    }
+    val resumeLifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(resumeLifecycle, resumeEpoch) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) model.saveBrowsePosition(positionReader(), resumeEpoch)
+        }
+        resumeLifecycle.addObserver(observer)
+        onDispose { resumeLifecycle.removeObserver(observer) }
+    }
+    LaunchedEffect(resumeEpoch) {
+        if (initialPosition.index > 0 || initialPosition.offset > 0) {
+            kotlinx.coroutines.withTimeoutOrNull(10_000) { snapshotFlow { if (initialPosition.tab == "GALLERY" && !initialPosition.galleryCloud || initialPosition.tab == "LIBRARY" && initialPosition.device) deviceIndexReady else state.indexLoaded }.first { it } }
+            val current = positionReader()
+            if (current.tab == initialPosition.tab && current.section == initialPosition.section && current.folder == initialPosition.folder && current.album == initialPosition.album) {
+                val count = if (usesBrowseList) browseList.layoutInfo.totalItemsCount else timelineGrid.layoutInfo.totalItemsCount
+                if (count > 0) {
+                    val index = initialPosition.index.coerceAtMost(count - 1)
+                    if (usesBrowseList) browseList.scrollToItem(index, initialPosition.offset) else timelineGrid.scrollToItem(index, initialPosition.offset)
+                }
+            }
+        }
+    }
     val photoChrome = remember(tab, section, folder, album, libraryDevice, galleryCloud) { app.televault.domain.PhotoChromePolicy() }
     var photoChromeMode by remember(tab, section, folder, album, libraryDevice, galleryCloud) { mutableStateOf(app.televault.domain.PhotoChromePolicy.Mode.EXPANDED) }
     LaunchedEffect(timelineGrid, browseList, usesBrowseList, isBrowse) {
@@ -652,33 +757,21 @@ fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDynamicColo
     val projectionScope = PhotoProjectionScope(model.playbackEpoch, tab, section, if (section == "Trash") trashScope == TrashScope.DEVICE else deviceContext, showHiddenGallery, mediaFilter, trashFiles, search, folder, album, allAlbumLabel, favoritesAlbumLabel, videosAlbumLabel)
     val projectionInput = PhotoProjectionInput(state.files, local, storedTrash, state.albums, state.localFavorites, allTrashOrigins)
     val projection = rememberBackgroundProjection(projectionScope, projectionInput, PhotoProjection()) { input -> projectPhotos(input, projectionScope) }
-    LaunchedEffect(tab, opening?.id, state.files, local, people.enabled, model.playbackEpoch) {
-        model.intelligenceActive(tab != PhotoTab.VAULT && opening == null)
+    LaunchedEffect(tab, opening?.id, memoryStory?.key, state.files, local, people.enabled, model.playbackEpoch) {
+        model.intelligenceActive(tab != PhotoTab.VAULT && opening == null && memoryStory == null)
         delay(1500)
         model.indexPeople(state.files, local)
     }
-    LaunchedEffect(tab, opening?.id, state.files, local, textIndex.enabled, model.playbackEpoch) {
-        model.intelligenceActive(tab != PhotoTab.VAULT && opening == null)
+    LaunchedEffect(tab, opening?.id, memoryStory?.key, state.files, local, textIndex.enabled, model.playbackEpoch) {
+        model.intelligenceActive(tab != PhotoTab.VAULT && opening == null && memoryStory == null)
         delay(2000)
         model.indexText(state.files, local)
-    }
-    LaunchedEffect(textIndex.enabled) {
-        while (textIndex.enabled) {
-            delay(60_000)
-            model.indexText(model.state.value.files, model.localMedia.changes.value, restart = false)
-        }
-    }
-    LaunchedEffect(people.enabled) {
-        while (people.enabled) {
-            delay(60_000)
-            model.indexPeople(model.state.value.files, model.localMedia.changes.value, restart = false)
-        }
     }
     val cloud = projection.value.cloud
     val device = projection.value.device
     val base = projection.value.base
     val visible = projection.value.visible
-    val warmIds = remember(visible) { visible.asSequence().filter { it.cloud != null }.take(180).map { it.id }.toList() }
+    val warmIds = remember(visible) { visible.asSequence().filter { it.cloud != null && it.mime.startsWith("image/") }.take(app.televault.domain.AdaptiveMediaPolicy.WARM_COUNT).map { it.id }.toList() }
     LaunchedEffect(local, warmIds, state.indexLoaded, deviceIndexReady, tab) {
         if (state.indexLoaded && deviceIndexReady) {
             // Rebind restored originals first; speculative download must not race discovery.
@@ -1186,17 +1279,15 @@ fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDynamicColo
         },
         floatingActionButton = {
             if (tab == PhotoTab.TIMELINE && selected.isEmpty()) {
-                ExtendedFloatingActionButton(onClick = {
-                    upload.launch(
-                        if (section == "Audio") {
-                            arrayOf("audio/*")
-                        } else if (tab == PhotoTab.LIBRARY) {
-                            arrayOf("application/*", "text/*")
-                        } else {
-                            arrayOf("image/*", "video/*")
-                        }
-                    )
-                }, icon = { Icon(Icons.Outlined.Add, null) }, text = { Text(label("Upload", "আপলোড")) })
+                PhotoExploreButton { action ->
+                    when (action) {
+                        "Upload" -> upload.launch(arrayOf("image/*", "video/*", "audio/*", "application/*", "text/*"))
+                        "Profile" -> showProfile = true
+                        "All people" -> allPeopleVisible = true
+                        "Shorts" -> pendingShorts = true
+                        else -> exploreMode = action
+                    }
+                }
             }
         }
     ) { padding ->
@@ -1297,13 +1388,14 @@ fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDynamicColo
                                 item {
                                     Surface(shape = RoundedCornerShape(26.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
                                         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                            Text(label("Lock after leaving the app", "অ্যাপ থেকে বের হওয়ার পর লক"), style = MaterialTheme.typography.titleMedium)
-                                            Text(label("Return within this time without another prompt. Manual lock is immediate; a fresh app start always verifies.", "এই সময়ের মধ্যে ফিরলে আবার যাচাই লাগবে না। লক বাটন সঙ্গে সঙ্গে লক করবে; নতুন করে অ্যাপ চালু হলে যাচাই লাগবে।"), style = MaterialTheme.typography.bodySmall)
-                                            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                                                listOf(2, 5).forEachIndexed { index, minutes ->
-                                                    SegmentedButton(selected = lockGraceMinutes == minutes, onClick = { savePreference { changeLockGraceMinutes(minutes) } }, shape = SegmentedButtonDefaults.itemShape(index, 2)) { Text("$minutes " + label("minutes", "মিনিট")) }
+                                            Text("App lock", style = MaterialTheme.typography.titleMedium)
+                                            Text("Choose when the main gallery asks for verification after you leave. Daily mode verifies once per calendar day. Off removes the automatic app prompt; phone security and encryption stay enabled.", style = MaterialTheme.typography.bodySmall)
+                                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                listOf(0 to "Off", 2 to "2 minutes", 5 to "5 minutes", 15 to "15 minutes", 30 to "30 minutes", 60 to "1 hour", 120 to "2 hours", 1440 to "Once a day").forEach { (minutes, title) ->
+                                                    FilterChip(selected = lockGraceMinutes == minutes, onClick = { savePreference { changeLockGraceMinutes(minutes) } }, label = { Text(title) })
                                                 }
                                             }
+                                            Text("Private Vault always keeps its separate lock. Manual lock and sensitive actions still require verification. Restarting the phone requires verification for timed and daily modes.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                         }
                                     }
                                 }
@@ -1455,8 +1547,19 @@ fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDynamicColo
                         FileLibrary(
                             files = if (libraryDevice) device else cloud,
                             cloud = !libraryDevice,
+                            initialFolder = libraryPath,
+                            initialCategory = libraryCategory,
+                            initialRecent = libraryRecent,
+                            locationChanged = { path, category, recent ->
+                                libraryPath = path
+                                libraryCategory = category
+                                libraryRecent = recent
+                            },
                             chooseCloud = { cloudView ->
                                 libraryDevice = !cloudView
+                                libraryPath = ""
+                                libraryCategory = "All files"
+                                libraryRecent = false
                                 search = ""
                                 folder = null
                                 selected = emptySet()
@@ -1909,6 +2012,40 @@ fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDynamicColo
             } catch (_: Exception) { /* Offline keeps encrypted profile or initials. */ }
         }
     }
+    val exploreFiles = remember(cloud, device, showHiddenGallery, state.backedDeviceFiles) {
+        val cloudIds = cloud.filter { it.cloud?.trashedAt == 0L }.mapTo(hashSetOf()) { it.id }
+        cloud.filter { it.id in cloudIds } + device.filter { item ->
+            item.local?.let { !it.trashed && (showHiddenGallery || !it.galleryHidden) && state.backedDeviceFiles[it.fingerprint] !in cloudIds } == true
+        }
+    }
+    LaunchedEffect(pendingShorts) {
+        if (pendingShorts) {
+            val source = exploreFiles
+            val deck = withContext(Dispatchers.Default) { app.televault.domain.ExploreMedia.deck(source.filter { it.mime.startsWith("video/") && exploreShort(it) }, { it.id }, System.nanoTime()) }
+            pendingShorts = false
+            if (deck.isEmpty()) {
+                model.report("No short portrait videos found yet. Open All videos while metadata finishes indexing.")
+            } else {
+                exploreShorts = true
+                viewerEntries = deck
+                opening = deck.first()
+            }
+        }
+    }
+    exploreMode?.let { mode ->
+        ExploreCollection(mode, exploreFiles, model, { exploreMode = null }) { item, collection ->
+            exploreShorts = false
+            viewerEntries = collection
+            opening = item
+        }
+    }
+    if (allPeopleVisible) {
+        AllPeopleDialog(people, { allPeopleVisible = false }) { person ->
+            allPeopleVisible = false
+            searchPerson = person.id
+            universalSearch = true
+        }
+    }
     if (showProfile) {
         val profileFilter = mediaFilter.copy(category = app.televault.domain.MediaCategories.Category.ALL)
         val cloudFavorites = cloud.filter { profileFilter.allows(it) && it.cloud?.trashedAt == 0L && it.cloud.favorite && (it.mime.startsWith("image/") || it.mime.startsWith("video/")) }
@@ -1940,54 +2077,59 @@ fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDynamicColo
         }
     }
     opening?.let { entry ->
-        MediaViewer(
-            entry,
-            viewerEntries ?: visible,
-            model,
-            personProfile = { id ->
-                opening = null
-                searchPerson = id
-                universalSearch = true
-            },
-            close = { opening = null },
-            choose = { opening = it },
-            profile = {
-                opening = null
-                showProfile = true
-            },
-            backup = { item, cleanup ->
-                item.local?.let { localItem ->
-                    if (cleanup) {
-                        model.backupAndTrash(listOf(localItem), if (tab == PhotoTab.LIBRARY) "library" else "gallery")
-                        opening = null
-                    } else {
-                        model.upload(listOf(localItem.uri))
+        CompositionLocalProvider(LocalExploreFeed provides exploreShorts, LocalExploreMode provides exploreMode.orEmpty()) {
+            MediaViewer(
+                entry,
+                viewerEntries ?: visible,
+                model,
+                personProfile = { id ->
+                    opening = null
+                    searchPerson = id
+                    universalSearch = true
+                },
+                close = {
+                    opening = null
+                    exploreShorts = false
+                },
+                choose = { opening = it },
+                profile = {
+                    opening = null
+                    showProfile = true
+                },
+                backup = { item, cleanup ->
+                    item.local?.let { localItem ->
+                        if (cleanup) {
+                            model.backupAndTrash(listOf(localItem), if (tab == PhotoTab.LIBRARY) "library" else "gallery")
+                            opening = null
+                        } else {
+                            model.upload(listOf(localItem.uri))
+                        }
+                        notifyAccess()
                     }
-                    notifyAccess()
-                }
-            },
-            removeDevice = { item ->
-                opening = null
-                trashActions.request(listOf(item), if (tab == PhotoTab.LIBRARY) "library" else "gallery", app.televault.domain.TrashChoice.Scope.DEVICE)
-            },
-            save = {
-                opening = null
-                save(it)
-            },
-            trash = {
-                deleteEntries(listOf(it))
-                opening = null
-            },
-            restore = {
-                deleteEntries(listOf(it), true)
-                opening = null
-            },
-            purge = {
-                opening = null
-                permanentDelete = listOf(it)
-            },
-            favorite = { if (it.cloud != null)model.favorite(it.id, !it.cloud.favorite)else model.localFavorite(it.id, it.id !in state.localFavorites) }
-        )
+                },
+                removeDevice = { item ->
+                    opening = null
+                    trashActions.request(listOf(item), if (tab == PhotoTab.LIBRARY) "library" else "gallery", app.televault.domain.TrashChoice.Scope.DEVICE)
+                },
+                save = {
+                    opening = null
+                    save(it)
+                },
+                trash = {
+                    deleteEntries(listOf(it))
+                    opening = null
+                },
+                restore = {
+                    deleteEntries(listOf(it), true)
+                    opening = null
+                },
+                purge = {
+                    opening = null
+                    permanentDelete = listOf(it)
+                },
+                favorite = { if (it.cloud != null)model.favorite(it.id, !it.cloud.favorite)else model.localFavorite(it.id, it.id !in state.localFavorites) }
+            )
+        }
     }
 }
 
