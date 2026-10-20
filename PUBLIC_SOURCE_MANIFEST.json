@@ -1,11 +1,11 @@
 {
-  "version": "1.20.37",
-  "code": 49,
-  "compiledSourceCommit": "788269af437dfe81e7ec6e40dc2c454863fe5962",
+  "version": "1.20.38",
+  "code": 50,
+  "compiledSourceCommit": "bf81323de50133a7ab46d92ea6c68ed0f1b9ae4a",
   "files": [
     {
       "path": "app/build.gradle.kts",
-      "sha256": "bc5b35fdf4aa7804c85550654401ca9be372eb5133ef1ecc3deb98d18c4b9f94"
+      "sha256": "8ac33608a6a70d5ef715296fa119fac2a0aaad0648491e816acc92164b00c5ed"
     },
     {
       "path": "app/libs/onnxruntime-android-1.22.0.aar",
@@ -697,7 +697,7 @@
     },
     {
       "path": "app/src/main/java/app/televault/ui/MediaViewer.kt",
-      "sha256": "dbc2267b619bdf5df9be2060a0ee061d26d74afa85e93a334531c7875b58905a"
+      "sha256": "85b9552a29c5d1bd71c1ad7ea8c1ba37b7ec5a9db28795663e407db48c52499e"
     },
     {
       "path": "app/src/main/java/app/televault/ui/MediaZoom.kt",
@@ -741,7 +741,7 @@
     },
     {
       "path": "app/src/main/java/app/televault/ui/PhotoComponents.kt",
-      "sha256": "607af929dd45ae5961e70d44d536fdf36772881e22f80e706066ec30e8dd06a6"
+      "sha256": "9fc29f4dc3574685e437a13520208e18f558d3cb23b8f0439d049c1e04db15ed"
     },
     {
       "path": "app/src/main/java/app/televault/ui/PhotoExplore.kt",
@@ -897,11 +897,15 @@
     },
     {
       "path": "app/src/main/java/app/televault/ui/VideoPlayer.kt",
-      "sha256": "8737504d1cb64660e88b5b29286234e936fc9a243d7f47aecd435fd7babf9dda"
+      "sha256": "01b13320d909658428a5a4f789e37959705c4cb377de8bbc27b0fac1f11fea65"
     },
     {
       "path": "app/src/main/java/app/televault/ui/VideoSeekBar.kt",
       "sha256": "8c199e56844c43db8ff87b02e4a5c846ca3bc085e1cedaf9b3bf751fd66e4a72"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/VideoSurfaceHandoff.kt",
+      "sha256": "b949f075c09d03aa5760b14d2717f7484ec8af275d14b9c6dbb866c4064de02d"
     },
     {
       "path": "app/src/main/java/app/televault/ui/VideoVolumeBoost.kt",
@@ -929,7 +933,7 @@
     },
     {
       "path": "app/src/main/java/app/televault/ui/ViewerPlaybackSession.kt",
-      "sha256": "494b74cf3690f306684c9c6c5620182c5dd610f7c373733bb8013a77e33e2bd8"
+      "sha256": "b63b29559c47da5ef9757662fb0d4b05b89e015bc31f6f5972eaab1228de690e"
     },
     {
       "path": "app/src/main/jniLibs/arm64-v8a/libtgocrscript.so",
@@ -1198,6 +1202,10 @@
     {
       "path": "app/src/test/java/app/televault/ui/TimelineFastScrollMapTest.kt",
       "sha256": "d2173f0e3737eb851f6c807c75cc0e9c79570731ac96ec86fae625db778aa459"
+    },
+    {
+      "path": "app/src/test/java/app/televault/ui/VideoSurfaceHandoffTest.kt",
+      "sha256": "95b37e0f49acd6df4bdccae4c40a40a43981239a1a03ec5a46832583dcdbc0ff"
     },
     {
       "path": "app/src/test/java/app/televault/ui/VideoVolumeBoostTest.kt",
@@ -1685,7 +1693,7 @@
     },
     {
       "path": "core/domain/src/main/java/app/televault/domain/VideoPresentation.java",
-      "sha256": "3a148735bf1c67ff886911404dfd6dac5fc2c57a70bc647bb5e4312cf80d05b8"
+      "sha256": "3bc8b8bd2bc2e589ac2eee96e59a90acaae7b5ba29012a8092d90133daca21e4"
     },
     {
       "path": "core/domain/src/main/java/app/televault/domain/VideoVolume.java",
@@ -2033,7 +2041,7 @@
     },
     {
       "path": "core/domain/src/test/java/app/televault/domain/VideoPresentationTest.java",
-      "sha256": "36ae88c6eaba4c48840d7ce4e9104a6eee8f96a874fd53636f58e690af3db56c"
+      "sha256": "1a8aeaa85d4369a40e8ae0eff3d2b221ce7c9755304d808d0bbd3972d871f16b"
     },
     {
       "path": "core/domain/src/test/java/app/televault/domain/VideoVolumeTest.java",

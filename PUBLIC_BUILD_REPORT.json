@@ -1,11 +1,11 @@
 {
-  "version": "1.20.37",
-  "code": 49,
+  "version": "1.20.38",
+  "code": 50,
   "checks": {
-    "distinctHostTests": 575,
+    "distinctHostTests": 580,
     "suites": {
       "domain": {
-        "tests": 322,
+        "tests": 324,
         "failures": 0,
         "errors": 0,
         "skipped": 0
@@ -23,14 +23,14 @@
         "skipped": 0
       },
       "app": {
-        "tests": 184,
+        "tests": 187,
         "failures": 0,
         "errors": 0,
         "skipped": 0
       }
     },
     "lintErrors": 0,
-    "lintWarnings": 108,
+    "lintWarnings": 107,
     "finalLintVerified": true,
     "localChecks": 8,
     "nativeAcceptance": "Unavailable: no attached Android target or emulator/KVM; native rendering/gesture/frame/codec/OEM acceptance pending.",
@@ -38,18 +38,18 @@
     "runtimeModelPins": "Existing face/OCR/subject/runtime packs preserved; no new model installed",
     "privateDataReset": false,
     "privateApkBuilt": false,
-    "regressions": "Shared compact overlay cannot cover a returning introduction, repeated section resets; real lazy-index/date mapping with10001 targets in a one-million-item virtual timeline; prior575 host playback/backup/crypto/lock/geometry regressions"
+    "regressions": "Shorts presentation before dimension discovery,1000 normal surface updates without detachment, PiP-only owned rebinding and stale-page exclusion; existing playback/backup/crypto/lock/geometry regressions"
   },
   "artifact": {
-    "apk": "TG-Photos-1.20.37-universal.apk",
-    "bytes": 88376302,
-    "sha256": "b9f1f4fb52f57106bcd2608f51e32889bbca21b8278b4afd24895312344a3b7b",
-    "versionCode": 49,
-    "versionName": "1.20.37",
+    "apk": "TG-Photos-1.20.38-universal.apk",
+    "bytes": 88377570,
+    "sha256": "322df046d21338f7fcf67b139a8ae05682cb43aec5e94dbc3066ef625fdc4184",
+    "versionCode": 50,
+    "versionName": "1.20.38",
     "package": "app.televault.photos",
     "distribution": "public",
-    "sourceCommit": "788269af437dfe81e7ec6e40dc2c454863fe5962",
-    "sourceTree": "c73c1fdac752ce24847b8507615c81451285cf7b",
+    "sourceCommit": "bf81323de50133a7ab46d92ea6c68ed0f1b9ae4a",
+    "sourceTree": "f53500ff66510eacc46864715173c23ff57d0084",
     "certificateSHA256": "3e7c1029cb5e2da80026758abd483b5bd7f0551b6a56bee6b21640b8ae774559",
     "debuggable": false,
     "productionVerified": false,

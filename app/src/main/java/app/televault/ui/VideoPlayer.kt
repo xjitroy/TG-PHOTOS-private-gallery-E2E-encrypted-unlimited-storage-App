@@ -110,10 +110,20 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
     val onPortraitChanged by rememberUpdatedState(portraitChanged)
     val initialWidth = current.cloud?.facts?.width ?: current.local?.width ?: 0
     val initialHeight = current.cloud?.facts?.height ?: current.local?.height ?: 0
-    var frameRatio by remember(identity) { mutableFloatStateOf(if (initialWidth > 0 && initialHeight > 0) initialWidth * player.videoSize.pixelWidthHeightRatio / initialHeight else 16f / 9f) }
+    var frameRatio by remember(identity) {
+        mutableFloatStateOf(
+            if (initialWidth > 0 && initialHeight > 0) {
+                initialWidth.toFloat() / initialHeight
+            } else if (exploreFeed || verticalPaging) {
+                9f / 16f
+            } else {
+                16f / 9f
+            }
+        )
+    }
     LaunchedEffect(player, identity) { if (session.owns(identity)) player.play() }
     var frameKnown by remember(identity) { mutableStateOf(initialWidth > 0 && initialHeight > 0) }
-    var short by remember(uri) { mutableStateOf(!exploreMovie && (verticalPaging || VideoPresentation.shortLayout(initialWidth, initialHeight, 1f))) }
+    var short by remember(uri) { mutableStateOf(VideoPresentation.portraitLayout(exploreFeed || verticalPaging, exploreMovie, initialWidth, initialHeight, 1f)) }
 
     var wrongSwipes by remember { mutableIntStateOf(0) }
     var actionsVisible by remember(uri) { mutableStateOf(true) }
@@ -141,8 +151,11 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
     val isFavorite = current.cloud?.favorite == true || current.id in snapshot.localFavorites
     val zoom = remember(identity) { MediaZoomState(4f) }
     var view by remember(uri) { mutableStateOf<PlayerView?>(null) }
-    DisposableEffect(pipVisible, player, view) {
-        if (!pipVisible && session.owns(identity)) {
+    var firstFrame by remember(uri, identity) { mutableStateOf(false) }
+    val surfaceHandoff = remember(identity) { VideoSurfaceHandoff() }
+    DisposableEffect(pipVisible, player, view, identity) {
+        if (surfaceHandoff.update(pipVisible, session.ownsSource(identity, uri))) {
+            firstFrame = false
             view?.player = null
             view?.player = player
         }
@@ -292,10 +305,13 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
                 playerError = if (unsupported) codecFailureText else playbackFailureText
             }
 
+            override fun onRenderedFirstFrame() {
+                if (session.ownsSource(identity, uri) && model.playbackEpoch == epoch) firstFrame = true
+            }
             override fun onVideoSizeChanged(size: VideoSize) {
                 if (!session.owns(identity) || size.width <= 0 || size.height <= 0) return
                 frameKnown = true
-                short = !exploreMovie && (verticalPaging || VideoPresentation.shortLayout(size.width, size.height, size.pixelWidthHeightRatio))
+                short = VideoPresentation.portraitLayout(exploreFeed || verticalPaging, exploreMovie, size.width, size.height, size.pixelWidthHeightRatio)
                 frameRatio = size.width * size.pixelWidthHeightRatio / size.height
                 quality = "${size.width} × ${size.height}"
                 badge = true
@@ -357,6 +373,7 @@ private fun ReadyVideoPlayer(uri: Uri, video: Boolean, videos: List<MediaEntry>,
                         if (it.player !== player) it.player = player
                     }, modifier = Modifier.fillMaxSize().mediaZoomLayer(zoom))
                 }
+                if (!firstFrame) MediaThumbnail(current, model, Modifier.fillMaxSize(), 384, androidx.compose.ui.layout.ContentScale.Fit)
                 Box(
                     Modifier.fillMaxSize().mediaZoomInput(zoom).observeWrongSwipe(short && verticalPaging) { wrongSwipes++ }.pointerInput(player, short, identity) {
                         detectTapGestures(onTap = {

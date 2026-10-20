@@ -396,7 +396,10 @@ internal fun MediaGrid(files: List<MediaEntry>, selected: Set<String>, model: Dr
                 }
             }
         }
-        if (files.size >= 100 && selected.isEmpty() && (leadingContent == null || grid.firstVisibleItemIndex > 0) && (grid.canScrollForward || grid.canScrollBackward)) {
+        val fastScrollAvailable by remember(grid, leadingContent != null) {
+            derivedStateOf { (leadingContent == null || grid.firstVisibleItemIndex > 0) && (grid.canScrollForward || grid.canScrollBackward) }
+        }
+        if (files.size >= 100 && selected.isEmpty() && fastScrollAvailable) {
             TimelineFastScroll(grid, fastScrollMap, onUserScroll = onFastScroll, topObstruction = fastScrollTop)
         }
     }

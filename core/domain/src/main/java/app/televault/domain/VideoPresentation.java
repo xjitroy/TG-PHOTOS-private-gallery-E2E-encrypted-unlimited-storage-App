@@ -3,6 +3,10 @@ package app.televault.domain;
 /** Near9:16 uses portrait controls; everything else keeps the movie player. */
 public final class VideoPresentation {
     private VideoPresentation() {}
+    /** Explicit Shorts feeds keep their pager/screen geometry before dimensions arrive. */
+    public static boolean portraitLayout(boolean shortsFeed, boolean movieMode, int width, int height, float pixelRatio) {
+        return !movieMode && (shortsFeed || shortLayout(width, height, pixelRatio));
+    }
     public static boolean shortLayout(int width,int height,float pixelRatio) {
         if(width<=0 || height<=0 || !Float.isFinite(pixelRatio) || pixelRatio<=0)return false;
         double ratio=(double)width*pixelRatio/height;

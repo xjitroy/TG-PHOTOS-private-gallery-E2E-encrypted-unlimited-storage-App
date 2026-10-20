@@ -1,3 +1,15 @@
+# TG Photos1.20.38 — Shorts stability in progress
+
+TG Photos1.20.38 stabilizes Shorts page handover before a video loads. Explicit Shorts feeds select portrait paging, fullscreen insets and portrait controls before dimensions/resume reads arrive; decoder metadata cannot briefly turn that feed into a compact movie page. Ordinary gallery/movie presentation rules remain.
+
+Normal PlayerView creation no longer detaches and reattaches its already attached engine. A tested handover gate permits rebinding only after an actual owned PiP return. A same-frame viewport poster stays above the video surface until the current source renders its first frame, keeping black preparation flashes from replacing the preview. No second decoder, whole-file preload or model is introduced.
+
+Background device-copy discovery preserves an already opened audio/video/document URI instead of switching that active stream from cloud to phone mid-play. Explicit retry/new pages still resolve their own sources. Initial aspect ratio no longer borrows the previous clip's pixel ratio. The large-grid fast-scroll eligibility now uses derived state rather than recomposing for every row index.
+
+All existing features, player controls/boost/subtitles/PiP, stream bounds, encryption/keys/session paths/Room1, model packs/private exclusions, backups and old artifacts remain. Public Universal1.20.38/code50, Android8+, all4ABIs and the same signer. No new permission/model/dependency, owner account operation, uninstall or data reset.
+
+Host tests/static artifact checks cannot prove exact phone animation/FPS/codec/gesture behavior or100percent accuracy. There is no Android target/emulator/system image/KVM here. Native Shorts swipe, first-frame/PiP handover and real large-library frame timing remain unverified; independent security audit not performed.
+
 # TG Photos1.20.37 — stable timeline and fast scroll
 
 TG Photos1.20.37 keeps timeline date/header geometry unchanged when compact controls appear. Date labels fade over180ms instead of removing and reinserting sticky rows, so reverse scrolling does not change the height of every photo/document group.
@@ -42,7 +54,7 @@ Compatible public Universal1.20.35/code47, Android8+. Automated tests/static art
 
 Native Android photo gallery, encrypted Telegram backups, media player, file management and an independent Private Vault. Android8.0+; One Universal APK includes ARM64, ARMv7, x86 and x86_64 with the same app and signing identity.
 
-[Download public APK](https://github.com/xjitroy/TG-PHOTOS-private-gallery-E2E-encrypted-unlimited-storage-App/tree/apk-downloads/public-1.20.37) · [Build source](BUILD.md) · [Privacy](PRIVACY.md) · [Security](SECURITY.md)
+[Download public APK](https://github.com/xjitroy/TG-PHOTOS-private-gallery-E2E-encrypted-unlimited-storage-App/tree/apk-downloads/public-1.20.38) · [Build source](BUILD.md) · [Privacy](PRIVACY.md) · [Security](SECURITY.md)
 
 Settings offer independent last-folder and viewed-item return switches. Limited backup starts at250MB/day with Camera videos up to2minutes; explicit manual Upload ignores these limits. No limit requires confirmation of an unlimited internet plan. Fully viewed Memories dim subtly. Existing saved settings and backup-folder grants are retained. A one-time feature tour precedes the Telegram-file notice; setup asks before enabling Camera backup, and the status card links to enable/manage it. Downloads have no daily app data allowance.
 

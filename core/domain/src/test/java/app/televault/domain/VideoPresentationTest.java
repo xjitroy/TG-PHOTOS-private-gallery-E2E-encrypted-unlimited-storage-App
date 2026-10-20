@@ -2,6 +2,16 @@ package app.televault.domain;
 import org.junit.Test;
 import static org.junit.Assert.*;
 public class VideoPresentationTest {
+ @Test public void shortsFeedKeepsPortraitWhileMetadataAndDecoderDimensionsArrive(){
+  for(int[] size:new int[][]{{0,0},{1080,1920},{1920,1080},{720,1280}})
+   assertTrue(VideoPresentation.portraitLayout(true,false,size[0],size[1],1));
+ }
+ @Test public void movieModeAndOrdinaryGalleryRetainTheirOwnPresentation(){
+  assertFalse(VideoPresentation.portraitLayout(true,true,1080,1920,1));
+  assertFalse(VideoPresentation.portraitLayout(false,false,0,0,1));
+  assertTrue(VideoPresentation.portraitLayout(false,false,1080,1920,1));
+  assertFalse(VideoPresentation.portraitLayout(false,false,1920,1080,1));
+ }
  @Test public void portraitOnlyAroundNineSixteen(){assertTrue(VideoPresentation.shortLayout(1080,1920,1));assertTrue(VideoPresentation.shortLayout(720,1280,1));assertFalse(VideoPresentation.shortLayout(1920,1080,1));assertFalse(VideoPresentation.shortLayout(1080,1080,1));assertFalse(VideoPresentation.shortLayout(0,1080,1));assertFalse(VideoPresentation.shortLayout(1080,1920,Float.NaN));}
  @Test public void unfinishedMoviesResumeWithoutResettingNearTheEnd(){assertEquals(7200123L,VideoPresentation.resumePosition(7200123L,10800000L,false));assertEquals(9999L,VideoPresentation.resumePosition(9999L,10000L,false));assertEquals(0L,VideoPresentation.resumePosition(9999L,10000L,true));}
  @Test public void invalidOrStaleBookmarksCannotSeekOutsideTheFile(){assertEquals(0L,VideoPresentation.resumePosition(-1,10000,false));assertEquals(0L,VideoPresentation.resumePosition(10001,10000,false));assertEquals(0L,VideoPresentation.resumePosition(100,0,false));}

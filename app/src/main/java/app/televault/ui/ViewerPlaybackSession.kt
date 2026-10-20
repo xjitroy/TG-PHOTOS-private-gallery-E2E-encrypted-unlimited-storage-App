@@ -75,6 +75,7 @@ internal class ViewerPlaybackSession(context: Context, private val model: DriveV
         }
     }
     fun owns(identity: String): Boolean = !released && currentIdentity == identity
+    fun ownsSource(identity: String, uri: Uri): Boolean = owns(identity) && currentSource == uri
     private fun saveCurrent() {
         val player = engine ?: return
         currentIdentity?.let { model.savePlaybackPosition(it, player.currentPosition, player.duration, player.playbackState == Player.STATE_ENDED, epoch) }

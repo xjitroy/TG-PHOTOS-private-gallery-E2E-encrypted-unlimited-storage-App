@@ -64,6 +64,7 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
     val requestClose = { closing = true }
     val context = LocalContext.current
     val exploreMovie = LocalExploreMode.current in setOf("Movies", "Normal videos")
+    val exploreFeed = LocalExploreFeed.current
     val activity = remember(context) { videoActivity(context) }
     val pipVisible by (activity?.videoPipVisible ?: kotlinx.coroutines.flow.MutableStateFlow(false)).collectAsStateWithLifecycle()
     val videoSession = remember(model) { ViewerPlaybackSession(context, model) }
@@ -86,13 +87,12 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
     var scrubbing by remember { mutableStateOf(false) }
     var scrubPreview by remember { mutableStateOf<Int?>(null) }
     val pager = rememberPagerState(initialPage = media.indexOfFirst { it.id == entry.id }.coerceAtLeast(0)) { media.size }
-    var videoFullscreen by remember { mutableStateOf(false) }
+    var videoFullscreen by remember { mutableStateOf(entry.mime.startsWith("video/") && app.televault.domain.VideoPresentation.portraitLayout(exploreFeed, exploreMovie, entry.cloud?.facts?.width ?: entry.local?.width ?: 0, entry.cloud?.facts?.height ?: entry.local?.height ?: 0, 1f)) }
     var fullscreenExit by remember { mutableIntStateOf(0) }
-    var vertical by remember { mutableStateOf(entry.mime.startsWith("video/") && !exploreMovie && app.televault.domain.VideoPresentation.shortLayout(entry.cloud?.facts?.width ?: entry.local?.width ?: 0, entry.cloud?.facts?.height ?: entry.local?.height ?: 0, 1f)) }
+    var vertical by remember { mutableStateOf(entry.mime.startsWith("video/") && app.televault.domain.VideoPresentation.portraitLayout(exploreFeed, exploreMovie, entry.cloud?.facts?.width ?: entry.local?.width ?: 0, entry.cloud?.facts?.height ?: entry.local?.height ?: 0, 1f)) }
     var photoVertical by remember { mutableStateOf(false) }
     var portraitPage by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
     val tapEverywhere by model.preferences.tapToRevealControls.collectAsStateWithLifecycle(initialValue = false)
-    val exploreFeed = LocalExploreFeed.current
     val viewerChrome = remember { ViewerChromeState(entry.id, exploreFeed || vertical || tapEverywhere) }
     val controls = viewerChrome.visible
     var details by remember { mutableStateOf(false) }
@@ -230,7 +230,7 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
         }
     }
     LaunchedEffect(pager.settledPage, scrubbing) {
-        val shortVideo = !exploreMovie && app.televault.domain.VideoPresentation.shortLayout(current.cloud?.facts?.width ?: current.local?.width ?: 0, current.cloud?.facts?.height ?: current.local?.height ?: 0, 1f)
+        val shortVideo = app.televault.domain.VideoPresentation.portraitLayout(exploreFeed, exploreMovie, current.cloud?.facts?.width ?: current.local?.width ?: 0, current.cloud?.facts?.height ?: current.local?.height ?: 0, 1f)
         videoSession.visible(if (!scrubbing && current.mime.startsWith("video/")) "${current.id}|${current.size}|${current.date}" else null, !shortVideo && videoSession.wideFullscreen, preserveOrientation = scrubbing)
         if (!scrubbing) videoFullscreen = current.mime.startsWith("video/") && (shortVideo || videoSession.wideFullscreen)
         menu = false
@@ -239,7 +239,7 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
     LaunchedEffect(pager.settledPage, pager.isScrollInProgress, portraitPage, photoVertical, scrubbing, closing) {
         if (pager.isScrollInProgress || scrubbing || closing) return@LaunchedEffect
         vertical = if (current.mime.startsWith("video/") && !exploreMovie) {
-            portraitPage?.takeIf { it.first == current.id }?.second ?: app.televault.domain.VideoPresentation.shortLayout(current.cloud?.facts?.width ?: current.local?.width ?: 0, current.cloud?.facts?.height ?: current.local?.height ?: 0, 1f)
+            exploreFeed || (portraitPage?.takeIf { it.first == current.id }?.second ?: app.televault.domain.VideoPresentation.shortLayout(current.cloud?.facts?.width ?: current.local?.width ?: 0, current.cloud?.facts?.height ?: current.local?.height ?: 0, 1f))
         } else {
             photoVertical
         }
@@ -603,6 +603,11 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
     LaunchedEffect(item.id, active, warmImage, retry, deviceCandidates, previewOnly) {
         if (!previewOnly && (active || warmImage)) {
             error = false
+            // Background phone-copy discovery must not replace an already opened stream.
+            if (active && !item.mime.startsWith("image/") && retry == 0 && uri != null) {
+                ready(uri!!)
+                return@LaunchedEffect
+            }
             try {
                 if (!active) model.awaitPhotoLoad(item.id)
                 val localCopy = item.local?.let { local ->
