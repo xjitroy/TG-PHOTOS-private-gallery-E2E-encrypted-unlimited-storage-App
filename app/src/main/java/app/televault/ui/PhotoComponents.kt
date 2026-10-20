@@ -105,7 +105,7 @@ internal fun MediaThumbnail(entry: MediaEntry, model: DriveViewModel, modifier: 
 }
 
 @Composable
-internal fun AlbumsGrid(device: List<AlbumTile>, cloud: List<AlbumTile>, model: DriveViewModel, open: (AlbumTile) -> Unit, create: () -> Unit, modifier: Modifier = Modifier, scopeKey: String = "albums", grid: LazyGridState = remember(scopeKey) { LazyGridState() }, leadingContent: (@Composable () -> Unit)? = null, peopleContent: (@Composable () -> Unit)? = null) {
+internal fun AlbumsGrid(device: List<AlbumTile>, cloud: List<AlbumTile>, model: DriveViewModel, open: (AlbumTile) -> Unit, create: () -> Unit, modifier: Modifier = Modifier, scopeKey: String = "albums", grid: LazyGridState = remember(scopeKey) { LazyGridState() }, leadingContent: (@Composable () -> Unit)? = null, peopleContent: (@Composable () -> Unit)? = null, deviceOnly: Boolean = false) {
     var touched by remember(grid) { mutableStateOf(false) }
     val input = remember(grid) {
         object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
@@ -120,28 +120,38 @@ internal fun AlbumsGrid(device: List<AlbumTile>, cloud: List<AlbumTile>, model: 
     LaunchedEffect(grid, device.firstOrNull()?.id, cloud.firstOrNull()?.id) {
         if (!touched && !grid.canScrollBackward) grid.requestScrollToItem(0)
     }
-    LazyVerticalGrid(columns = if (LocalConfiguration.current.screenWidthDp >= 600) GridCells.Adaptive(144.dp) else GridCells.Fixed(2), state = grid, modifier = modifier.then(Modifier.nestedScroll(input)), contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
+    val primary = remember(device, deviceOnly) { if (deviceOnly) device.filter { primaryDeviceAlbum(it.id, it.folder, it.section, it.collage) } else device }
+    val more = remember(device, primary) { device.filter { it !in primary } }
+    val configuration = LocalConfiguration.current
+    val columns = if (configuration.screenWidthDp >= 600) GridCells.Adaptive(144.dp) else GridCells.Fixed(if (deviceOnly && configuration.screenWidthDp >= 360 && configuration.fontScale < 1.35f) 3 else 2)
+    LazyVerticalGrid(columns = columns, state = grid, modifier = modifier.then(Modifier.nestedScroll(input)), contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
         if (leadingContent != null) item(key = "browse-introduction", span = { GridItemSpan(maxLineSpan) }) { leadingContent() }
         if (device.isNotEmpty()) {
-            item(key = "device-title", span = { GridItemSpan(maxLineSpan) }) { SectionTitle(label("On this device", "এই ডিভাইসে"), label("View all", "সব দেখুন")) { device.firstOrNull { it.section == "All" && it.collage }?.let(open) } }
-            items(device, key = { it.id }) { tile -> AlbumCover(tile, model, Modifier.animateItem(placementSpec = null)) { open(tile) } }
+            if (!deviceOnly) item(key = "device-title", span = { GridItemSpan(maxLineSpan) }) { SectionTitle(label("On this device", "এই ডিভাইসে"), label("View all", "সব দেখুন")) { device.firstOrNull { it.section == "All" && it.collage }?.let(open) } }
+            items(primary, key = { it.id }) { tile -> AlbumCover(tile, model, Modifier.animateItem(placementSpec = null), square = deviceOnly) { open(tile) } }
+            if (more.isNotEmpty()) {
+                item(key = "more-albums-title", span = { GridItemSpan(maxLineSpan) }) { Text(label("More albums", "আরও অ্যালবাম"), style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 10.dp)) }
+                items(more, key = { it.id }) { tile -> AlbumCover(tile, model, Modifier.animateItem(placementSpec = null), square = true) { open(tile) } }
+            }
         }
-        item(key = "cloud-title", span = { GridItemSpan(maxLineSpan) }) { SectionTitle(label("Cloud albums", "ক্লাউড অ্যালবাম"), label("Create", "তৈরি"), create) }
-        if (cloud.isEmpty()) {
-            item(key = "empty-cloud", span = { GridItemSpan(maxLineSpan) }) {
-                AppSurface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
-                    Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Outlined.CloudQueue, null, tint = MaterialTheme.colorScheme.primary)
-                        Spacer(Modifier.width(12.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(label("A home for backed-up memories", "ব্যাকআপ হওয়া স্মৃতির অ্যালবাম"), style = MaterialTheme.typography.titleSmall)
-                            Text(label("Create albums from cloud photos", "ক্লাউডের ছবি দিয়ে অ্যালবাম তৈরি করুন"), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+        if (!deviceOnly) {
+            item(key = "cloud-title", span = { GridItemSpan(maxLineSpan) }) { SectionTitle(label("Cloud albums", "ক্লাউড অ্যালবাম"), label("Create", "তৈরি"), create) }
+            if (cloud.isEmpty()) {
+                item(key = "empty-cloud", span = { GridItemSpan(maxLineSpan) }) {
+                    AppSurface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+                        Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Outlined.CloudQueue, null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(label("A home for backed-up memories", "ব্যাকআপ হওয়া স্মৃতির অ্যালবাম"), style = MaterialTheme.typography.titleSmall)
+                                Text(label("Create albums from cloud photos", "ক্লাউডের ছবি দিয়ে অ্যালবাম তৈরি করুন"), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                            }
                         }
                     }
                 }
+            } else {
+                items(cloud, key = { "remote:${it.id}" }) { tile -> AlbumCover(tile, model, Modifier.animateItem(placementSpec = null)) { open(tile) } }
             }
-        } else {
-            items(cloud, key = { "remote:${it.id}" }) { tile -> AlbumCover(tile, model, Modifier.animateItem(placementSpec = null)) { open(tile) } }
         }
         if (peopleContent != null) item(key = "people", span = { GridItemSpan(maxLineSpan) }) { peopleContent() }
         item(key = "bottom-gap", span = { GridItemSpan(maxLineSpan) }) { Spacer(Modifier.height(140.dp)) }
@@ -149,9 +159,9 @@ internal fun AlbumsGrid(device: List<AlbumTile>, cloud: List<AlbumTile>, model: 
 }
 
 @Composable
-private fun AlbumCover(tile: AlbumTile, model: DriveViewModel, modifier: Modifier, click: () -> Unit) {
+private fun AlbumCover(tile: AlbumTile, model: DriveViewModel, modifier: Modifier, square: Boolean = false, click: () -> Unit) {
     Column(modifier.clickable(onClick = click)) {
-        Box(Modifier.fillMaxWidth().aspectRatio(1.3f).clip(RoundedCornerShape(18.dp)).background(MaterialTheme.colorScheme.surfaceContainerHighest)) {
+        Box(Modifier.fillMaxWidth().aspectRatio(if (square) 1f else 1.3f).clip(RoundedCornerShape(if (square) 22.dp else 18.dp)).background(MaterialTheme.colorScheme.surfaceContainerHighest)) {
             if (tile.collage && tile.items.isNotEmpty()) {
                 Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     repeat(2) { row ->

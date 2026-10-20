@@ -11,6 +11,7 @@ import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.collectLatest
@@ -22,6 +23,7 @@ import kotlinx.coroutines.flow.runningFold
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 
 class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
     internal val scenes = repository.scenes
@@ -105,15 +107,10 @@ class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
             }
         }
         viewModelScope.launch {
-            state.map { it.stage to it.vaultId }.distinctUntilChanged().collectLatest { (stage, _) ->
+            state.map { Triple(it.stage, it.vaultId, it.indexLoaded) }.distinctUntilChanged().collectLatest { (stage, _, indexLoaded) ->
                 if (stage == app.televault.data.VaultStage.READY) {
                     try {
                         repository.privateAi.activate()
-                        try {
-                            repository.privateAi.sync()
-                        } catch (cancel: CancellationException) {
-                            throw cancel
-                        } catch (_: Exception) { }
                         people.activate(syncRemote = false)
                         ocr.activate()
                         scenes.activate()
@@ -121,7 +118,14 @@ class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
                         if (people.state.value.enabled) application.faceModels.install()
                         if (ocr.state.value.enabled) application.ocrModels.install()
                         if (scenes.state.value.enabled) application.memoryModels.install()
-                        requestIntelligence()
+                        if (indexLoaded) requestIntelligence()
+                        try {
+                            withTimeout(60_000) { repository.privateAi.sync() }
+                        } catch (_: TimeoutCancellationException) {
+                            // The worker retries the authenticated restore; do not gate local OCR.
+                        } catch (cancel: CancellationException) {
+                            throw cancel
+                        } catch (_: Exception) { }
                         people.cleanPrivateSources()
                         ocr.cleanPrivateSources()
                         if (people.state.value.enabled) {
@@ -167,7 +171,10 @@ class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
     }
 
     internal fun intelligenceActive(value: Boolean) {
-        (repository.localMediaContext() as app.televault.TeleVaultApplication).intelligencePaused = !value
+        val application = repository.localMediaContext() as app.televault.TeleVaultApplication
+        val resuming = application.intelligencePaused && value
+        application.intelligencePaused = !value
+        if (resuming) requestIntelligence()
     }
     internal fun setPeopleEnabled(value: Boolean) = peopleAction {
         people.enable(value)

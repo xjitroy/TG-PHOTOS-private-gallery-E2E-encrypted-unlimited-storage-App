@@ -244,28 +244,32 @@ internal fun FileLibrary(files: List<MediaEntry>, cloud: Boolean, chooseCloud: (
                         }, enabled = cloudAvailable, label = { Text(label("Cloud E2EE", "ক্লাউড E2EE")) }, leadingIcon = { Icon(Icons.Outlined.CloudDone, null, Modifier.size(16.dp)) })
                         if (refresh != null) IconButton(refresh) { Icon(Icons.Outlined.Refresh, label("Refresh files", "ফাইল রিফ্রেশ")) }
                     }
-                    MediaFilterBar(mediaFilters)
-                    if (folder.isNotBlank()) Text(label("Filters apply only inside this folder", "ফিল্টার শুধু এই ফোল্ডারের মধ্যে কাজ করে"), Modifier.padding(horizontal = 20.dp), style = MaterialTheme.typography.bodySmall)
-                    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-                        OutlinedTextField(search, changeSearch, Modifier.fillMaxWidth().padding(vertical = 4.dp), singleLine = true, shape = RoundedCornerShape(24.dp), placeholder = { Text(label("Search files and folders", "ফাইল ও ফোল্ডার খুঁজুন")) }, leadingIcon = { Icon(Icons.Outlined.Search, null) }, trailingIcon = { if (search.isNotEmpty()) IconButton({ changeSearch("") }) { Icon(Icons.Outlined.Close, label("Clear search", "সার্চ মুছুন")) } })
-                        if (folder.isBlank() && search.isBlank() && category == "All files" && !recent) {
-                            FileCategoryCards(projection.value.filteredFiles, counts = projection.value.counts) { type ->
-                                category = type
-                                selection(emptySet())
-                                recent = type == "Recent"
-                                if (type == "Recent") category = "All files"
-                            }
-                        } else {
-                            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                listOf("All files", "Documents", "Audio", "Photos", "Videos", "Movies", "Apps", "Archives", "Other files").forEach { type ->
-                                    FilterChip(category == type, {
-                                        category = type
-                                        selection(emptySet())
-                                        recent = folder.isEmpty() && type != "All files"
-                                    }, label = { Text(sectionLabel(type)) })
+                    BrowseOptions(summary = if (search.isBlank()) sectionLabel(category) else search, active = search.isNotBlank() || category != "All files" || mediaFilters.options.category != app.televault.domain.MediaCategories.Category.ALL || mediaFilters.options.clean || mediaFilters.options.hidden != 0) {
+                        MediaFilterBar(mediaFilters)
+                        if (folder.isNotBlank()) Text(label("Filters apply only inside this folder", "ফিল্টার শুধু এই ফোল্ডারের মধ্যে কাজ করে"), Modifier.padding(horizontal = 20.dp), style = MaterialTheme.typography.bodySmall)
+                        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                            OutlinedTextField(search, changeSearch, Modifier.fillMaxWidth().padding(vertical = 4.dp), singleLine = true, shape = RoundedCornerShape(24.dp), placeholder = { Text(label("Search files and folders", "ফাইল ও ফোল্ডার খুঁজুন")) }, leadingIcon = { Icon(Icons.Outlined.Search, null) }, trailingIcon = { if (search.isNotEmpty()) IconButton({ changeSearch("") }) { Icon(Icons.Outlined.Close, label("Clear search", "সার্চ মুছুন")) } })
+                            if (folder.isBlank() && search.isBlank() && category == "All files" && !recent) {
+                                FileCategoryCards(projection.value.filteredFiles, counts = projection.value.counts) { type ->
+                                    category = type
+                                    selection(emptySet())
+                                    recent = type == "Recent"
+                                    if (type == "Recent") category = "All files"
+                                }
+                            } else {
+                                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    listOf("All files", "Documents", "Audio", "Photos", "Videos", "Movies", "Apps", "Archives", "Other files").forEach { type ->
+                                        FilterChip(category == type, {
+                                            category = type
+                                            selection(emptySet())
+                                            recent = folder.isEmpty() && type != "All files"
+                                        }, label = { Text(sectionLabel(type)) })
+                                    }
                                 }
                             }
                         }
+                    }
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
                         Row(Modifier.padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                             if (folder.isNotEmpty()) {
                                 IconButton({
@@ -475,7 +479,7 @@ internal fun FileLibrary(files: List<MediaEntry>, cloud: Boolean, chooseCloud: (
                 }, enabled = cloudAvailable, label = { Text(label("Cloud E2EE", "ক্লাউড E2EE")) }, leadingIcon = { Icon(Icons.Outlined.CloudDone, null, Modifier.size(16.dp)) })
                 if (refresh != null) IconButton(refresh) { Icon(Icons.Outlined.Refresh, label("Refresh files", "ফাইল রিফ্রেশ")) }
             }
-            MediaFilterBar(mediaFilters)
+            BrowseOptions(sectionLabel(category), active = mediaFilters.options.category != app.televault.domain.MediaCategories.Category.ALL) { MediaFilterBar(mediaFilters) }
         }
     }
 }

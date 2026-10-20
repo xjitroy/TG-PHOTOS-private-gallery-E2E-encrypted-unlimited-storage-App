@@ -106,9 +106,11 @@ internal fun PeopleAlbums(state: PeopleState, model: DriveViewModel, open: (Pers
                 Column(Modifier.fillMaxWidth().padding(14.dp)) {
                     Text(if (state.busy) label("Finding faces gently in the background…", "পটভূমিতে ধীরে মুখ শনাক্ত হচ্ছে…") else label("${state.scanned} photos / video previews checked", "${state.scanned}টি ছবি / ভিডিও প্রিভিউ দেখা হয়েছে"), style = MaterialTheme.typography.bodyMedium)
                     Text(label("${known.size} groups · ${unsorted.size} unsorted faces · ${candidates.size} suggestions", "${known.size}টি গ্রুপ · ${unsorted.size}টি অসম্পূর্ণ মুখ · ${candidates.size}টি পরামর্শ"), style = MaterialTheme.typography.bodySmall)
+                    if (state.notice.isNotBlank()) Text(state.notice, style = MaterialTheme.typography.bodySmall)
                     Row(Modifier.horizontalScroll(rememberScrollState())) {
                         TextButton({
-                            model.peopleAction { model.people.sync() }
+                            model.people.models.install()
+                            model.peopleAction { kotlinx.coroutines.withTimeoutOrNull(60_000) { model.people.sync() } }
                             model.indexPeople(model.state.value.files, model.localMedia.changes.value)
                         }) { Text(label(if (state.pendingSync) "Sync pending references" else "Sync & scan", "সিঙ্ক ও স্ক্যান")) }
                         if (candidates.isNotEmpty()) {

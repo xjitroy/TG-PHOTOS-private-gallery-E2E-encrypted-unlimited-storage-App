@@ -291,8 +291,11 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
             publish(scope, token)
             if (value) {
                 try {
-                    syncLocked(scope, token)
-                    publish(scope, token)
+                    val synced = withTimeoutOrNull(60_000) {
+                        syncLocked(scope, token)
+                        true
+                    } == true
+                    publish(scope, token, if (synced) "" else "Encrypted reference sync is pending; automatic scanning will retry.")
                 } catch (cancel: CancellationException) {
                     throw cancel
                 } catch (_: Exception) {
@@ -490,7 +493,7 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
         publish(scope, token)
     }
     suspend fun prepareAnalysis(): Boolean {
-        if (!prepareForScan() || !models.prepareInstalled()) return false
+        if (!models.prepareInstalled() || !prepareForScan()) return false
         return withContext(Dispatchers.IO) {
             mutex.withLock {
                 val scope = drive.privateVaultBinding()

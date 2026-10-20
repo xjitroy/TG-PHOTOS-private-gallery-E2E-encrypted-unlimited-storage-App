@@ -110,6 +110,28 @@ internal class OcrModels(context: Context) {
             }
         }
     }
+    suspend fun prepareInstalled(): Boolean = withContext(Dispatchers.IO) {
+        gate.withLock {
+            packs.all { pack ->
+                val file = File(directory, "tessdata/${pack.path}")
+                if (!file.isFile || file.length() != pack.bytes) return@all false
+                if (pack.id in verified) return@all true
+                val digest = MessageDigest.getInstance("SHA-256")
+                file.inputStream().use { input ->
+                    val buffer = ByteArray(131072)
+                    while (true) {
+                        currentCoroutineContext().ensureActive()
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        digest.update(buffer, 0, count)
+                    }
+                }
+                val valid = digest.digest().joinToString("") { "%02x".format(it) } == pack.hash
+                if (valid) verified += pack.id
+                valid
+            }
+        }
+    }
     suspend fun prepare(all: Boolean) {
         val ids = if (all) packs.map { it.id } else packs.map { it.id }
         for (id in ids) ensure(id)

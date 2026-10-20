@@ -1029,7 +1029,6 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
                     }
                 }
             }
-            AnimatedVisibility(!isPhotoTimeline && tab == PhotoTab.TIMELINE && headerScroll.state.collapsedFraction < .5f && !backupStatusVisible) { CloudStorageCard(state, compact = true, onClick = { backupStatusVisible = true }) }
             AnimatedVisibility(!isPhotoTimeline && backupStatusVisible && tab == PhotoTab.TIMELINE) {
                 BackupStatusCard(model, { model.sync() }, { backupStatusVisible = false }, enable = { prompt = "camera" }, manage = {
                     switchTab(PhotoTab.SETTINGS)
@@ -1042,191 +1041,198 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
             Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background)) {
                 mainHeader()
                 commonIntroduction()
-                if (isPhotoTimeline) {
-                    if (backupStatusVisible) {
-                        BackupStatusCard(model, { model.sync() }, { backupStatusVisible = false }, enable = { prompt = "camera" }, manage = {
-                            switchTab(PhotoTab.SETTINGS)
-                            settingsCategory = "Backup & Sync"
-                        })
-                    } else {
-                        CloudStorageCard(state, compact = true, onClick = { backupStatusVisible = true }, minimal = true)
-                    }
-                    MediaFilterBar(mediaFilters, Modifier.padding(top = 8.dp))
-                    PhotoSectionPills(section, choosePhotoSection, Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
-                    TimelineControls(density, { density = it }, visible.size, mosaicLayout, { enabled ->
-                        scope.launch { model.preferences.setMosaicLayout(enabled) }
-                        Unit
-                    }, compact = true)
-                    if (section == "All") {
-                        PhotoMemories(memoryCards, model) { card ->
-                            memoryStory = card
+                BrowseOptions(
+                    summary = "${visible.size} · ${sectionLabel(section)}",
+                    active = mediaFilters.options.category != app.televault.domain.MediaCategories.Category.ALL || mediaFilters.options.clean || mediaFilters.options.hidden != 0,
+                    reveal = backupStatusVisible,
+                    dismissed = { backupStatusVisible = false }
+                ) {
+                    if (isPhotoTimeline) {
+                        if (backupStatusVisible) {
+                            BackupStatusCard(model, { model.sync() }, { backupStatusVisible = false }, enable = { prompt = "camera" }, manage = {
+                                switchTab(PhotoTab.SETTINGS)
+                                settingsCategory = "Backup & Sync"
+                            })
+                        } else {
+                            CloudStorageCard(state, compact = true, onClick = { backupStatusVisible = true }, minimal = true)
                         }
-                    }
-                } else if (!fileLibrary && tab != PhotoTab.VAULT) {
-                    if (tab in setOf(PhotoTab.TIMELINE, PhotoTab.GALLERY) && section !in setOf("Trash", "Transfers")) MediaFilterBar(mediaFilters)
-                    if (tab != PhotoTab.LIBRARY && section !in setOf("Albums", "Folders", "Trash", "Transfers")) {
-                        PhotoSectionPills(section, { key ->
-                            section = key
-                            selected = emptySet()
-                        }, Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
-                    } else if (tab == PhotoTab.LIBRARY) {
-                        Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            (if (tab == PhotoTab.LIBRARY) listOf("All files", "Documents", "Audio", "Transfers") else listOf("All", "Photos", "Videos", "Favorites")).forEach { key ->
-                                FilterChip(section == key, {
-                                    section = key
-                                    if (tab == PhotoTab.LIBRARY) {
-                                        folder = null
-                                        album = null
-                                    }
-                                    if (key == "Trash") {
-                                        trashScope = TrashScope.DEVICE
-                                        trashFiles = false
-                                    }
-                                    selected = emptySet()
-                                }, label = { Text(sectionLabel(key)) }, shape = RoundedCornerShape(18.dp))
+                        MediaFilterBar(mediaFilters, Modifier.padding(top = 8.dp))
+                        PhotoSectionPills(section, choosePhotoSection, Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
+                        TimelineControls(density, { density = it }, visible.size, mosaicLayout, { enabled ->
+                            scope.launch { model.preferences.setMosaicLayout(enabled) }
+                            Unit
+                        }, compact = true)
+                        if (section == "All") {
+                            PhotoMemories(memoryCards, model) { card ->
+                                memoryStory = card
                             }
                         }
-                    }
-                    if (tab == PhotoTab.LIBRARY && section in setOf("Audio", "Documents", "All files")) {
-                        Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
-                            FilterChip(!libraryDevice, {
-                                libraryDevice = false
-                                folder = null
+                    } else if (!fileLibrary && tab != PhotoTab.VAULT) {
+                        if (tab in setOf(PhotoTab.TIMELINE, PhotoTab.GALLERY) && section !in setOf("Trash", "Transfers")) MediaFilterBar(mediaFilters)
+                        if (tab != PhotoTab.LIBRARY && section !in setOf("Albums", "Folders", "Trash", "Transfers")) {
+                            PhotoSectionPills(section, { key ->
+                                section = key
                                 selected = emptySet()
-                            }, label = { Text(label("Cloud", "ক্লাউড")) })
-                            Spacer(Modifier.width(8.dp))
-                            FilterChip(libraryDevice, {
-                                libraryDevice = true
-                                folder = null
-                                selected = emptySet()
-                            }, label = { Text(label("On device", "ফোনে")) })
-                        }
-                    }
-                    if (tab == PhotoTab.LIBRARY && libraryDevice && section in setOf("Audio", "Documents", "All files")) {
-                        Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            FilterChip(libraryFolders, {
-                                libraryFolders = true
-                                folder = null
-                                selected = emptySet()
-                            }, label = { Text(label("Folders", "ফোল্ডার")) })
-                            FilterChip(!libraryFolders, {
-                                libraryFolders = false
-                                folder = null
-                                selected = emptySet()
-                            }, label = { Text(label("View all", "সব দেখুন")) })
-                            TextButton({ documentFolderPicker.launch(null) }, Modifier.heightIn(min = 48.dp)) {
-                                Icon(Icons.Outlined.CreateNewFolder, null)
-                                Text(label("Add device folder", "ফোনের ফোল্ডার যোগ করুন"))
-                            }
-                            TextButton({ permissionsChanged++ }) { Text(label("Refresh", "রিফ্রেশ")) }
-                        }
-                        if (section != "Audio") {
-                            FilledTonalButton({ if (DeviceFileAccess.granted(context)) permissionsChanged++ else allFilesIntroduction = true }, Modifier.padding(horizontal = 20.dp)) {
-                                Icon(Icons.Outlined.FolderOpen, null)
-                                Spacer(Modifier.width(8.dp))
-                                Text(if (DeviceFileAccess.granted(context)) label("Shared storage access enabled · refresh", "স্টোরেজের অনুমতি আছে · রিফ্রেশ") else label("Allow all shared files", "ফোনের সব shared ফাইলের অনুমতি দিন"))
+                            }, Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
+                        } else if (tab == PhotoTab.LIBRARY) {
+                            Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                (if (tab == PhotoTab.LIBRARY) listOf("All files", "Documents", "Audio", "Transfers") else listOf("All", "Photos", "Videos", "Favorites")).forEach { key ->
+                                    FilterChip(section == key, {
+                                        section = key
+                                        if (tab == PhotoTab.LIBRARY) {
+                                            folder = null
+                                            album = null
+                                        }
+                                        if (key == "Trash") {
+                                            trashScope = TrashScope.DEVICE
+                                            trashFiles = false
+                                        }
+                                        selected = emptySet()
+                                    }, label = { Text(sectionLabel(key)) }, shape = RoundedCornerShape(18.dp))
+                                }
                             }
                         }
-                        Text(label("Local only. All-files access shows readable shared storage; private app storage is protected. No automatic cloud upload.", "শুধু ফোনে দেখা। অনুমতি দিলে shared storage-এর সব পাঠযোগ্য ফাইল দেখাবে; অন্য অ্যাপের private storage সুরক্ষিত। স্বয়ংক্রিয় আপলোড হবে না।"), Modifier.padding(horizontal = 20.dp, vertical = 6.dp), style = MaterialTheme.typography.bodySmall)
-                        if (section == "Audio") {
-                            Row(Modifier.padding(horizontal = 20.dp)) {
-                                TextButton({ permission.launch(if (Build.VERSION.SDK_INT >= 33) arrayOf(Manifest.permission.READ_MEDIA_AUDIO) else permissions()) }) { Text(label("Allow audio access", "অডিও দেখার অনুমতি দিন")) }
-                                TextButton(::appPermissionSettings) { Text(label("App permissions", "অ্যাপের অনুমতি")) }
-                            }
-                        }
-                        if (scanningFiles) {
+                        if (tab == PhotoTab.LIBRARY && section in setOf("Audio", "Documents", "All files")) {
                             Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text(label("Scanning device files", "ফোনের ফাইল স্ক্যান হচ্ছে") + " · $scannedFiles", style = MaterialTheme.typography.labelSmall)
+                                FilterChip(!libraryDevice, {
+                                    libraryDevice = false
+                                    folder = null
+                                    selected = emptySet()
+                                }, label = { Text(label("Cloud", "ক্লাউড")) })
+                                Spacer(Modifier.width(8.dp))
+                                FilterChip(libraryDevice, {
+                                    libraryDevice = true
+                                    folder = null
+                                    selected = emptySet()
+                                }, label = { Text(label("On device", "ফোনে")) })
                             }
                         }
-                    }
-                    if (tab == PhotoTab.GALLERY && folder != null) {
-                        val path = folder!!
-                        val subscriptions = state.backups.filter { it.deviceFolder == path || (it.id.startsWith("camera:") && app.televault.domain.DeviceBackupFolder.matches(path, "", true)) }
-                        AppSurface(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp).animateContentSize(), shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .45f)) {
-                            ListItem(headlineContent = { Text(label("Back up this folder", "এই ফোল্ডার ব্যাকআপ করুন")) }, supportingContent = { Text(if (subscriptions.isNotEmpty()) label("New photos and videos are encrypted automatically", "নতুন ছবি ও ভিডিও স্বয়ংক্রিয়ভাবে এনক্রিপ্ট হবে") else label("Off · existing cloud backups are kept", "বন্ধ · পুরোনো ক্লাউড ব্যাকআপ থাকবে"), style = MaterialTheme.typography.bodySmall) }, leadingContent = { Icon(Icons.Outlined.CloudUpload, null) }, trailingContent = {
-                                Switch(subscriptions.isNotEmpty(), { enabled ->
-                                    if (enabled) {
-                                        model.deviceFolderBackup(path, true)
-                                        notifyAccess()
-                                    } else {
-                                        subscriptions.forEach { model.stopBackup(it.id) }
-                                    }
-                                })
-                            }, colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent))
-                        }
-                    }
-                    if (section in setOf("Albums", "Folders")) {
-                        if (tab == PhotoTab.GALLERY) {
-                            Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
-                                TextButton({ permission.launch(permissions()) }) {
-                                    Icon(Icons.Outlined.PhotoLibrary, null, Modifier.size(16.dp))
-                                    Spacer(Modifier.width(6.dp))
-                                    Text(label("Media access", "মিডিয়ার অনুমতি"))
-                                }
-                                TextButton(::appPermissionSettings) { Text(label("App permissions", "অ্যাপের অনুমতি")) }
-                                TextButton({
-                                    section = "Trash"
-                                    trashScope = TrashScope.DEVICE
-                                    trashFiles = false
+                        if (tab == PhotoTab.LIBRARY && libraryDevice && section in setOf("Audio", "Documents", "All files")) {
+                            Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                FilterChip(libraryFolders, {
+                                    libraryFolders = true
+                                    folder = null
                                     selected = emptySet()
-                                }) {
-                                    Icon(Icons.Outlined.DeleteOutline, null, Modifier.size(18.dp))
-                                    Text(label("Trash", "ট্র্যাশ"))
+                                }, label = { Text(label("Folders", "ফোল্ডার")) })
+                                FilterChip(!libraryFolders, {
+                                    libraryFolders = false
+                                    folder = null
+                                    selected = emptySet()
+                                }, label = { Text(label("View all", "সব দেখুন")) })
+                                TextButton({ documentFolderPicker.launch(null) }, Modifier.heightIn(min = 48.dp)) {
+                                    Icon(Icons.Outlined.CreateNewFolder, null)
+                                    Text(label("Add device folder", "ফোনের ফোল্ডার যোগ করুন"))
                                 }
-                                Spacer(Modifier.weight(1f))
                                 TextButton({ permissionsChanged++ }) { Text(label("Refresh", "রিফ্রেশ")) }
                             }
-                        }
-                    }
-                    if (section == "Trash") {
-                        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
-                            TrashScope.entries.forEachIndexed { index, choice ->
-                                SegmentedButton(selected = trashScope == choice, onClick = {
-                                    trashScope = choice
-                                    selected = emptySet()
-                                }, shape = SegmentedButtonDefaults.itemShape(index, TrashScope.entries.size), label = {
-                                    Text(
-                                        when (choice) {
-                                            TrashScope.CLOUD -> label("Cloud", "ক্লাউড")
-                                            TrashScope.DEVICE -> label("On device", "ফোনে")
-                                        }
-                                    )
-                                })
-                            }
-                        }
-                        Row(Modifier.padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            FilterChip(!trashFiles, {
-                                trashFiles = false
-                                selected = emptySet()
-                            }, label = { Text(label("Photos / videos", "ছবি / ভিডিও")) })
-                            FilterChip(trashFiles, {
-                                trashFiles = true
-                                selected = emptySet()
-                            }, label = { Text(if (trashScope == TrashScope.CLOUD) label("Cloud files", "ক্লাউড ফাইল") else label("Device files", "ফোনের ফাইল")) })
-                        }
-                        Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text(label("Cloud: retained until deleted · Device: Android retention", "ক্লাউড: আপনি মোছা পর্যন্ত · ফোন: Android-এর সময়সীমা"), Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                            TextButton({ permanentDelete = visible.toList() }, enabled = visible.isNotEmpty()) { Text(label("Empty", "খালি")) }
-                            TextButton({ deleteEntries(selectedItems, true) }, enabled = selected.isNotEmpty()) { Text(label("Restore", "ফিরিয়ে আনুন")) }
-                        }
-                        TextButton({ permission.launch(permissions()) }) { Text(label("Allow device trash access", "ফোনের ট্র্যাশ দেখার অনুমতি দিন")) }
-                    }
-                    if (section !in setOf("Albums", "Folders")) {
-                        TimelineControls(
-                            density,
-                            { density = it },
-                            visible.size,
-                            mosaicLayout,
-                            if (section in setOf("Audio", "Documents", "All files")) {
-                                null
-                            } else {
-                                { enabled ->
-                                    scope.launch { model.preferences.setMosaicLayout(enabled) }
-                                    Unit
+                            if (section != "Audio") {
+                                FilledTonalButton({ if (DeviceFileAccess.granted(context)) permissionsChanged++ else allFilesIntroduction = true }, Modifier.padding(horizontal = 20.dp)) {
+                                    Icon(Icons.Outlined.FolderOpen, null)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(if (DeviceFileAccess.granted(context)) label("Shared storage access enabled · refresh", "স্টোরেজের অনুমতি আছে · রিফ্রেশ") else label("Allow all shared files", "ফোনের সব shared ফাইলের অনুমতি দিন"))
                                 }
                             }
-                        )
+                            Text(label("Local only. All-files access shows readable shared storage; private app storage is protected. No automatic cloud upload.", "শুধু ফোনে দেখা। অনুমতি দিলে shared storage-এর সব পাঠযোগ্য ফাইল দেখাবে; অন্য অ্যাপের private storage সুরক্ষিত। স্বয়ংক্রিয় আপলোড হবে না।"), Modifier.padding(horizontal = 20.dp, vertical = 6.dp), style = MaterialTheme.typography.bodySmall)
+                            if (section == "Audio") {
+                                Row(Modifier.padding(horizontal = 20.dp)) {
+                                    TextButton({ permission.launch(if (Build.VERSION.SDK_INT >= 33) arrayOf(Manifest.permission.READ_MEDIA_AUDIO) else permissions()) }) { Text(label("Allow audio access", "অডিও দেখার অনুমতি দিন")) }
+                                    TextButton(::appPermissionSettings) { Text(label("App permissions", "অ্যাপের অনুমতি")) }
+                                }
+                            }
+                            if (scanningFiles) {
+                                Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(label("Scanning device files", "ফোনের ফাইল স্ক্যান হচ্ছে") + " · $scannedFiles", style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                        }
+                        if (tab == PhotoTab.GALLERY && folder != null) {
+                            val path = folder!!
+                            val subscriptions = state.backups.filter { it.deviceFolder == path || (it.id.startsWith("camera:") && app.televault.domain.DeviceBackupFolder.matches(path, "", true)) }
+                            AppSurface(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp).animateContentSize(), shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .45f)) {
+                                ListItem(headlineContent = { Text(label("Back up this folder", "এই ফোল্ডার ব্যাকআপ করুন")) }, supportingContent = { Text(if (subscriptions.isNotEmpty()) label("New photos and videos are encrypted automatically", "নতুন ছবি ও ভিডিও স্বয়ংক্রিয়ভাবে এনক্রিপ্ট হবে") else label("Off · existing cloud backups are kept", "বন্ধ · পুরোনো ক্লাউড ব্যাকআপ থাকবে"), style = MaterialTheme.typography.bodySmall) }, leadingContent = { Icon(Icons.Outlined.CloudUpload, null) }, trailingContent = {
+                                    Switch(subscriptions.isNotEmpty(), { enabled ->
+                                        if (enabled) {
+                                            model.deviceFolderBackup(path, true)
+                                            notifyAccess()
+                                        } else {
+                                            subscriptions.forEach { model.stopBackup(it.id) }
+                                        }
+                                    })
+                                }, colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent))
+                            }
+                        }
+                        if (section in setOf("Albums", "Folders")) {
+                            if (tab == PhotoTab.GALLERY) {
+                                Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    TextButton({ permission.launch(permissions()) }) {
+                                        Icon(Icons.Outlined.PhotoLibrary, null, Modifier.size(16.dp))
+                                        Spacer(Modifier.width(6.dp))
+                                        Text(label("Media access", "মিডিয়ার অনুমতি"))
+                                    }
+                                    TextButton(::appPermissionSettings) { Text(label("App permissions", "অ্যাপের অনুমতি")) }
+                                    TextButton({
+                                        section = "Trash"
+                                        trashScope = TrashScope.DEVICE
+                                        trashFiles = false
+                                        selected = emptySet()
+                                    }) {
+                                        Icon(Icons.Outlined.DeleteOutline, null, Modifier.size(18.dp))
+                                        Text(label("Trash", "ট্র্যাশ"))
+                                    }
+                                    Spacer(Modifier.weight(1f))
+                                    TextButton({ permissionsChanged++ }) { Text(label("Refresh", "রিফ্রেশ")) }
+                                }
+                            }
+                        }
+                        if (section == "Trash") {
+                            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+                                TrashScope.entries.forEachIndexed { index, choice ->
+                                    SegmentedButton(selected = trashScope == choice, onClick = {
+                                        trashScope = choice
+                                        selected = emptySet()
+                                    }, shape = SegmentedButtonDefaults.itemShape(index, TrashScope.entries.size), label = {
+                                        Text(
+                                            when (choice) {
+                                                TrashScope.CLOUD -> label("Cloud", "ক্লাউড")
+                                                TrashScope.DEVICE -> label("On device", "ফোনে")
+                                            }
+                                        )
+                                    })
+                                }
+                            }
+                            Row(Modifier.padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                FilterChip(!trashFiles, {
+                                    trashFiles = false
+                                    selected = emptySet()
+                                }, label = { Text(label("Photos / videos", "ছবি / ভিডিও")) })
+                                FilterChip(trashFiles, {
+                                    trashFiles = true
+                                    selected = emptySet()
+                                }, label = { Text(if (trashScope == TrashScope.CLOUD) label("Cloud files", "ক্লাউড ফাইল") else label("Device files", "ফোনের ফাইল")) })
+                            }
+                            Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(label("Cloud: retained until deleted · Device: Android retention", "ক্লাউড: আপনি মোছা পর্যন্ত · ফোন: Android-এর সময়সীমা"), Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                                TextButton({ permanentDelete = visible.toList() }, enabled = visible.isNotEmpty()) { Text(label("Empty", "খালি")) }
+                                TextButton({ deleteEntries(selectedItems, true) }, enabled = selected.isNotEmpty()) { Text(label("Restore", "ফিরিয়ে আনুন")) }
+                            }
+                            TextButton({ permission.launch(permissions()) }) { Text(label("Allow device trash access", "ফোনের ট্র্যাশ দেখার অনুমতি দিন")) }
+                        }
+                        if (section !in setOf("Albums", "Folders")) {
+                            TimelineControls(
+                                density,
+                                { density = it },
+                                visible.size,
+                                mosaicLayout,
+                                if (section in setOf("Audio", "Documents", "All files")) {
+                                    null
+                                } else {
+                                    { enabled ->
+                                        scope.launch { model.preferences.setMosaicLayout(enabled) }
+                                        Unit
+                                    }
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -1392,6 +1398,10 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
                                             searchPerson = person.id
                                             universalSearch = true
                                         }
+                                    }
+                                    item {
+                                        val analysisStatus by app.televault.data.MediaIntelligenceScheduling.status.collectAsStateWithLifecycle()
+                                        if (analysisStatus.isNotBlank()) Text(analysisStatus, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                     item { FaceResetControls(model) }
                                     item { TextSearchControls(model) }
@@ -1802,7 +1812,13 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
                                     } else {
                                         emptyList()
                                     },
-                                    if (section == "Folders" && tab != PhotoTab.GALLERY) cloudAlbums.filter { it.folder != null } else cloudAlbums,
+                                    if (tab == PhotoTab.GALLERY) {
+                                        emptyList()
+                                    } else if (section == "Folders") {
+                                        cloudAlbums.filter { it.folder != null }
+                                    } else {
+                                        cloudAlbums
+                                    },
                                     model,
                                     ::openAlbum,
                                     {
@@ -1813,10 +1829,25 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
                                     scopeKey = "${tab.name}:$section:$folder:$album",
                                     grid = timelineGrid,
                                     leadingContent = browsingIntroduction,
+                                    deviceOnly = tab == PhotoTab.GALLERY,
                                     peopleContent = {
                                         PeopleAlbums(people, model) { person ->
                                             searchPerson = person.id
                                             universalSearch = true
+                                        }
+                                        if (tab == PhotoTab.GALLERY) {
+                                            TextButton({
+                                                section = "Trash"
+                                                trashScope = TrashScope.DEVICE
+                                                trashFiles = false
+                                                folder = null
+                                                album = null
+                                                selected = emptySet()
+                                            }, Modifier.fillMaxWidth()) {
+                                                Icon(Icons.Outlined.DeleteOutline, null)
+                                                Spacer(Modifier.width(8.dp))
+                                                Text(label("Recently deleted", "সম্প্রতি মুছে ফেলা"))
+                                            }
                                         }
                                     }
                                 )
@@ -1911,7 +1942,7 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
                         } else {
                             AppSurface(shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, shadowElevation = 4.dp) {
                                 Column {
-                                    if (!isPhotoTimeline && section != "Trash") MediaFilterBar(mediaFilters)
+                                    if (!isPhotoTimeline && section != "Trash") BrowseOptions(sectionLabel(section), active = mediaFilters.options.category != app.televault.domain.MediaCategories.Category.ALL) { MediaFilterBar(mediaFilters) }
                                     if (section !in setOf("Albums", "Folders", "Trash")) {
                                         PhotoSectionPills(section, { key ->
                                             section = key

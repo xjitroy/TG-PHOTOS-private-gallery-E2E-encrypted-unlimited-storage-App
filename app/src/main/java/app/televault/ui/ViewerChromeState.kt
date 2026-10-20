@@ -30,9 +30,12 @@ internal class ViewerChromeState(initialId: String, initiallyTapOnly: Boolean) {
 
     fun select(id: String, onlyOnTap: Boolean) {
         if (selectedId == id && tapOnly == onlyOnTap) return
+        val modeChanged = tapOnly != onlyOnTap
         selectedId = id
         tapOnly = onlyOnTap
-        if (!held) visible = !onlyOnTap
+        // Browsing must not undo a user's hide (or a completed auto-hide). Shorts still
+        // starts each new reel hidden; an active filmstrip hold keeps controls usable.
+        if (!held && (onlyOnTap || modeChanged)) visible = !onlyOnTap
         revision++
     }
     fun show(id: String) = setVisible(id, true)

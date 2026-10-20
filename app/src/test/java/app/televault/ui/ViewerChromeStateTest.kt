@@ -59,13 +59,31 @@ class ViewerChromeStateTest {
         assertTrue(chrome.visible)
         chrome.setVisible("photo", false)
         chrome.select("document", false)
-        assertTrue(chrome.visible)
+        assertFalse(chrome.visible)
         chrome.select("document", true)
         assertFalse(chrome.visible)
         chrome.select("audio", true)
         assertFalse(chrome.visible)
         chrome.select("audio", false)
         assertTrue(chrome.visible)
+    }
+
+    @Test fun hiddenPhotoControlsSurviveBothSwipeDirectionsAndAutoHide() {
+        val chrome = ViewerChromeState("one", false)
+        chrome.toggle("one")
+        repeat(100) {
+            chrome.select("photo-$it", false)
+            assertFalse(chrome.visible)
+        }
+        chrome.select("one", false)
+        assertFalse(chrome.visible)
+        chrome.toggle("one")
+        assertTrue(chrome.visible)
+        chrome.select("two", false)
+        assertTrue(chrome.visible)
+        chrome.expire(chrome.revision)
+        chrome.select("one", false)
+        assertFalse(chrome.visible)
     }
 
     @Test fun newInteractionInvalidatesPendingAutoHide() {

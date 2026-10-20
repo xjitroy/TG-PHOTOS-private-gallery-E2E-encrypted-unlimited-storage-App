@@ -1,3 +1,15 @@
+# TG Photos1.20.39 — compact library and automatic analysis recovery
+
+TG Photos1.20.39 brings the library ahead of secondary controls. Photos, device folders and Files expose one compact View options entry; existing filters, Clean view, Movies, sorting, layout, folder backup and Memories remain in an explicitly opened sheet. The scroll viewport does not resize when that sheet opens. Active category/search summaries remain visible. Albums uses a device-only rounded square grid: primary collections first, More albums next, names and counts below covers. Ordinary phone sizes use three columns; small windows/large text use two. Cloud-only albums remain in Photos/Files rather than repeating in the device Albums tab; backed-up phone media is kept in its actual phone folders.
+
+Automatic intelligence is queued before optional remote sync can stall it, retriggered when the encrypted index becomes ready and when interactive viewing releases the analysis pause. Face/OCR/subject preparation has independent bounded attempts; an unavailable engine does not silently finish the other engines' job. OCR uses installed verified packs, with downloads owned by the existing dedicated worker. Deferred engines retry, and cloud-only originals wait on an unmetered-network work constraint rather than a polling loop. Settings shows the current preparation/pause/retry status and People restore notices. Existing encrypted People restore must still complete before grouping, protecting confirmed names and privacy exclusions; this release never bypasses that restore or pretends a scan occurred.
+
+Hidden ordinary viewer chrome remains hidden across photo/document page changes, including after auto-hide. Shorts still starts each new reel hidden and held controls stay available. Photo/video Edit launches Android ACTION_EDIT with the actual MIME and a temporary read grant through the existing session-bound provider; original write access is not granted. Installed editors determine compatibility and where edited copies are saved. No in-app photo/video editor option is offered; audio editing remains.
+
+Public Universal1.20.39/code51, same public signer/package, Android8+, all4ABIs. No new dependency, model, runtime permission, data reset or owner-account operation. Prior player/stream/backup/encryption/Room1/session paths/models/private exclusions and all old artifacts are retained. This is scoped source/host verification; no runnable Android target/emulator/KVM exists here. Native layout/gesture/FPS/model/codec/biometric/OEM/account acceptance and an independent security audit remain unverified. No claim of pixel-identical Vivo behavior, every Vivo feature,100percent recognition or permanent no-crash/zero-load operation.
+
+Previous releases follow.
+
 # TG Photos1.20.38 — Shorts stability in progress
 
 TG Photos1.20.38 stabilizes Shorts page handover before a video loads. Explicit Shorts feeds select portrait paging, fullscreen insets and portrait controls before dimensions/resume reads arrive; decoder metadata cannot briefly turn that feed into a compact movie page. Ordinary gallery/movie presentation rules remain.

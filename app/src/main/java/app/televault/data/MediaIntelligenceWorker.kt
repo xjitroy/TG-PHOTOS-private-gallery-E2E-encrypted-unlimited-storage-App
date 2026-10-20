@@ -12,6 +12,7 @@ import kotlinx.coroutines.sync.withLock
 /** No key is placed in WorkManager. A locked vault always waits for an explicit unlock. */
 internal object MediaIntelligenceScheduling {
     val gate = kotlinx.coroutines.sync.Mutex()
+    val status = kotlinx.coroutines.flow.MutableStateFlow("")
     private const val NAME = "normal-media-intelligence"
 
     @Volatile var runningLane: String? = null
@@ -30,6 +31,12 @@ internal object MediaIntelligenceScheduling {
         val work = OneTimeWorkRequestBuilder<MediaIntelligenceWorker>().setInputData(workDataOf("lane" to "$NAME-charge"))
             .setConstraints(constraints().setRequiresCharging(true).build()).addTag(NAME).build()
         WorkManager.getInstance(context).enqueueUniqueWork("$NAME-charge", ExistingWorkPolicy.KEEP, work)
+    }
+    fun whenUnmetered(context: Context) {
+        val lane = "$NAME-wifi"
+        val work = OneTimeWorkRequestBuilder<MediaIntelligenceWorker>().setInputData(workDataOf("lane" to lane))
+            .setConstraints(constraints().setRequiredNetworkType(NetworkType.UNMETERED).build()).addTag(NAME).build()
+        WorkManager.getInstance(context).enqueueUniqueWork(lane, ExistingWorkPolicy.KEEP, work)
     }
     fun request(context: Context) {
         // At most one active batch and one coalesced follow-up; do not append one job per photo.
@@ -60,12 +67,20 @@ class MediaIntelligenceWorker(context: Context, params: WorkerParameters) : Coro
     private suspend fun runBatch(): Result = withContext(Dispatchers.IO) {
         val app = applicationContext as TeleVaultApplication
         val drive = app.drive
-        if (drive.state.value.stage != VaultStage.READY || !drive.state.value.indexLoaded) return@withContext Result.success()
+        if (drive.state.value.stage != VaultStage.READY) return@withContext Result.success()
+        if (!drive.state.value.indexLoaded) {
+            MediaIntelligenceScheduling.status.value = "Waiting for the encrypted library index…"
+            return@withContext Result.retry()
+        }
         if (!BackgroundBattery.analysis(applicationContext)) {
+            MediaIntelligenceScheduling.status.value = "Automatic analysis paused for battery protection; resumes while charging."
             MediaIntelligenceScheduling.whenCharging(applicationContext)
             return@withContext Result.success()
         }
-        if (app.intelligencePaused || !app.ocrModels.backgroundAllowed(false)) return@withContext Result.retry()
+        if (app.intelligencePaused || !app.ocrModels.backgroundAllowed(false)) {
+            MediaIntelligenceScheduling.status.value = "Analysis pauses during viewing, Private Vault or battery saver; it will retry."
+            return@withContext Result.retry()
+        }
         val epoch = drive.playbackEpoch
         val binding = drive.privateVaultBinding()
         val people = drive.people
@@ -82,27 +97,34 @@ class MediaIntelligenceWorker(context: Context, params: WorkerParameters) : Coro
             scenes.activate()
             if (!people.state.value.enabled && !ocr.state.value.enabled && !scenes.state.value.enabled) return@withContext Result.success()
             setForeground(transferForeground(applicationContext, 71908, "Indexing photos privately · on-device"))
-            withTimeout(8 * 60 * 1000L) {
+            val retryNeeded = withTimeout(8 * 60 * 1000L) {
                 delay(500)
                 withTimeoutOrNull(30_000) { drive.localMedia.indexReady.first { it } }
                 withTimeoutOrNull(30_000) { drive.localMedia.scanningDocuments.first { !it } }
-                val faceReady = people.state.value.enabled && try {
-                    people.prepareAnalysis()
-                } catch (cancel: CancellationException) {
-                    throw cancel
-                } catch (_: Exception) {
-                    false
+                MediaIntelligenceScheduling.status.value = "Preparing on-device face, text and subject analysis…"
+                val enabled = listOf(people.state.value.enabled, ocr.state.value.enabled, scenes.state.value.enabled)
+                val prepared = prepareIntelligence(
+                    enabled,
+                    prepare = listOf(
+                        { people.prepareAnalysis() },
+                        { ocr.models.prepareInstalled() },
+                        { app.memoryModels.prepareInstalled() }
+                    )
+                )
+                var faceReady = prepared[0]
+                var textReady = prepared[1]
+                var sceneReady = prepared[2]
+                var nativeUnavailable = false
+                val waiting = enabled.indices.any { enabled[it] && !prepared[it] }
+                if (enabled[0] && !faceReady) app.faceModels.install()
+                if (enabled[1] && !textReady) app.ocrModels.install()
+                if (enabled[2] && !sceneReady) app.memoryModels.install()
+                var incomplete = false
+                var cloudWaiting = false
+                if (!faceReady && !textReady && !sceneReady) {
+                    MediaIntelligenceScheduling.status.value = "Waiting for verified models or encrypted People references; automatic retry is scheduled."
+                    return@withTimeout waiting
                 }
-                val textReady = ocr.state.value.enabled && try {
-                    ocr.models.prepare(false)
-                    true
-                } catch (cancel: CancellationException) {
-                    throw cancel
-                } catch (_: Exception) {
-                    false
-                }
-                val sceneReady = scenes.state.value.enabled && app.memoryModels.prepareInstalled()
-                if (!faceReady && !textReady && !sceneReady) return@withTimeout
                 suspend fun scan(id: String, stamp: String, mime: String, original: android.net.Uri?, preview: suspend () -> android.graphics.Bitmap?) {
                     currentCoroutineContext().ensureActive()
                     if (!BackgroundBattery.analysis(applicationContext)) throw BatteryPaused()
@@ -111,6 +133,7 @@ class MediaIntelligenceWorker(context: Context, params: WorkerParameters) : Coro
                     val photo = mime.startsWith("image/")
                     val video = mime.startsWith("video/")
                     if (!photo && !video) return
+                    if (original == null && !app.ocrModels.backgroundAllowed()) cloudWaiting = true
                     drive.photoPriority.await("background-intelligence")
                     if (faceReady && people.state.value.enabled) {
                         try {
@@ -120,7 +143,13 @@ class MediaIntelligenceWorker(context: Context, params: WorkerParameters) : Coro
                             if (changed) delay(120)
                         } catch (cancel: CancellationException) {
                             throw cancel
-                        } catch (_: Exception) { /* Skip an inaccessible/corrupt item, then continue. */ }
+                        } catch (_: LinkageError) {
+                            faceReady = false
+                            nativeUnavailable = true
+                            incomplete = true
+                        } catch (_: Exception) {
+                            incomplete = true
+                        }
                     }
                     if (photo && textReady && ocr.state.value.enabled && app.ocrModels.backgroundAllowed(original == null)) {
                         try {
@@ -129,7 +158,13 @@ class MediaIntelligenceWorker(context: Context, params: WorkerParameters) : Coro
                             if (ocr.state.value.processed > before) delay(250)
                         } catch (cancel: CancellationException) {
                             throw cancel
-                        } catch (_: Exception) { /* Per-photo isolation; successful records stay encrypted. */ }
+                        } catch (_: LinkageError) {
+                            textReady = false
+                            nativeUnavailable = true
+                            incomplete = true
+                        } catch (_: Exception) {
+                            incomplete = true
+                        }
                     }
                     if ((photo || video) && sceneReady && scenes.state.value.enabled && !scenes.state.value.capacityReached && app.ocrModels.backgroundAllowed(original == null)) {
                         try {
@@ -137,7 +172,13 @@ class MediaIntelligenceWorker(context: Context, params: WorkerParameters) : Coro
                             if (changed) delay(120)
                         } catch (cancel: CancellationException) {
                             throw cancel
-                        } catch (_: Exception) { /* An unreadable item never invalidates other suggestions. */ }
+                        } catch (_: LinkageError) {
+                            sceneReady = false
+                            nativeUnavailable = true
+                            incomplete = true
+                        } catch (_: Exception) {
+                            incomplete = true
+                        }
                     }
                 }
 
@@ -148,6 +189,7 @@ class MediaIntelligenceWorker(context: Context, params: WorkerParameters) : Coro
                 var clouds: List<DriveFile>? = null
                 var candidates = emptyList<Candidate>()
                 var cursor = 0
+                var checked = 0
                 while (true) {
                     val nextLocal = drive.localMedia.changes.value
                     val nextCloud = drive.state.value.files
@@ -166,6 +208,8 @@ class MediaIntelligenceWorker(context: Context, params: WorkerParameters) : Coro
                     while (cursor < candidates.size && (candidates[cursor].id to candidates[cursor].stamp) in visited) cursor++
                     val item = candidates.getOrNull(cursor++) ?: break
                     visited += item.id to item.stamp
+                    checked++
+                    if (checked == 1 || checked % 10 == 0) MediaIntelligenceScheduling.status.value = "Checking media privately · $checked / ${candidates.size}"
                     val device = item.local
                     scan(item.id, item.stamp, item.mime, device?.uri ?: drive.preferredDeviceSource(item.id)) {
                         if (device != null) drive.localMedia.thumbnail(device, 768) else drive.thumbnail(item.id, 384)
@@ -173,9 +217,20 @@ class MediaIntelligenceWorker(context: Context, params: WorkerParameters) : Coro
                 }
                 people.finishScan()
                 scenes.finish()
-                if (people.state.value.pendingSync && app.ocrModels.backgroundAllowed()) runCatching { people.sync() }
+                if (people.state.value.pendingSync && app.ocrModels.backgroundAllowed()) {
+                    withTimeoutOrNull(30_000) { runCatching { people.sync() } }
+                }
+                MediaIntelligenceScheduling.status.value = when {
+                    nativeUnavailable -> "An analysis engine is unavailable on this phone. Other available analysis continues; originals and saved results are kept."
+                    waiting -> "Available engines finished; waiting for models or encrypted People restore. Retrying automatically."
+                    incomplete -> "Some media could not be read. Successful results are kept; retry from these controls."
+                    cloudWaiting -> "Phone media checked. Cloud-only originals resume on Wi-Fi; existing results are kept."
+                    else -> "Available media checked. New photos are analysed automatically."
+                }
+                if (cloudWaiting) MediaIntelligenceScheduling.whenUnmetered(applicationContext)
+                waiting || incomplete && runAttemptCount < 3
             }
-            Result.success()
+            if (retryNeeded) Result.retry() else Result.success()
         } catch (_: BatteryPaused) {
             MediaIntelligenceScheduling.whenCharging(applicationContext)
             Result.success()

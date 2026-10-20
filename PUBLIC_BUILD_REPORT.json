@@ -1,8 +1,8 @@
 {
-  "version": "1.20.38",
-  "code": 50,
+  "version": "1.20.39",
+  "code": 51,
   "checks": {
-    "distinctHostTests": 580,
+    "distinctHostTests": 586,
     "suites": {
       "domain": {
         "tests": 324,
@@ -23,14 +23,14 @@
         "skipped": 0
       },
       "app": {
-        "tests": 187,
+        "tests": 193,
         "failures": 0,
         "errors": 0,
         "skipped": 0
       }
     },
     "lintErrors": 0,
-    "lintWarnings": 107,
+    "lintWarnings": 108,
     "finalLintVerified": true,
     "localChecks": 8,
     "nativeAcceptance": "Unavailable: no attached Android target or emulator/KVM; native rendering/gesture/frame/codec/OEM acceptance pending.",
@@ -38,18 +38,18 @@
     "runtimeModelPins": "Existing face/OCR/subject/runtime packs preserved; no new model installed",
     "privateDataReset": false,
     "privateApkBuilt": false,
-    "regressions": "Shorts presentation before dimension discovery,1000 normal surface updates without detachment, PiP-only owned rebinding and stale-page exclusion; existing playback/backup/crypto/lock/geometry regressions"
+    "regressions": "Independent analysis readiness/cancellation, hidden photo chrome continuity and primary device album grouping; prior playback/backup/crypto/privacy regressions"
   },
   "artifact": {
-    "apk": "TG-Photos-1.20.38-universal.apk",
-    "bytes": 88377570,
-    "sha256": "322df046d21338f7fcf67b139a8ae05682cb43aec5e94dbc3066ef625fdc4184",
-    "versionCode": 50,
-    "versionName": "1.20.38",
+    "apk": "TG-Photos-1.20.39-universal.apk",
+    "bytes": 88301430,
+    "sha256": "c34f572cc786bf6f1b5c1388e6039e6dae93c5aaf099d6cdbeee668d1b6fb4b3",
+    "versionCode": 51,
+    "versionName": "1.20.39",
     "package": "app.televault.photos",
     "distribution": "public",
-    "sourceCommit": "bf81323de50133a7ab46d92ea6c68ed0f1b9ae4a",
-    "sourceTree": "f53500ff66510eacc46864715173c23ff57d0084",
+    "sourceCommit": "236fcb95e63d2ddf52ce0c7302987f1360d81e1e",
+    "sourceTree": "d97948799a452aca65f9f32167d48002e98deefd",
     "certificateSHA256": "3e7c1029cb5e2da80026758abd483b5bd7f0551b6a56bee6b21640b8ae774559",
     "debuggable": false,
     "productionVerified": false,

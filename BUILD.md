@@ -1,3 +1,7 @@
+# Public Universal1.20.39/code51
+
+Use the existing public signing identity to install over the previous public build. No new models or dependencies are added. Build with `-PtgUniversalOnly=true :app:assembleRelease :app:lintRelease`; this does not establish real-phone recognition, rendering or gesture acceptance.
+
 # Public Universal APK (1.20.31)
 
 The public release is one signed Universal APK for ARM64, ARMv7, x86 and x86_64, Android8+. Build with `-PtgUniversalOnly=true` and use release/output-metadata.json for its exact filename. Standard compressed JNI packaging keeps the single file small; Android extracts only the device's matching ABI. Preserve the official signing identity for compatible public updates. Private/personal distributions are not included in this release.
