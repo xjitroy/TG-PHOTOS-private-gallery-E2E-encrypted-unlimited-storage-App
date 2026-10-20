@@ -55,6 +55,7 @@ interface TelegramGateway {
     suspend fun sendDocument(file: File, marker: String, progress: (Long, Long) -> Unit): RemoteDocument
     suspend fun findDocuments(marker: String): List<RemoteDocument>
     suspend fun findNewestDocuments(marker: String, limit: Int): List<RemoteDocument> = findDocuments(marker).sortedByDescending { it.messageId }.take(limit.coerceIn(1, 70))
+    suspend fun deleteAnalysisDocuments(references: List<RemoteDocument>, photos: String, objectId: String): Unit = throw UnsupportedOperationException("Analysis cleanup unavailable")
     suspend fun deletePeopleDocuments(references: List<RemoteDocument>, photos: String, person: String): Unit = throw UnsupportedOperationException("People cleanup unavailable")
     suspend fun deleteOwnedDocuments(references: List<RemoteDocument>, ownerMarker: String)
     suspend fun readLifecycleDocument(reference: RemoteDocument, marker: String): ByteArray = throw UnsupportedOperationException("Vault lifecycle unavailable")

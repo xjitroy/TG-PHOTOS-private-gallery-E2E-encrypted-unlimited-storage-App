@@ -16,6 +16,7 @@ import app.televault.PreferencesRepository
 import app.televault.crypto.AuthenticatedRecords
 import app.televault.crypto.CipherParts
 import app.televault.crypto.CipherRangeCache
+import app.televault.crypto.IntelligenceResultCrypto
 import app.televault.crypto.NewPasswordPolicy
 import app.televault.crypto.OfflineCipherStore
 import app.televault.crypto.RecoveryCredentials
@@ -119,6 +120,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
     internal val privateAi by lazy { PrivateIntelligenceExclusions(app, this, telegram) }
     internal val scenes by lazy { SceneStore(app, this, (app as app.televault.TeleVaultApplication).memoryModels) }
     internal val ocr by lazy { OcrStore(app, this, (app as app.televault.TeleVaultApplication).ocrModels) }
+    internal val analysisResults by lazy { IntelligenceResults(app, this, telegram) }
     internal val people by lazy { PeopleStore(app, this, telegram) }
     internal fun localMediaContext(): Context = app
     val localMedia = LocalMediaRepository(app)
@@ -573,6 +575,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
             people.lock()
             ocr.lock()
             scenes.lock()
+            analysisResults.lock()
             privateAi.lock()
             restoreMutable.value = null
             vaultChoicesMutable.update { choices -> choices.map { it.copy(name = if (it.createdAt > 0) VaultNames.generated(it.createdAt, java.time.ZoneId.systemDefault(), it.id) else "TG Photos vault · ${it.id.take(8)}") } }
@@ -656,6 +659,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
 
     internal fun normalIntelligenceMedia(id: String): Boolean {
         check(state.value.stage == VaultStage.READY)
+        if (!privateAi.analysisReady()) return false
         val cloud = state.value.files.find { it.id == id }
         if (cloud != null)return cloud.trashedAt == 0L && !privateAi.excluded(id, cloud.hash) && (cloud.mime.startsWith("image/") || cloud.mime.startsWith("video/"))
         return !privateAi.excluded(id) && localMedia.changes.value.any { it.uri.toString() == id && !it.trashed && !it.galleryHidden && (it.mime.startsWith("image/") || it.mime.startsWith("video/")) }
@@ -705,6 +709,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
         ocr.cleanPrivateSources()
         scenes.cleanPrivateSources()
         people.cleanPrivateSources()
+        analysisResults.cleanPrivateSources()
     }
     internal suspend fun retryPrivateIntelligenceCleanup() {
         privateAi.activate()
@@ -714,6 +719,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
         ocr.cleanPrivateSources()
         scenes.cleanPrivateSources()
         people.sync()
+        analysisResults.cleanPrivateSources()
         privateAi.finishCleanup()
     }
     internal suspend fun retireIntelligenceForPrivateMove(source: Uri, size: Long, hash: ByteArray, extraSource: Uri? = null) = withContext(Dispatchers.IO) {
@@ -731,8 +737,21 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
         people.cleanPrivateSources()
         privateAi.sync() // Read back the encrypted exclusion before removing owned remote references/originals.
         people.sync()
+        analysisResults.cleanPrivateSources()
         privateAi.finishCleanup()
         check(privateVaultBinding() == scope)
+    }
+    internal fun analysisObjectId(hash: String, binding: Pair<Long, String>): String {
+        val epoch = playbackEpoch
+        check(privateVaultBinding() == binding && hash.isNotBlank() && hash.length <= 128)
+        val key = unlockedKey()
+        try {
+            val result = IntelligenceResultCrypto.objectId(key, binding.first, binding.second, hash)
+            check(epoch == playbackEpoch && privateVaultBinding() == binding)
+            return result
+        } finally {
+            key.fill(0)
+        }
     }
     internal fun ocrEnvelope(bytes: ByteArray, objectId: String, binding: Pair<Long, String>, open: Boolean): ByteArray {
         val epoch = accessEpoch.get()
@@ -1235,6 +1254,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
         people.retire(owner, scope)
         ocr.retire(owner, scope)
         scenes.retire(owner, scope)
+        analysisResults.retire(owner, scope)
         privateAi.retire(owner, scope)
         dao.removeVault(owner, scope)
         archivedRoot(owner, scope).delete()

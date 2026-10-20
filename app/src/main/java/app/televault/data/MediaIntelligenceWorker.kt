@@ -13,11 +13,12 @@ import kotlinx.coroutines.sync.withLock
 internal object MediaIntelligenceScheduling {
     val gate = kotlinx.coroutines.sync.Mutex()
     val status = kotlinx.coroutines.flow.MutableStateFlow("")
-    private const val NAME = "normal-media-intelligence"
+    private const val NAME = "normal-media-intelligence-v2"
 
     @Volatile var runningLane: String? = null
     fun ensure(context: Context, rearm: Boolean = false) {
         val manager = WorkManager.getInstance(context)
+        manager.cancelAllWorkByTag("normal-media-intelligence")
         manager.cancelUniqueWork("$NAME-periodic")
         val trigger = Constraints.Builder().setRequiresStorageNotLow(true)
             .addContentUriTrigger(android.provider.MediaStore.Files.getContentUri("external"), true)
@@ -27,22 +28,11 @@ internal object MediaIntelligenceScheduling {
         manager.enqueueUniqueWork("$NAME-watch", if (rearm) ExistingWorkPolicy.APPEND_OR_REPLACE else ExistingWorkPolicy.KEEP, work)
     }
     private fun constraints() = Constraints.Builder().setRequiresStorageNotLow(true)
-    fun whenCharging(context: Context) {
-        val work = OneTimeWorkRequestBuilder<MediaIntelligenceWorker>().setInputData(workDataOf("lane" to "$NAME-charge"))
-            .setConstraints(constraints().setRequiresCharging(true).build()).addTag(NAME).build()
-        WorkManager.getInstance(context).enqueueUniqueWork("$NAME-charge", ExistingWorkPolicy.KEEP, work)
-    }
-    fun whenUnmetered(context: Context) {
-        val lane = "$NAME-wifi"
-        val work = OneTimeWorkRequestBuilder<MediaIntelligenceWorker>().setInputData(workDataOf("lane" to lane))
-            .setConstraints(constraints().setRequiredNetworkType(NetworkType.UNMETERED).build()).addTag(NAME).build()
-        WorkManager.getInstance(context).enqueueUniqueWork(lane, ExistingWorkPolicy.KEEP, work)
-    }
     fun request(context: Context) {
         // At most one active batch and one coalesced follow-up; do not append one job per photo.
         val lane = if (runningLane == NAME) "$NAME-next" else NAME
         val work = OneTimeWorkRequestBuilder<MediaIntelligenceWorker>().setInputData(workDataOf("lane" to lane))
-            .setConstraints(constraints().apply { if (!BackgroundBattery.analysis(context)) setRequiresCharging(true) }.build())
+            .setConstraints(constraints().build())
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).addTag(NAME).build()
         WorkManager.getInstance(context).enqueueUniqueWork(lane, ExistingWorkPolicy.KEEP, work)
     }
@@ -72,13 +62,8 @@ class MediaIntelligenceWorker(context: Context, params: WorkerParameters) : Coro
             MediaIntelligenceScheduling.status.value = "Waiting for the encrypted library index…"
             return@withContext Result.retry()
         }
-        if (!BackgroundBattery.analysis(applicationContext)) {
-            MediaIntelligenceScheduling.status.value = "Automatic analysis paused for battery protection; resumes while charging."
-            MediaIntelligenceScheduling.whenCharging(applicationContext)
-            return@withContext Result.success()
-        }
         if (app.intelligencePaused || !app.ocrModels.backgroundAllowed(false)) {
-            MediaIntelligenceScheduling.status.value = "Analysis pauses during viewing, Private Vault or battery saver; it will retry."
+            MediaIntelligenceScheduling.status.value = "Analysis pauses while locked or in Private Vault; it will retry."
             return@withContext Result.retry()
         }
         val epoch = drive.playbackEpoch
@@ -92,6 +77,30 @@ class MediaIntelligenceWorker(context: Context, params: WorkerParameters) : Coro
         val observer = launch { drive.localMedia.changes.collect { } }
         try {
             drive.privateAi.activate()
+            if (!drive.privateAi.analysisReady()) {
+                val privacyReady = withTimeoutOrNull(30_000) {
+                    try {
+                        drive.privateAi.sync()
+                        drive.privateAi.analysisReady()
+                    } catch (cancel: CancellationException) {
+                        throw cancel
+                    } catch (_: Exception) {
+                        false
+                    }
+                } == true
+                if (!privacyReady) {
+                    MediaIntelligenceScheduling.status.value = "Restoring encrypted private-media exclusions before analysis; automatic retry is scheduled."
+                    return@withContext Result.retry()
+                }
+            }
+            var recoveryUnavailable = false
+            try {
+                drive.analysisResults.beginBatch()
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (_: Exception) {
+                recoveryUnavailable = true
+            }
             people.activate(syncRemote = false)
             ocr.activate()
             scenes.activate()
@@ -120,21 +129,57 @@ class MediaIntelligenceWorker(context: Context, params: WorkerParameters) : Coro
                 if (enabled[1] && !textReady) app.ocrModels.install()
                 if (enabled[2] && !sceneReady) app.memoryModels.install()
                 var incomplete = false
-                var cloudWaiting = false
+                var recoveryPending = recoveryUnavailable
                 if (!faceReady && !textReady && !sceneReady) {
                     MediaIntelligenceScheduling.status.value = "Waiting for verified models or encrypted People references; automatic retry is scheduled."
                     return@withTimeout waiting
                 }
                 suspend fun scan(id: String, stamp: String, mime: String, original: android.net.Uri?, preview: suspend () -> android.graphics.Bitmap?) {
                     currentCoroutineContext().ensureActive()
-                    if (!BackgroundBattery.analysis(applicationContext)) throw BatteryPaused()
                     if (!current() || !app.ocrModels.backgroundAllowed(false) || drive.privateVaultBinding() != binding) throw AnalysisPaused()
                     if (!drive.normalIntelligenceMedia(id)) return
                     val photo = mime.startsWith("image/")
                     val video = mime.startsWith("video/")
                     if (!photo && !video) return
-                    if (original == null && !app.ocrModels.backgroundAllowed()) cloudWaiting = true
                     drive.photoPriority.await("background-intelligence")
+                    val hash = drive.intelligenceContentHash(id)
+                    try {
+                        if (original != null && original.toString() != id && hash.isNotBlank()) {
+                            // preferredDeviceSource was verified against the cloud full-content hash.
+                            // Reuse an earlier offline scan even when a large video's hash was unavailable then.
+                            drive.localMedia.changes.value.find { it.uri == original && !it.trashed && !it.galleryHidden }?.let { local ->
+                                if (ocr.state.value.enabled) ocr.reuse(id, stamp, hash, ocr.snapshot(local.uri.toString(), local.fingerprint))
+                                if (scenes.state.value.enabled) scenes.reuse(id, stamp, hash, scenes.snapshot(local.uri.toString(), local.fingerprint))
+                                if (people.state.value.enabled) people.linkVerifiedSource(local.uri.toString(), local.fingerprint, id, stamp, hash)
+                            }
+                        }
+                        val saved = drive.analysisResults.restore(hash)
+                        if (saved != null) {
+                            if (ocr.state.value.enabled) ocr.reuse(id, stamp, hash, saved.optJSONObject("text"))
+                            if (people.state.value.enabled) people.reuse(id, stamp, hash, saved.optJSONObject("face"))
+                            if (scenes.state.value.enabled) scenes.reuse(id, stamp, hash, saved.optJSONObject("scene"))
+                        }
+                    } catch (cancel: CancellationException) {
+                        throw cancel
+                    } catch (_: Exception) {
+                        recoveryPending = true
+                    }
+                    // OCR comes first so document text can route ALL derived results to local-only storage.
+                    if (textReady && ocr.state.value.enabled) {
+                        try {
+                            val before = ocr.state.value.processed
+                            ocr.analyze(id, stamp, { original ?: drive.privateMediaUri(id) }, preview = if (video) preview else null)
+                            if (ocr.state.value.processed > before) delay(120)
+                        } catch (cancel: CancellationException) {
+                            throw cancel
+                        } catch (_: LinkageError) {
+                            textReady = false
+                            nativeUnavailable = true
+                            incomplete = true
+                        } catch (_: Exception) {
+                            incomplete = true
+                        }
+                    }
                     if (faceReady && people.state.value.enabled) {
                         try {
                             val changed = people.analyze(id, stamp, ownedSource = photo) {
@@ -145,21 +190,6 @@ class MediaIntelligenceWorker(context: Context, params: WorkerParameters) : Coro
                             throw cancel
                         } catch (_: LinkageError) {
                             faceReady = false
-                            nativeUnavailable = true
-                            incomplete = true
-                        } catch (_: Exception) {
-                            incomplete = true
-                        }
-                    }
-                    if (photo && textReady && ocr.state.value.enabled && app.ocrModels.backgroundAllowed(original == null)) {
-                        try {
-                            val before = ocr.state.value.processed
-                            ocr.analyze(id, stamp, { original ?: drive.privateMediaUri(id) })
-                            if (ocr.state.value.processed > before) delay(250)
-                        } catch (cancel: CancellationException) {
-                            throw cancel
-                        } catch (_: LinkageError) {
-                            textReady = false
                             nativeUnavailable = true
                             incomplete = true
                         } catch (_: Exception) {
@@ -179,6 +209,17 @@ class MediaIntelligenceWorker(context: Context, params: WorkerParameters) : Coro
                         } catch (_: Exception) {
                             incomplete = true
                         }
+                    }
+                    try {
+                        val changed = drive.analysisResults.checkpoint(hash, video, ocr.snapshot(id, stamp), people.snapshot(id, stamp), scenes.snapshot(id, stamp))
+                        if (changed) people.privacyChanged(hash)
+                        withTimeout(20_000) { drive.analysisResults.sync(hash) }
+                    } catch (_: TimeoutCancellationException) {
+                        recoveryPending = true
+                    } catch (cancel: CancellationException) {
+                        throw cancel
+                    } catch (_: Exception) {
+                        recoveryPending = true
                     }
                 }
 
@@ -224,16 +265,12 @@ class MediaIntelligenceWorker(context: Context, params: WorkerParameters) : Coro
                     nativeUnavailable -> "An analysis engine is unavailable on this phone. Other available analysis continues; originals and saved results are kept."
                     waiting -> "Available engines finished; waiting for models or encrypted People restore. Retrying automatically."
                     incomplete -> "Some media could not be read. Successful results are kept; retry from these controls."
-                    cloudWaiting -> "Phone media checked. Cloud-only originals resume on Wi-Fi; existing results are kept."
+                    recoveryPending || drive.analysisResults.syncPending -> "On-device results are saved. Encrypted recovery sync will retry automatically."
                     else -> "Available media checked. New photos are analysed automatically."
                 }
-                if (cloudWaiting) MediaIntelligenceScheduling.whenUnmetered(applicationContext)
-                waiting || incomplete && runAttemptCount < 3
+                waiting || recoveryPending || drive.analysisResults.syncPending || incomplete && runAttemptCount < 3
             }
             if (retryNeeded) Result.retry() else Result.success()
-        } catch (_: BatteryPaused) {
-            MediaIntelligenceScheduling.whenCharging(applicationContext)
-            Result.success()
         } catch (_: TimeoutCancellationException) {
             Result.retry()
         } catch (_: AnalysisPaused) {
@@ -256,6 +293,5 @@ class MediaIntelligenceWorker(context: Context, params: WorkerParameters) : Coro
             }
         }
     }
-    private class BatteryPaused : Exception()
     private class AnalysisPaused : Exception()
 }

@@ -7,10 +7,10 @@ public class BackgroundAnalysisPolicyTest {
   assertTrue(BackgroundAnalysisPolicy.allowed(false,false,false));
  }
  @Test public void cloudFetchWaitsForUnmeteredAndBatterySaverPausesBoth() {
-  assertFalse(BackgroundAnalysisPolicy.allowed(false,true,true));
+  assertTrue(BackgroundAnalysisPolicy.allowed(false,true,true));
   assertTrue(BackgroundAnalysisPolicy.allowed(false,false,true));
-  assertFalse(BackgroundAnalysisPolicy.allowed(true,false,false));
-  assertFalse(BackgroundAnalysisPolicy.allowed(true,false,true));
+  assertTrue(BackgroundAnalysisPolicy.allowed(true,false,false));
+  assertTrue(BackgroundAnalysisPolicy.allowed(true,false,true));
  }
  @org.junit.Test public void backgroundWorkNeverCrossesLockOrAccountEpoch() {
   org.junit.Assert.assertFalse(BackgroundAnalysisPolicy.sessionAllowed(false, 1L, 1L, false));

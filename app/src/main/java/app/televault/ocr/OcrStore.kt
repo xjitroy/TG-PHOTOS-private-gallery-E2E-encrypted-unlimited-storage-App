@@ -17,7 +17,7 @@ import org.json.JSONObject
 
 internal data class OcrState(val enabled: Boolean = false, val indexed: Int = 0, val processed: Long = 0, val busy: Boolean = false, val notice: String = "")
 
-/** Optional derived text is local authenticated ciphertext; never a cloud AI upload. */
+/** Derived text is authenticated local ciphertext; ordinary per-photo recovery is E2E encrypted. */
 internal class OcrStore(private val context: Context, private val drive: DriveRepository, val models: OcrModels) {
     private val mutex = Mutex()
     private val token = AtomicLong()
@@ -135,7 +135,7 @@ internal class OcrStore(private val context: Context, private val drive: DriveRe
             if (enabled)models.install()
         }
     }
-    suspend fun analyze(id: String, stamp: String, source: suspend () -> Uri, thorough: Boolean = false, preferCached: Boolean = false): OcrText = withContext(Dispatchers.IO) {
+    suspend fun analyze(id: String, stamp: String, source: suspend () -> Uri, thorough: Boolean = false, preferCached: Boolean = false, preview: (suspend () -> Bitmap?)? = null): OcrText = withContext(Dispatchers.IO) {
         check(mutable.value.enabled)
         val requestedScope = drive.privateVaultBinding()
         val requestedToken = token.get()
@@ -165,7 +165,23 @@ internal class OcrStore(private val context: Context, private val drive: DriveRe
             publish(scope, generation, mutable.value.copy(busy = true, notice = ""))
             try {
                 val text = app.televault.OnDeviceAnalysis.run {
-                    val image = decodeOcrPhoto(context, source()) ?: return@run OcrText.EMPTY
+                    val image = if (preview == null) {
+                        decodeOcrPhoto(context, source())
+                    } else {
+                        preview()?.let { image ->
+                            val scale = minOf(1f, 2400f / maxOf(image.width, image.height))
+                            val sized = Bitmap.createScaledBitmap(image, (image.width * scale).toInt().coerceAtLeast(1), (image.height * scale).toInt().coerceAtLeast(1), true)
+                            try {
+                                checkNotNull(sized.copy(Bitmap.Config.ARGB_8888, true))
+                            } finally {
+                                if (sized !== image) {
+                                    sized.eraseColor(0)
+                                    sized.recycle()
+                                }
+                            }
+                        }
+                    }
+                    checkNotNull(image) { "Photo or video preview is not readable yet" }
                     try {
                         guard(scope, generation)
                         (engine ?: OcrEngine(models).also { engine = it }).read(image, thorough)
@@ -182,6 +198,31 @@ internal class OcrStore(private val context: Context, private val drive: DriveRe
             } finally {
                 if (token.get() == generation) publish(scope, generation, mutable.value.copy(busy = false))
             }
+        }
+    }
+    suspend fun snapshot(id: String, stamp: String): JSONObject? = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val scope = drive.privateVaultBinding()
+            guard(scope, token.get())
+            if (!mutable.value.enabled) return@withLock null
+            read(scope, id)?.takeIf { it.optString("stamp") == stamp && it.optInt("engineRevision") == 3 && !drive.privateAi.excluded(id, it.optString("contentHash")) }?.let { body ->
+                OcrText.read(body).json().put("engineRevision", 3).put("thorough", body.optBoolean("thorough"))
+            }
+        }
+    }
+    suspend fun reuse(id: String, stamp: String, hash: String, body: JSONObject?) = withContext(Dispatchers.IO) {
+        if (body == null || hash.isBlank()) return@withContext
+        mutex.withLock {
+            val scope = drive.privateVaultBinding()
+            val generation = token.get()
+            guard(scope, generation)
+            if (!mutable.value.enabled || !drive.normalIntelligenceMedia(id) || drive.privateAi.excluded(id, hash)) return@withLock
+            check(body.getInt("engineRevision") == 3)
+            val text = OcrText.read(body)
+            val old = read(scope, id)
+            if (old?.optString("stamp") == stamp && old.optInt("engineRevision") == 3) return@withLock
+            write(scope, generation, id, text.json().put("engineRevision", 3).put("thorough", body.optBoolean("thorough")).put("id", id).put("stamp", stamp).put("contentHash", hash))
+            publish(scope, generation, mutable.value.copy(indexed = mutable.value.indexed + if (old == null) 1 else 0))
         }
     }
     suspend fun search(names: Map<String, String>, query: String): Set<String> = withContext(Dispatchers.IO) {

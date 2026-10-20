@@ -104,6 +104,11 @@ class PreferencesRepository(context: Context) {
             store.edit { it[launcher] = name.name }
         }
     }
+    private val photosFoldersKey = booleanPreferencesKey("photos_folder_mode")
+    val photosFolderMode = store.data.catch { error -> if (error is IOException) emit(emptyPreferences()) else throw error }.map { it[photosFoldersKey] ?: false }
+    suspend fun setPhotosFolderMode(enabled: Boolean) {
+        store.edit { it[photosFoldersKey] = enabled }
+    }
     private val mosaicKey = booleanPreferencesKey("gallery_mosaic_layout")
     val mosaicLayout = store.data.catch { error -> if (error is IOException) emit(emptyPreferences()) else throw error }.map { it[mosaicKey] ?: true }
     suspend fun setMosaicLayout(enabled: Boolean) {

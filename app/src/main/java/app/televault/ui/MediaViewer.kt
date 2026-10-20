@@ -97,6 +97,7 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
     val controls = viewerChrome.visible
     var details by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
     val navigationFailure by rememberUpdatedState<(Exception) -> Unit>({ message = "Could not change media. Try again or go back." })
@@ -304,6 +305,11 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
     val viewerMenu: @Composable () -> Unit = {
         DropdownMenu(menu, { menu = false }) {
             if (preparedSource != null && (current.mime.startsWith("image/") || current.mime.startsWith("video/"))) {
+                DropdownMenuItem(text = { Text(label("Edit", "এডিট")) }, leadingIcon = { Icon(Icons.Outlined.Edit, null) }, onClick = {
+                    menu = false
+                    videoSession.pause("${current.id}|${current.size}|${current.date}")
+                    editing = true
+                })
                 DropdownMenuItem(text = { Text(label("Edit in another app", "অন্য অ্যাপে এডিট")) }, leadingIcon = { Icon(Icons.Outlined.Edit, null) }, onClick = {
                     menu = false
                     videoSession.pause("${current.id}|${current.size}|${current.date}")
@@ -540,7 +546,7 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
                                             }
                                             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.SpaceEvenly) {
                                                 ViewerAction(Icons.Outlined.Share, label("Share", "শেয়ার"), !busy && !scrubbing && !closing) { send(Intent.ACTION_SEND) }
-                                                if (chrome.mime.startsWith("image/")) ViewerAction(Icons.Outlined.Edit, label("Edit", "এডিট"), preparedSource != null && !busy && !scrubbing && !closing) { send(Intent.ACTION_EDIT) }
+                                                if (chrome.mime.startsWith("image/")) ViewerAction(Icons.Outlined.Edit, label("Edit", "এডিট"), preparedSource != null && !busy && !scrubbing && !closing) { editing = true }
                                                 ViewerAction(Icons.Outlined.OpenInNew, label("Open with", "অন্য অ্যাপে"), !busy && !scrubbing && !closing) { send(Intent.ACTION_VIEW) }
                                                 if (chrome.cloud != null) ViewerAction(Icons.Outlined.Download, label("Download", "ডাউনলোড"), !busy && !scrubbing && !closing) { save(chrome) }
                                                 val loved = chrome.cloud?.favorite ?: (chrome.id in snapshot.localFavorites)
@@ -556,6 +562,12 @@ internal fun MediaViewer(entry: MediaEntry, entries: List<MediaEntry>, model: Dr
                                     }
                                 }
                             }
+                        }
+                        if (editing && preparedSource != null) {
+                            MediaEditorSheet(current, preparedSource, model, { editing = false }, { copy -> editedAudio[stableIds[pager.settledPage]] = copy }, external = {
+                                editing = false
+                                send(Intent.ACTION_EDIT)
+                            })
                         }
                         if (details) MediaInformation(current, preparedSource) { details = false }
                     }

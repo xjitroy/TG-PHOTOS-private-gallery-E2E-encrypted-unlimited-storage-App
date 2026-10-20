@@ -29,12 +29,12 @@ internal object MediaEditCopies {
             throw e
         }
     }
-    suspend fun image(context: Context, source: Uri): Bitmap = withContext(Dispatchers.IO) {
+    suspend fun image(context: Context, source: Uri, maxPixels: Long = 4_000_000): Bitmap = withContext(Dispatchers.IO) {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         context.contentResolver.openInputStream(source)!!.use { BitmapFactory.decodeStream(it, null, bounds) }
         check(bounds.outWidth > 0 && bounds.outHeight > 0)
         var sample = 1
-        while (bounds.outWidth.toLong() * bounds.outHeight / sample / sample > 4_000_000) sample *= 2
+        while (bounds.outWidth.toLong() * bounds.outHeight / sample / sample > maxPixels.coerceIn(1_000_000, 16_000_000)) sample *= 2
         val decoded = context.contentResolver.openInputStream(source)!!.use { BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample }) } ?: error("Unsupported image")
         val orientation = context.contentResolver.openInputStream(source)!!.use { runCatching { ExifInterface(it).getAttributeInt(ExifInterface.TAG_ORIENTATION, 1) }.getOrDefault(1) }
         val matrix = Matrix()
@@ -55,17 +55,36 @@ internal object MediaEditCopies {
         }
         if (matrix.isIdentity) decoded else Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true).also { if (it !== decoded) decoded.recycle() }
     }
-    fun adjust(original: Bitmap, rotation: Int, ratio: Float, exposure: Float, saturation: Float): Bitmap {
-        val matrix = Matrix().apply { postRotate(rotation * 90f) }
+    fun adjust(original: Bitmap, rotation: Int, ratio: Float, exposure: Float, saturation: Float, contrast: Float = 1f, warmth: Float = 0f, mirror: Boolean = false, caption: String = ""): Bitmap {
+        val matrix = Matrix().apply {
+            postRotate(rotation * 90f)
+            if (mirror) postScale(-1f, 1f)
+        }
         val rotated = Bitmap.createBitmap(original, 0, 0, original.width, original.height, matrix, true)
         val width = if (ratio <= 0) rotated.width else minOf(rotated.width, (rotated.height * ratio).toInt()).coerceAtLeast(1)
         val height = if (ratio <= 0) rotated.height else minOf(rotated.height, (width / ratio).toInt()).coerceAtLeast(1)
         val crop = Bitmap.createBitmap(rotated, (rotated.width - width) / 2, (rotated.height - height) / 2, width, height)
         val output = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-        val colors = ColorMatrix().apply { setSaturation(saturation) }
-        val shift = (exposure.coerceIn(-1f, 1f) * 100)
-        colors.postConcat(ColorMatrix(floatArrayOf(1f, 0f, 0f, 0f, shift, 0f, 1f, 0f, 0f, shift, 0f, 0f, 1f, 0f, shift, 0f, 0f, 0f, 1f, 0f)))
-        Canvas(output).drawBitmap(crop, 0f, 0f, Paint(Paint.ANTI_ALIAS_FLAG).apply { colorFilter = ColorMatrixColorFilter(colors) })
+        val colors = ColorMatrix(app.televault.domain.PhotoColorAdjustments.matrix(exposure, saturation, contrast, warmth))
+        val canvas = Canvas(output)
+        canvas.drawBitmap(crop, 0f, 0f, Paint(Paint.ANTI_ALIAS_FLAG).apply { colorFilter = ColorMatrixColorFilter(colors) })
+        if (caption.isNotBlank()) {
+            val text = caption.replace('\n', ' ').take(120)
+            val brush = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.WHITE
+                textAlign = Paint.Align.CENTER
+                textSize = width * .065f
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            }
+            if (brush.measureText(text) > width * .9f) brush.textSize *= width * .9f / brush.measureText(text)
+            brush.style = Paint.Style.STROKE
+            brush.strokeWidth = (width * .006f).coerceAtLeast(1f)
+            brush.color = Color.BLACK
+            canvas.drawText(text, width / 2f, height * .92f, brush)
+            brush.style = Paint.Style.FILL
+            brush.color = Color.WHITE
+            canvas.drawText(text, width / 2f, height * .92f, brush)
+        }
         if (crop !== original && crop !== rotated) crop.recycle()
         if (rotated !== original) rotated.recycle()
         return output

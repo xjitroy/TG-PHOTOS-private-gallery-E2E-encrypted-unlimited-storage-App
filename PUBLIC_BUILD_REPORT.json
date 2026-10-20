@@ -1,17 +1,17 @@
 {
-  "version": "1.20.39",
-  "code": 51,
+  "version": "1.20.40",
+  "code": 52,
   "checks": {
-    "distinctHostTests": 586,
+    "distinctHostTests": 601,
     "suites": {
       "domain": {
-        "tests": 324,
+        "tests": 330,
         "failures": 0,
         "errors": 0,
         "skipped": 0
       },
       "crypto": {
-        "tests": 61,
+        "tests": 64,
         "failures": 0,
         "errors": 0,
         "skipped": 0
@@ -23,14 +23,14 @@
         "skipped": 0
       },
       "app": {
-        "tests": 193,
+        "tests": 199,
         "failures": 0,
         "errors": 0,
         "skipped": 0
       }
     },
     "lintErrors": 0,
-    "lintWarnings": 108,
+    "lintWarnings": 109,
     "finalLintVerified": true,
     "localChecks": 8,
     "nativeAcceptance": "Unavailable: no attached Android target or emulator/KVM; native rendering/gesture/frame/codec/OEM acceptance pending.",
@@ -38,18 +38,18 @@
     "runtimeModelPins": "Existing face/OCR/subject/runtime packs preserved; no new model installed",
     "privateDataReset": false,
     "privateApkBuilt": false,
-    "regressions": "Independent analysis readiness/cancellation, hidden photo chrome continuity and primary device album grouping; prior playback/backup/crypto/privacy regressions"
+    "regressions": "Album preview/ranking, external viewer ownership, color transforms, unrestricted analysis policy, sensitivity routing, owned-result captions and scoped/tamper-resistant result crypto; prior playback/backup/crypto/privacy regressions"
   },
   "artifact": {
-    "apk": "TG-Photos-1.20.39-universal.apk",
-    "bytes": 88301430,
-    "sha256": "c34f572cc786bf6f1b5c1388e6039e6dae93c5aaf099d6cdbeee668d1b6fb4b3",
-    "versionCode": 51,
-    "versionName": "1.20.39",
+    "apk": "TG-Photos-1.20.40-universal.apk",
+    "bytes": 88423310,
+    "sha256": "896a8a456add11be1bc038f211056c821f6274769091cb8b9c7469a4c04b67bb",
+    "versionCode": 52,
+    "versionName": "1.20.40",
     "package": "app.televault.photos",
     "distribution": "public",
-    "sourceCommit": "236fcb95e63d2ddf52ce0c7302987f1360d81e1e",
-    "sourceTree": "d97948799a452aca65f9f32167d48002e98deefd",
+    "sourceCommit": "c888e8e10709620cf7dd6f759a4e3d0ee1cb50f9",
+    "sourceTree": "339a11c92062434360498fb4252d48eb175c0966",
     "certificateSHA256": "3e7c1029cb5e2da80026758abd483b5bd7f0551b6a56bee6b21640b8ae774559",
     "debuggable": false,
     "productionVerified": false,

@@ -180,6 +180,35 @@ internal class SceneStore(private val context: Context, private val drive: Drive
             true
         }
     }
+    suspend fun snapshot(id: String, stamp: String): JSONObject? = withContext(Dispatchers.IO) {
+        gate.withLock {
+            val scope = binding ?: return@withLock null
+            guard(scope, generation.get())
+            if (!enabled) return@withLock null
+            records[id]?.takeIf { it.stamp == stamp && !drive.privateAi.excluded(id, it.hash) }?.let { JSONObject().put("model", "mobilenetv2-c1c51358-v1").put("labels", it.labels) }
+        }
+    }
+    suspend fun reuse(id: String, stamp: String, hash: String, body: JSONObject?) = withContext(Dispatchers.IO) {
+        if (body == null || hash.isBlank()) return@withContext
+        gate.withLock {
+            val scope = binding ?: return@withLock
+            val token = generation.get()
+            guard(scope, token)
+            if (!enabled || !drive.normalIntelligenceMedia(id) || drive.privateAi.excluded(id, hash)) return@withLock
+            check(body.getString("model") == "mobilenetv2-c1c51358-v1")
+            val text = body.getString("labels")
+            check(text.length <= 1024)
+            if (records[id]?.stamp == stamp) return@withLock
+            val row = Record(stamp, hash, text)
+            if (records.size >= 50000 && id !in records || !budget.replace(id, weight(id, row))) return@withLock
+            records[id] = row
+            dirty++
+            if (dirty >= 50) {
+                save(scope, token)
+                publish(scope, token)
+            }
+        }
+    }
     suspend fun finish() = withContext(Dispatchers.IO) {
         gate.withLock {
             val scope = binding ?: return@withLock

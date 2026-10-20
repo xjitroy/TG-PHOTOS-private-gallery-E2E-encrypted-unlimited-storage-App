@@ -61,6 +61,16 @@ class MainActivity : ComponentActivity() {
     private var exportRequestToken by mutableStateOf(0)
     private var exportRequestSequence = 0
     private var incomingMedia by mutableStateOf<IncomingMedia?>(null)
+    private var externalReturn = ExternalViewerReturn()
+    private fun acceptIncoming(request: Intent) {
+        val media = parseIncoming(request)
+        if (media != null) {
+            externalReturn.accept(media.id.takeUnless { media.backup })
+            incomingMedia = media
+        } else if (request.action == Intent.ACTION_MAIN) {
+            externalReturn.accept(null)
+        }
+    }
     private fun parseIncoming(intent: Intent) = try {
         IncomingMedia.read(intent, packageName)
     } catch (_: Exception) {
@@ -76,9 +86,10 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         acceptExportNavigation(intent)
-        parseIncoming(intent)?.let { incomingMedia = it }
+        acceptIncoming(intent)
     }
     override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString("externalViewerReturn", externalReturn.requestId)
         outState.putInt("exportRequestSequence", exportRequestSequence)
         outState.putInt("exportRequestToken", exportRequestToken)
         super.onSaveInstanceState(outState)
@@ -345,7 +356,8 @@ class MainActivity : ComponentActivity() {
         // Saved state owns an already handled/pending request after recreation. The system
         // can restore the original launch Intent, whose notification extra must not replay.
         if (savedInstanceState == null) acceptExportNavigation(intent) else intent?.removeExtra("openCloudExports")
-        if (savedInstanceState == null) incomingMedia = intent?.let(::parseIncoming)
+        externalReturn = ExternalViewerReturn(savedInstanceState?.getString("externalViewerReturn"))
+        if (savedInstanceState == null || externalReturn.requestId != null) intent?.let(::acceptIncoming)
         window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
         enableEdgeToEdge()
         if (Build.VERSION.SDK_INT >= 31) window.setHideOverlayWindows(true)
@@ -465,7 +477,9 @@ class MainActivity : ComponentActivity() {
                                     authenticatedDay = currentLockDay()
                                 }, logout = { model.submit(AuthProtocol.Action.LOGOUT) }, exportRequestToken = exportRequestToken, onExportRequestHandled = { handled ->
                                     if (exportRequestToken == handled) exportRequestToken = 0
-                                }, incomingMedia = incomingMedia, onIncomingHandled = { incomingMedia = null })
+                                }, incomingMedia = incomingMedia, onIncomingHandled = { incomingMedia = null }, onExternalViewerClosed = { id ->
+                                    if (externalReturn.close(id)) finish()
+                                })
                             }
                         } else {
                             // Do not compose photos or viewers behind a translucent system prompt.

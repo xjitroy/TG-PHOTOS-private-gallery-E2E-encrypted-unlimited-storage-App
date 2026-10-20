@@ -24,7 +24,7 @@ import kotlinx.coroutines.*
 /** Transcodes directly into the explicitly chosen seekable output FD; never creates a plaintext staging file. */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 internal object VideoEditExport {
-    fun effects(rotation: Int, ratio: Float, width: Int, height: Int, brightness: Float, grayscale: Boolean, gain: Float): Effects {
+    fun effects(rotation: Int, ratio: Float, width: Int, height: Int, brightness: Float, grayscale: Boolean, gain: Float, contrast: Float = 1f, warmth: Float = 0f, mirror: Boolean = false, exportHeight: Int = 0): Effects {
         require(rotation in 0..3 && ratio >= 0 && brightness in -1f..1f && gain in 0f..2f)
         val video = mutableListOf<Effect>()
         if (rotation != 0) video += ScaleAndRotateTransformation.Builder().setRotationDegrees(rotation * 90f).build()
@@ -35,6 +35,10 @@ internal object VideoEditExport {
             val vertical = minOf(1f, sourceRatio / ratio)
             video += Crop(-horizontal, horizontal, -vertical, vertical)
         }
+        if (mirror) video += ScaleAndRotateTransformation.Builder().setScale(-1f, 1f).build()
+        if (contrast != 1f) video += Contrast((contrast - 1f).coerceIn(-1f, 1f))
+        if (warmth != 0f) video += RgbAdjustment.Builder().setRedScale(1f + warmth * .25f).setBlueScale(1f - warmth * .25f).build()
+        if (exportHeight > 0) video += Presentation.createForHeight(exportHeight)
         if (brightness != 0f) video += Brightness(brightness)
         if (grayscale) video += RgbFilter.createGrayscaleFilter()
         val audio = if (gain == 1f) {
@@ -48,9 +52,9 @@ internal object VideoEditExport {
         }
         return Effects(audio, video)
     }
-    suspend fun save(context: Context, source: Uri, target: Uri, startMs: Long, endMs: Long, rotation: Int, ratio: Float, width: Int, height: Int, brightness: Float, grayscale: Boolean, gain: Float, mute: Boolean, progress: (Int?) -> Unit) {
+    suspend fun save(context: Context, source: Uri, target: Uri, startMs: Long, endMs: Long, rotation: Int, ratio: Float, width: Int, height: Int, brightness: Float, grayscale: Boolean, gain: Float, mute: Boolean, contrast: Float = 1f, warmth: Float = 0f, mirror: Boolean = false, exportHeight: Int = 0, progress: (Int?) -> Unit) {
         require(startMs >= 0 && endMs > startMs)
-        val effect = effects(rotation, ratio, width, height, brightness, grayscale, gain)
+        val effect = effects(rotation, ratio, width, height, brightness, grayscale, gain, contrast, warmth, mirror, exportHeight)
         val output = withContext(Dispatchers.IO) { MediaEditCopies.destination(context, source, target) }
         var complete = false
         try {

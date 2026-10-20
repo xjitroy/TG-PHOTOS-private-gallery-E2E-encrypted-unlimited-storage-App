@@ -20,7 +20,7 @@ import org.json.JSONObject
 
 internal data class PersonCard(val id: String, val name: String, val cover: ByteArray, val members: Set<String>, val suggestion: String? = null, val provisional: Boolean = false, val model: String = PeopleStore.MODEL, val reviewAnswer: Boolean? = null)
 internal data class PeopleState(val enabled: Boolean = false, val people: List<PersonCard> = emptyList(), val scanned: Int = 0, val busy: Boolean = false, val pendingSync: Boolean = false, val notice: String = "", val faceCounts: Map<String, Int> = emptyMap(), val selfId: String? = null)
-private class Person(val id: String, var name: String = "", val references: MutableList<FaceSample> = mutableListOf(), val members: MutableSet<String> = linkedSetOf(), var suggestion: String? = null, var deleted: Boolean = false, var remote: Long = 0, var dirty: Boolean = false, val different: MutableSet<String> = linkedSetOf(), var reviewed: Boolean = false, val excludedMembers: MutableSet<String> = linkedSetOf(), var pendingName: Boolean = false, val photoHashes: MutableSet<String> = linkedSetOf(), val excludedHashes: MutableSet<String> = linkedSetOf(), var selfSelected: Boolean = false, var selfChangedAt: Long = 0, var embeddingModel: String = PeopleStore.MODEL, var rescanAutomatic: Boolean = false, var reviewVote: FaceReviewVote = FaceReviewVote()) {
+private class Person(val id: String, var name: String = "", val references: MutableList<FaceSample> = mutableListOf(), val members: MutableSet<String> = linkedSetOf(), var suggestion: String? = null, var deleted: Boolean = false, var remote: Long = 0, var dirty: Boolean = false, val different: MutableSet<String> = linkedSetOf(), var reviewed: Boolean = false, val excludedMembers: MutableSet<String> = linkedSetOf(), var pendingName: Boolean = false, val photoHashes: MutableSet<String> = linkedSetOf(), val excludedHashes: MutableSet<String> = linkedSetOf(), var selfSelected: Boolean = false, var selfChangedAt: Long = 0, var embeddingModel: String = PeopleStore.MODEL, var rescanAutomatic: Boolean = false, var reviewVote: FaceReviewVote = FaceReviewVote(), var cloudProjection: String = "") {
     fun wipe() {
         reviewVote = FaceReviewVote()
         references.forEach { it.wipe() }
@@ -62,19 +62,26 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
         check(token == generation.get() && drive.privateVaultBinding() == scope) { "People session changed" }
     }
     private fun sampleJson(sample: FaceSample) = JSONObject().put("source", sample.source).put("contentHash", sample.contentHash).put("jpeg", Base64.encodeToString(sample.jpeg, Base64.NO_WRAP)).put("embedding", JSONArray(sample.embedding.map { it.toDouble() }))
+    private fun cloudProjection(person: Person): String {
+        val value = person.references.filter { drive.analysisResults.cloudAllowed(it.contentHash) }.map { "ref:" + it.contentHash } + person.photoHashes.filter { drive.analysisResults.cloudAllowed(it) }.map { "hash:" + it } + person.members.filter { ForgottenVaultPolicy.validId(it) && drive.analysisResults.cloudAllowed(mediaHash(it)) }.map { "member:" + it }
+        return java.security.MessageDigest.getInstance("SHA-256").digest(value.sorted().joinToString("\n").toByteArray()).joinToString("") { "%02x".format(it) }
+    }
     private fun encode(person: Person, remote: Boolean): JSONObject {
         // Older app versions accept two references. Keep the public protocol compatible,
         // and store additional learned examples in a field older readers safely ignore.
-        val base = if (remote) (person.references.take(1) + person.references.takeLast(1)).distinct() else person.references
-        val extra = if (remote) person.references.filter { it !in base } else emptyList()
+        val references = if (remote) person.references.filter { drive.analysisResults.cloudAllowed(it.contentHash) } else person.references
+        val hashes = person.photoHashes.filter { !remote || drive.analysisResults.cloudAllowed(it) }
+        val members = person.members.filter { !remote || ForgottenVaultPolicy.validId(it) && drive.analysisResults.cloudAllowed(mediaHash(it)) }
+        val base = if (remote) (references.take(1) + references.takeLast(1)).distinct() else references
+        val extra = if (remote) references.filter { it !in base } else emptyList()
         return JSONObject().put("id", person.id).put("name", person.name).put("pendingName", !remote && person.pendingName)
-            .put("photoHashes", JSONArray(person.photoHashes.sorted())).put("excludedHashes", JSONArray(person.excludedHashes.sorted())).put("contentCounts", JSONObject(hashCounts.filterKeys { it in person.photoHashes }))
+            .put("photoHashes", JSONArray(hashes.sorted())).put("excludedHashes", JSONArray(person.excludedHashes.sorted())).put("contentCounts", JSONObject(hashCounts.filterKeys { it in hashes }))
             .put("selfSelected", person.selfSelected).put("selfChangedAt", person.selfChangedAt)
             .put("deleted", person.deleted).put("reviewed", person.reviewed).put("different", JSONArray(person.different.sorted()))
             .put("excludedMembers", JSONArray(person.excludedMembers.sorted()))
-            .put("faceCounts", JSONObject(faceCounts.filterKeys { it in person.members && (!remote || ForgottenVaultPolicy.validId(it)) }))
+            .put("faceCounts", JSONObject(faceCounts.filterKeys { it in members }))
             .put("suggestion", if (remote) JSONObject.NULL else person.suggestion ?: JSONObject.NULL).put("model", person.embeddingModel).put("rescanAutomatic", person.rescanAutomatic)
-            .put("remote", person.remote).put("dirty", person.dirty).put("members", JSONArray(person.members.filter { !remote || ForgottenVaultPolicy.validId(it) }))
+            .put("cloudProjection", if (remote) "" else person.cloudProjection).put("remote", person.remote).put("dirty", person.dirty).put("members", JSONArray(members))
             .put("pendingReview", if (remote || person.reviewVote.count != 1) JSONObject.NULL else JSONObject().put("target", person.reviewVote.target).put("same", person.reviewVote.same))
             .put("references", JSONArray(base.map(::sampleJson))).put("reviewReferences", JSONArray(extra.map(::sampleJson)))
     }
@@ -86,6 +93,7 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
         val name = data.getString("name")
         check(name.length <= 80)
         val person = Person(id, name, deleted = data.optBoolean("deleted"), remote = data.optLong("remote"), dirty = data.optBoolean("dirty"), embeddingModel = model, rescanAutomatic = data.optBoolean("rescanAutomatic", model == LEGACY_MODEL))
+        person.cloudProjection = data.optString("cloudProjection").also { check(it.length <= 64) }
         try {
             val refs = data.getJSONArray("references")
             val extra = data.optJSONArray("reviewReferences")
@@ -393,6 +401,11 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
     }
     private suspend fun syncLocked(scope: Pair<Long, String>, token: Long) {
         access(scope, token)
+        try {
+            drive.analysisResults.activate()
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (_: Exception) { /* Unknown derived privacy remains local-only; restore existing authenticated identities. */ }
         drive.privateAi.sync() // Never upload face references against a stale online privacy ledger.
         access(scope, token)
         persons.values.forEach(::sanitize)
@@ -451,11 +464,18 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
                 sanitize(incoming)
             }
         }
+        // Re-encode remote references under the current conservative local-only policy.
+        // Previous authenticated snapshots are retired only after the filtered replacement is read back.
+        persons.values.filter { person -> person.remote > 0 && person.cloudProjection != cloudProjection(person) }.forEach { it.dirty = true }
         restorePending = false
         save(scope, token)
         for (person in persons.values.filter { it.dirty && (it.name.isNotBlank() || it.deleted || it.remote > 0 || it.reviewed || it.different.isNotEmpty() || it.members.any(ForgottenVaultPolicy::validId) || it.photoHashes.isNotEmpty() || it.selfChangedAt > 0) }) {
             access(scope, token)
             sanitize(person)
+            // Keep the existing authenticated remote snapshot while old local sources await
+            // classification. Explicit private cleanup/deletion still retires prohibited references.
+            if (!person.deleted && !drive.privateAi.needsCleanup() && (person.references.any { !drive.analysisResults.classified(it.contentHash) } || person.photoHashes.any { !drive.analysisResults.classified(it) })) continue
+            val projection = cloudProjection(person)
             val revision = UUID.randomUUID().toString()
             val body = JSONObject().put("account", scope.first).put("vault", scope.second).put("revision", revision).put("person", encode(person, true)).toString().toByteArray()
             val cipher = try {
@@ -468,11 +488,13 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
                 check(cipher.size <= MAX_REMOTE)
                 staging.writeBytes(cipher)
                 access(scope, token)
+                if (projection != cloudProjection(person)) continue
                 val sent = telegram.sendDocument(staging, "${prefix(scope)}${person.id}:$revision") { _, _ -> }
                 authenticatedBody(sent.copy(marker = "${prefix(scope)}${person.id}:$revision"), scope, token)
                 access(scope, token)
+                person.cloudProjection = projection
                 person.remote = sent.messageId
-                person.dirty = false
+                person.dirty = projection != cloudProjection(person)
                 person.pendingName = false
                 save(scope, token)
             } finally {
@@ -584,7 +606,7 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
                 sourceHashes[id] = contentHash
                 val restored = persons.values.filter { !it.deleted && contentHash in it.photoHashes && contentHash !in it.excludedHashes && drive.privateAi.identity(id) !in it.excludedMembers && contentHash !in it.excludedHashes }
                 val count = hashCounts[contentHash]
-                if (!upgrading && restored.isNotEmpty() && count != null) {
+                if (!upgrading && count != null && (count == 0 || restored.isNotEmpty())) {
                     restored.forEach { if (it.members.add(id) && ForgottenVaultPolicy.validId(id)) it.dirty = true }
                     faceCounts[id] = count
                     scanned[id] = stamp
@@ -653,6 +675,79 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
             } finally {
                 samples.forEach { it.wipe() }
             }
+        }
+    }
+    suspend fun snapshot(id: String, stamp: String): JSONObject? = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val scope = drive.privateVaultBinding()
+            access(scope, generation.get())
+            if (!enabled || restorePending || scanned[id] != stamp || scanQuality[id] != 2 || drive.privateAi.excluded(id, mediaHash(id))) return@withLock null
+            faceCounts[id]?.let { count -> JSONObject().put("model", MODEL).put("count", count).put("people", JSONArray(persons.values.filter { !it.deleted && id in it.members }.map { it.id })) }
+        }
+    }
+    suspend fun reuse(id: String, stamp: String, hash: String, body: JSONObject?) = withContext(Dispatchers.IO) {
+        if (body == null || hash.isBlank()) return@withContext
+        mutex.withLock {
+            val scope = drive.privateVaultBinding()
+            val token = generation.get()
+            access(scope, token)
+            if (!enabled || restorePending || scanModel != MODEL || !drive.normalIntelligenceMedia(id) || drive.privateAi.excluded(id, hash)) return@withLock
+            if (scanned[id] == stamp && scanQuality[id] == 2) return@withLock
+            check(body.getString("model") == MODEL)
+            val count = body.getInt("count")
+            check(count in 0..256)
+            val rows = body.getJSONArray("people")
+            check(rows.length() <= 256)
+            val ids = (0 until rows.length()).map { rows.getString(it) }
+            // Result caches cannot revive deleted/merged/rejected identities or supersede a requested rescan.
+            val identities = ids.mapNotNull { persons[it] }
+            if (count > 0 && (ids.isEmpty() || identities.size != ids.size || identities.any { it.deleted || it.rescanAutomatic || it.embeddingModel != MODEL || hash !in it.photoHashes || hash in it.excludedHashes || drive.privateAi.identity(id) in it.excludedMembers })) return@withLock
+            if (count == 0 && persons.values.any { !it.deleted && (hash in it.photoHashes || it.rescanAutomatic) }) return@withLock
+            identities.forEach { if (it.members.add(id) && ForgottenVaultPolicy.validId(id)) it.dirty = true }
+            sourceHashes[id] = hash
+            hashCounts[hash] = count
+            faceCounts[id] = count
+            scanned[id] = stamp
+            scanQuality[id] = 2
+            changedSinceSave++
+            if (changedSinceSave % 10 == 0) {
+                save(scope, token)
+                publish(scope, token)
+            }
+        }
+    }
+
+    /** Caller supplies a device URI already verified byte-for-byte against this cloud file. */
+    suspend fun linkVerifiedSource(localId: String, localStamp: String, cloudId: String, cloudStamp: String, hash: String) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val scope = drive.privateVaultBinding()
+            val token = generation.get()
+            access(scope, token)
+            if (!enabled || restorePending || scanModel != MODEL || scanned[localId] != localStamp || scanQuality[localId] != 2 || hash.isBlank() || drive.privateAi.excluded(localId, hash) || drive.privateAi.excluded(cloudId, hash)) return@withLock
+            val count = faceCounts[localId] ?: return@withLock
+            val groups = persons.values.filter { !it.deleted && localId in it.members }
+            if (groups.any { it.rescanAutomatic || hash in it.excludedHashes || drive.privateAi.identity(cloudId) in it.excludedMembers }) return@withLock
+            groups.forEach {
+                it.photoHashes += hash
+                it.members += cloudId
+                it.dirty = true
+            }
+            sourceHashes[localId] = hash
+            sourceHashes[cloudId] = hash
+            hashCounts[hash] = count
+            faceCounts[cloudId] = count
+            scanned[cloudId] = cloudStamp
+            scanQuality[cloudId] = 2
+            changedSinceSave++
+        }
+    }
+    suspend fun privacyChanged(hash: String) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val scope = drive.privateVaultBinding()
+            val token = generation.get()
+            access(scope, token)
+            persons.values.filter { hash in it.photoHashes || it.references.any { sample -> sample.contentHash == hash } }.forEach { it.dirty = true }
+            save(scope, token)
         }
     }
     suspend fun finishScan() = withContext(Dispatchers.IO) {

@@ -2,7 +2,6 @@ package app.televault.people
 
 import android.content.Context
 import androidx.work.*
-import app.televault.data.BackgroundBattery
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -42,11 +41,12 @@ internal class FaceModels(context: Context) {
         hash.digest().joinToString("") { "%02x".format(it) }
     }
     fun install() {
-        val work = OneTimeWorkRequestBuilder<FaceModelsWorker>().setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).setRequiresStorageNotLow(true).apply { if (!BackgroundBattery.analysis(app)) setRequiresCharging(true) }.build()).addTag("face-models-v2").build()
-        WorkManager.getInstance(app).enqueueUniqueWork("face-models-v2", ExistingWorkPolicy.KEEP, work)
+        WorkManager.getInstance(app).cancelUniqueWork("face-models-v2")
+        val work = OneTimeWorkRequestBuilder<FaceModelsWorker>().setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).setRequiresStorageNotLow(true).build()).addTag("face-models-v2").build()
+        WorkManager.getInstance(app).enqueueUniqueWork("face-models-v3", ExistingWorkPolicy.KEEP, work)
     }
     fun cancel() {
-        WorkManager.getInstance(app).cancelUniqueWork("face-models-v2")
+        WorkManager.getInstance(app).cancelUniqueWork("face-models-v3")
     }
     suspend fun prepareInstalled(): Boolean = withContext(Dispatchers.IO) {
         gate.withLock {

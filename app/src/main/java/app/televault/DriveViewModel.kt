@@ -111,6 +111,11 @@ class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
                 if (stage == app.televault.data.VaultStage.READY) {
                     try {
                         repository.privateAi.activate()
+                        try {
+                            repository.analysisResults.activate()
+                        } catch (cancel: CancellationException) {
+                            throw cancel
+                        } catch (_: Exception) { /* Derived recovery must not block the available local engines. */ }
                         people.activate(syncRemote = false)
                         ocr.activate()
                         scenes.activate()

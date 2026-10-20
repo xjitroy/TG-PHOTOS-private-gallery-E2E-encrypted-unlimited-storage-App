@@ -104,6 +104,7 @@ internal fun MediaThumbnail(entry: MediaEntry, model: DriveViewModel, modifier: 
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun AlbumsGrid(device: List<AlbumTile>, cloud: List<AlbumTile>, model: DriveViewModel, open: (AlbumTile) -> Unit, create: () -> Unit, modifier: Modifier = Modifier, scopeKey: String = "albums", grid: LazyGridState = remember(scopeKey) { LazyGridState() }, leadingContent: (@Composable () -> Unit)? = null, peopleContent: (@Composable () -> Unit)? = null, deviceOnly: Boolean = false) {
     var touched by remember(grid) { mutableStateOf(false) }
@@ -121,7 +122,10 @@ internal fun AlbumsGrid(device: List<AlbumTile>, cloud: List<AlbumTile>, model: 
         if (!touched && !grid.canScrollBackward) grid.requestScrollToItem(0)
     }
     val primary = remember(device, deviceOnly) { if (deviceOnly) device.filter { primaryDeviceAlbum(it.id, it.folder, it.section, it.collage) } else device }
-    val more = remember(device, primary) { device.filter { it !in primary } }
+    val more = remember(device, primary) { rankMoreAlbums(device.filter { it !in primary }) }
+    val preview = remember(more) { moreAlbumPreview(more) }
+    var showAll by androidx.compose.runtime.saveable.rememberSaveable(scopeKey) { mutableStateOf(false) }
+    var albumSearch by androidx.compose.runtime.saveable.rememberSaveable(scopeKey) { mutableStateOf("") }
     val configuration = LocalConfiguration.current
     val columns = if (configuration.screenWidthDp >= 600) GridCells.Adaptive(144.dp) else GridCells.Fixed(if (deviceOnly && configuration.screenWidthDp >= 360 && configuration.fontScale < 1.35f) 3 else 2)
     LazyVerticalGrid(columns = columns, state = grid, modifier = modifier.then(Modifier.nestedScroll(input)), contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
@@ -130,8 +134,21 @@ internal fun AlbumsGrid(device: List<AlbumTile>, cloud: List<AlbumTile>, model: 
             if (!deviceOnly) item(key = "device-title", span = { GridItemSpan(maxLineSpan) }) { SectionTitle(label("On this device", "এই ডিভাইসে"), label("View all", "সব দেখুন")) { device.firstOrNull { it.section == "All" && it.collage }?.let(open) } }
             items(primary, key = { it.id }) { tile -> AlbumCover(tile, model, Modifier.animateItem(placementSpec = null), square = deviceOnly) { open(tile) } }
             if (more.isNotEmpty()) {
-                item(key = "more-albums-title", span = { GridItemSpan(maxLineSpan) }) { Text(label("More albums", "আরও অ্যালবাম"), style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 10.dp)) }
-                items(more, key = { it.id }) { tile -> AlbumCover(tile, model, Modifier.animateItem(placementSpec = null), square = true) { open(tile) } }
+                item(key = "more-albums-title", span = { GridItemSpan(maxLineSpan) }) {
+                    Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(label("More albums", "আরও অ্যালবাম"), Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
+                        if (more.size > MORE_ALBUM_PREVIEW_LIMIT) {
+                            TextButton({
+                                albumSearch = ""
+                                showAll = true
+                            }) {
+                                Text(label("View all", "সব দেখুন"))
+                                Icon(Icons.Outlined.ChevronRight, null, Modifier.size(18.dp))
+                            }
+                        }
+                    }
+                }
+                items(preview, key = { it.id }) { tile -> AlbumCover(tile, model, Modifier.animateItem(placementSpec = null), square = true) { open(tile) } }
             }
         }
         if (!deviceOnly) {
@@ -153,8 +170,45 @@ internal fun AlbumsGrid(device: List<AlbumTile>, cloud: List<AlbumTile>, model: 
                 items(cloud, key = { "remote:${it.id}" }) { tile -> AlbumCover(tile, model, Modifier.animateItem(placementSpec = null)) { open(tile) } }
             }
         }
-        if (peopleContent != null) item(key = "people", span = { GridItemSpan(maxLineSpan) }) { peopleContent() }
+        if (peopleContent != null) {
+            item(key = "people", span = { GridItemSpan(maxLineSpan) }) {
+                // A lazy-grid item overlays multiple emitted roots. Own one vertical layout
+                // so People and Recently deleted receive separate measured positions.
+                Column(Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) { peopleContent() }
+            }
+        }
         item(key = "bottom-gap", span = { GridItemSpan(maxLineSpan) }) { Spacer(Modifier.height(140.dp)) }
+    }
+    if (showAll) {
+        val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        val scope = rememberCoroutineScope()
+        val close = {
+            scope.launch {
+                sheet.hide()
+                showAll = false
+            }
+            Unit
+        }
+        val matches = remember(more, albumSearch) { more.filter { albumSearch.isBlank() || it.name.contains(albumSearch.trim(), true) || it.folder.orEmpty().contains(albumSearch.trim(), true) } }
+        ModalBottomSheet(onDismissRequest = { showAll = false }, sheetState = sheet) {
+            Column(Modifier.fillMaxWidth().fillMaxHeight(.9f).navigationBarsPadding()) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(label("All folders", "সব ফোল্ডার"), Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
+                    IconButton(close) { Icon(Icons.Outlined.Close, label("Close", "বন্ধ করুন")) }
+                }
+                OutlinedTextField(albumSearch, { albumSearch = it }, Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp), singleLine = true, placeholder = { Text(label("Search folders", "ফোল্ডার খুঁজুন")) }, leadingIcon = { Icon(Icons.Outlined.Search, null) }, trailingIcon = { if (albumSearch.isNotEmpty()) IconButton({ albumSearch = "" }) { Icon(Icons.Outlined.Close, label("Clear search", "সার্চ মুছুন")) } })
+                Text(label("${matches.size} folders · most photos and videos first", "${matches.size}টি ফোল্ডার · বেশি ছবি ও ভিডিও আগে"), Modifier.padding(horizontal = 20.dp, vertical = 4.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (matches.isEmpty()) Text(label("No matching folders", "মিলছে এমন ফোল্ডার নেই"), Modifier.padding(20.dp))
+                LazyVerticalGrid(columns = columns, modifier = Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(20.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                    items(matches, key = { it.id }) { tile ->
+                        AlbumCover(tile, model, Modifier, square = true) {
+                            showAll = false
+                            open(tile)
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

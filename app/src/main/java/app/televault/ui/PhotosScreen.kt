@@ -133,6 +133,9 @@ private suspend fun projectPhotos(input: PhotoProjectionInput, scope: PhotoProje
     }
     val namedFolders = input.albums.asSequence().filter { it.folder }.map { it.name }.toSet()
     val cloudAlbums = buildList {
+        if (scope.tab == PhotoTab.TIMELINE) {
+            add(AlbumTile("cloud:all", scope.allLabel, folders.values.flatten(), cloud = true, collage = true))
+        }
         input.albums.forEach { entry ->
             job.ensureActive()
             val items = (if (entry.folder) folders[entry.name] else albums[entry.id]).orEmpty()
@@ -150,7 +153,7 @@ internal fun sizeLabel(bytes: Long) = when {
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDynamicColor: suspend (Boolean) -> Unit, appearanceMode: AppearanceMode, changeAppearanceMode: suspend (AppearanceMode) -> Unit, interfaceStyle: InterfaceStyle, changeInterfaceStyle: suspend (InterfaceStyle) -> Unit, lockGraceMinutes: Int, changeLockGraceMinutes: suspend (Int) -> Unit, logout: () -> Unit, exportRequestToken: Int = 0, onExportRequestHandled: (Int) -> Unit = {}, incomingMedia: app.televault.IncomingMedia? = null, onIncomingHandled: () -> Unit = {}) {
+internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDynamicColor: suspend (Boolean) -> Unit, appearanceMode: AppearanceMode, changeAppearanceMode: suspend (AppearanceMode) -> Unit, interfaceStyle: InterfaceStyle, changeInterfaceStyle: suspend (InterfaceStyle) -> Unit, lockGraceMinutes: Int, changeLockGraceMinutes: suspend (Int) -> Unit, logout: () -> Unit, exportRequestToken: Int = 0, onExportRequestHandled: (Int) -> Unit = {}, incomingMedia: app.televault.IncomingMedia? = null, onIncomingHandled: () -> Unit = {}, onExternalViewerClosed: (String) -> Unit = {}) {
     val state by model.contentState.collectAsStateWithLifecycle()
     val people by model.people.state.collectAsStateWithLifecycle()
     val textIndex by model.ocr.state.collectAsStateWithLifecycle()
@@ -206,6 +209,7 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
         return
     }
+    val photosFolderMode by model.preferences.photosFolderMode.collectAsStateWithLifecycle(initialValue = initialPosition.section == "Albums")
     val telegramWarningSeen by model.preferences.telegramStorageWarningSeen.collectAsStateWithLifecycle(initialValue = false)
     LaunchedEffect(model) { model.refreshCloudExports() }
     val cooldown by model.preferences.trashCooldownEnabled.collectAsStateWithLifecycle(initialValue = true)
@@ -244,9 +248,11 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
     var viewerEntries by remember { mutableStateOf<List<MediaEntry>?>(null) }
     var incomingBackup by remember { mutableStateOf<List<LocalMedia>?>(null) }
     var incomingBusy by remember { mutableStateOf(false) }
+    var externalRequestId by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(incomingMedia?.id, model.playbackEpoch) {
         val request = incomingMedia ?: return@LaunchedEffect
         incomingBusy = true
+        if (!request.backup) externalRequestId = request.id
         try {
             val items = request.resolve(context)
             if (items.isEmpty()) {
@@ -441,6 +447,7 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
             section = saved?.section ?: when (next) {
                 PhotoTab.GALLERY -> "Albums"
                 PhotoTab.LIBRARY -> "All files"
+                PhotoTab.TIMELINE -> if (photosFolderMode) "Albums" else "All"
                 else -> "All"
             }
             search = saved?.search.orEmpty()
@@ -482,9 +489,10 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
                     } else if (tab == PhotoTab.LIBRARY) {
                         section
                     } else {
-                        "All"
+                        if (tab == PhotoTab.TIMELINE && photosFolderMode) "Albums" else "All"
                     }
                 }
+                tab == PhotoTab.TIMELINE && photosFolderMode && section in setOf("All", "Photos", "Videos", "Favorites") -> section = "Albums"
                 tab == PhotoTab.GALLERY && (section != "Albums" || galleryCloud) -> {
                     galleryCloud = false
                     section = "Albums"
@@ -493,6 +501,11 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
                     PhotoTab.GALLERY -> "Albums"
                     PhotoTab.LIBRARY -> "All files"
                     else -> "All"
+                }
+                externalRequestId != null -> {
+                    val id = externalRequestId!!
+                    externalRequestId = null
+                    onExternalViewerClosed(id)
                 }
                 else -> rootBackPresses++
             }
@@ -778,12 +791,12 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
         val projectionInput = PhotoProjectionInput(state.files, local, storedTrash, state.albums, state.localFavorites, allTrashOrigins)
         val projection = rememberBackgroundProjection(projectionScope, projectionInput, PhotoProjection()) { input -> projectPhotos(input, projectionScope) }
         LaunchedEffect(tab, opening?.id, memoryStory?.key, state.files, local, people.enabled, model.playbackEpoch) {
-            model.intelligenceActive(tab != PhotoTab.VAULT && opening == null && memoryStory == null)
+            model.intelligenceActive(tab != PhotoTab.VAULT)
             delay(1500)
             model.indexPeople(state.files, local)
         }
         LaunchedEffect(tab, opening?.id, memoryStory?.key, state.files, local, textIndex.enabled, model.playbackEpoch) {
-            model.intelligenceActive(tab != PhotoTab.VAULT && opening == null && memoryStory == null)
+            model.intelligenceActive(tab != PhotoTab.VAULT)
             delay(2000)
             model.indexText(state.files, local)
         }
@@ -931,6 +944,22 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
                     Box {
                         IconButton({ overflow = true }) { Icon(Icons.Outlined.MoreVert, label("More", "আরও")) }
                         DropdownMenu(overflow, { overflow = false }) {
+                            if (tab == PhotoTab.TIMELINE) {
+                                listOf(false, true).forEach { foldersMode ->
+                                    DropdownMenuItem(text = { Text(if (foldersMode) label("Folder mode", "ফোল্ডার মোড") else label("Photos mode", "ফটোস মোড")) }, leadingIcon = { Icon(if (foldersMode) Icons.Outlined.Folder else Icons.Outlined.PhotoLibrary, null) }, trailingIcon = { if (photosFolderMode == foldersMode) Icon(Icons.Outlined.Check, null) }, onClick = {
+                                        overflow = false
+                                        scope.launch { model.preferences.setPhotosFolderMode(foldersMode) }
+                                        section = if (foldersMode) "Albums" else "All"
+                                        folder = null
+                                        album = null
+                                        search = ""
+                                        showSearch = false
+                                        selected = emptySet()
+                                    })
+                                }
+                                HorizontalDivider()
+                            }
+
                             DropdownMenuItem(text = { Text(label("Settings", "সেটিংস")) }, leadingIcon = { Icon(Icons.Outlined.Settings, null) }, onClick = {
                                 overflow = false
                                 switchTab(PhotoTab.SETTINGS)
@@ -1009,7 +1038,7 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
                         IconButton({
                             folder = null
                             album = null
-                            section = if (tab == PhotoTab.GALLERY) {
+                            section = if (tab == PhotoTab.GALLERY || tab == PhotoTab.TIMELINE && photosFolderMode) {
                                 "Albums"
                             } else if (tab == PhotoTab.LIBRARY) {
                                 section
@@ -1405,7 +1434,7 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
                                     }
                                     item { FaceResetControls(model) }
                                     item { TextSearchControls(model) }
-                                    item { Text("Automatic indexing continues in the background while Photos is unlocked. It pauses on lock or battery saver and resumes after unlock. Cloud originals wait for an unmetered connection. Private Vault is excluded.", style = MaterialTheme.typography.bodySmall) }
+                                    item { Text("Automatic indexing works on device and cloud media while Photos is unlocked, without app battery-level, battery-saver or Wi-Fi-only limits. Android may still schedule or pause background work. Private Vault is excluded.", style = MaterialTheme.typography.bodySmall) }
                                 }
                                 if (settingsCategory == "About") item { Text("TG Photos ${app.televault.BuildConfig.VERSION_NAME}\nNative Android gallery. Encrypted Telegram backups. Independent Private Vault. Keep passwords and recovery keys safe.", style = MaterialTheme.typography.bodyMedium) }
                                 if (settingsCategory == "Player") item { Text("Set playback speed, audio language, subtitles and fit/fill from the video player's menu. Choose animation duration below.", style = MaterialTheme.typography.bodyMedium) }
@@ -1836,17 +1865,20 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
                                             universalSearch = true
                                         }
                                         if (tab == PhotoTab.GALLERY) {
-                                            TextButton({
-                                                section = "Trash"
-                                                trashScope = TrashScope.DEVICE
-                                                trashFiles = false
-                                                folder = null
-                                                album = null
-                                                selected = emptySet()
-                                            }, Modifier.fillMaxWidth()) {
-                                                Icon(Icons.Outlined.DeleteOutline, null)
-                                                Spacer(Modifier.width(8.dp))
-                                                Text(label("Recently deleted", "সম্প্রতি মুছে ফেলা"))
+                                            AppSurface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+                                                TextButton({
+                                                    section = "Trash"
+                                                    trashScope = TrashScope.DEVICE
+                                                    trashFiles = false
+                                                    folder = null
+                                                    album = null
+                                                    selected = emptySet()
+                                                }, Modifier.fillMaxWidth()) {
+                                                    Icon(Icons.Outlined.DeleteOutline, null)
+                                                    Spacer(Modifier.width(8.dp))
+                                                    Text(label("Recently deleted", "সম্প্রতি মুছে ফেলা"), Modifier.weight(1f))
+                                                    Icon(Icons.Outlined.ChevronRight, null)
+                                                }
                                             }
                                         }
                                     }
@@ -2301,6 +2333,7 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
             }
         }
         opening?.let { entry ->
+            val externalId = externalRequestId
             CompositionLocalProvider(LocalExploreFeed provides exploreShorts, LocalExploreMode provides exploreMode.orEmpty()) {
                 MediaViewer(
                     entry,
@@ -2312,8 +2345,12 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
                         universalSearch = true
                     },
                     close = {
-                        opening = null
-                        exploreShorts = false
+                        if (externalRequestId == externalId) {
+                            opening = null
+                            exploreShorts = false
+                            externalRequestId = null
+                            if (externalId != null) onExternalViewerClosed(externalId)
+                        }
                     },
                     choose = { opening = it },
                     viewed = { item -> if (tab != PhotoTab.VAULT && !exploreShorts) lastViewedId = item.id },

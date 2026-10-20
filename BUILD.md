@@ -1,3 +1,7 @@
+# Public Universal1.20.40/code52
+
+Free photo/video editing reuses bundled Android Graphics and Media3; no new SDK/model/dependency. Existing verified AI packs auto-download independently of backup and have no app battery/Wi-Fi-only gate. Preserve the public signer, keys/ciphers/Room1/sessions and old artifacts. Build `-PtgUniversalOnly=true :app:assembleRelease :app:lintRelease`. Native acceptance remains unverified.
+
 # Public Universal1.20.39/code51
 
 Use the existing public signing identity to install over the previous public build. No new models or dependencies are added. Build with `-PtgUniversalOnly=true :app:assembleRelease :app:lintRelease`; this does not establish real-phone recognition, rendering or gesture acceptance.

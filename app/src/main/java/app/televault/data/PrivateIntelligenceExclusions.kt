@@ -31,9 +31,21 @@ internal class PrivateIntelligenceExclusions(private val context: Context, priva
     }
     fun identity(id: String): String = IntelligencePrivacy.identity(id, installation)
     fun localId(id: String): String = id.removePrefix("local/$installation/")
+    fun blockedHashes(): Set<String> {
+        val scope = drive.privateVaultBinding()
+        access(scope)
+        return current.hashes.toSet()
+    }
     fun hasExclusions(): Boolean = current.ids.isNotEmpty() || current.hashes.isNotEmpty()
 
     @Volatile private var current = PrivateAiScope()
+
+    @Volatile private var restored = false
+    fun analysisReady(): Boolean {
+        val scope = drive.privateVaultBinding()
+        val value = current
+        return restored && value.loaded && value.owner == scope.first && value.vault == scope.second
+    }
 
     @Volatile private var cleanupPending = false
     fun needsCleanup(): Boolean = cleanupPending
@@ -72,7 +84,7 @@ internal class PrivateIntelligenceExclusions(private val context: Context, priva
     }
     private fun save(scope: Pair<Long, String>) {
         access(scope)
-        val body = JSONObject().put("version", 1).put("ids", JSONArray(current.ids.sorted())).put("hashes", JSONArray(current.hashes.sorted())).put("seen", JSONArray(seen.sorted())).put("cleanupPending", cleanupPending).put("pending", JSONArray(pending.values.map { it.json() })).toString().toByteArray()
+        val body = JSONObject().put("version", 1).put("restored", restored).put("ids", JSONArray(current.ids.sorted())).put("hashes", JSONArray(current.hashes.sorted())).put("seen", JSONArray(seen.sorted())).put("cleanupPending", cleanupPending).put("pending", JSONArray(pending.values.map { it.json() })).toString().toByteArray()
         try {
             check(body.size <= 12 * 1024 * 1024)
             val cipher = drive.intelligencePrivacyEnvelope(body, "local", scope, false)
@@ -106,6 +118,7 @@ internal class PrivateIntelligenceExclusions(private val context: Context, priva
         seen.clear()
         pending.clear()
         cleanupPending = false
+        restored = false
         var ids = emptySet<String>()
         var hashes = emptySet<String>()
         val target = file(scope)
@@ -123,6 +136,7 @@ internal class PrivateIntelligenceExclusions(private val context: Context, priva
                 ids = strings(body, "ids", 50000, 4096)
                 hashes = strings(body, "hashes", 50000, 128)
                 cleanupPending = body.optBoolean("cleanupPending")
+                restored = body.optBoolean("restored", false)
                 seen += strings(body, "seen", 50000, 36)
                 val outbox = body.getJSONArray("pending")
                 check(outbox.length() <= 50000)
@@ -206,6 +220,9 @@ internal class PrivateIntelligenceExclusions(private val context: Context, priva
                 pending.remove(id)
                 save(scope)
             }
+            access(scope)
+            restored = true
+            save(scope) // Complete authenticated remote exclusions restore before any new inference.
             for (op in pending.values.toList()) {
                 access(scope)
                 val body = JSONObject().put("account", scope.first).put("vault", scope.second).put("operation", op.json()).toString().toByteArray()
@@ -240,6 +257,7 @@ internal class PrivateIntelligenceExclusions(private val context: Context, priva
         }
     }
     fun lock() {
+        restored = false
         synchronized(publication) {
             generation.incrementAndGet()
             sessionToken = -1

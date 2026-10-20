@@ -24,7 +24,7 @@ import kotlinx.coroutines.*
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-internal fun MediaEditorSheet(item: MediaEntry, prepared: Uri, model: DriveViewModel, close: () -> Unit, saved: (MediaEntry) -> Unit) {
+internal fun MediaEditorSheet(item: MediaEntry, prepared: Uri, model: DriveViewModel, close: () -> Unit, saved: (MediaEntry) -> Unit, external: (() -> Unit)? = null) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val image = item.mime.startsWith("image/")
@@ -35,6 +35,14 @@ internal fun MediaEditorSheet(item: MediaEntry, prepared: Uri, model: DriveViewM
     var ratio by remember { mutableFloatStateOf(0f) }
     var exposure by remember { mutableFloatStateOf(0f) }
     var saturation by remember { mutableFloatStateOf(1f) }
+    var contrast by remember { mutableFloatStateOf(1f) }
+    var warmth by remember { mutableFloatStateOf(0f) }
+    var mirror by remember { mutableStateOf(false) }
+    var caption by remember { mutableStateOf("") }
+    var compareOriginal by remember { mutableStateOf(false) }
+    var exportPixels by remember { mutableLongStateOf(4_000_000) }
+    var exportHeight by remember { mutableIntStateOf(0) }
+    var preciseTrim by remember { mutableStateOf(true) }
     var range by remember { mutableStateOf(0f..1f) }
     var duration by remember { mutableLongStateOf(0L) }
     var mute by remember { mutableStateOf(false) }
@@ -75,10 +83,10 @@ internal fun MediaEditorSheet(item: MediaEntry, prepared: Uri, model: DriveViewM
             failure = "This file cannot be edited with the supported device codec. Original unchanged."
         }
     }
-    LaunchedEffect(original, rotation, ratio, exposure, saturation) {
+    LaunchedEffect(original, rotation, ratio, exposure, saturation, contrast, warmth, mirror, caption) {
         val bitmap = original ?: return@LaunchedEffect
         delay(120)
-        preview = withContext(Dispatchers.Default) { MediaEditCopies.adjust(bitmap, rotation, ratio, exposure, saturation) }
+        preview = withContext(Dispatchers.Default) { MediaEditCopies.adjust(bitmap, rotation, ratio, exposure, saturation, contrast, warmth, mirror, caption) }
     }
     val extension = if (image) "png" else "mp4"
     val save = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(if (image) "image/png" else "video/mp4")) { uri ->
@@ -90,11 +98,28 @@ internal fun MediaEditorSheet(item: MediaEntry, prepared: Uri, model: DriveViewM
                 failure = ""
                 try {
                     if (image) {
-                        MediaEditCopies.saveImage(context, input, uri, checkNotNull(bitmap))
-                    } else if (ratio == 0f && exposure == 0f && !grayscale && gain == 1f) {
+                        if (exportPixels <= 4_000_000) {
+                            MediaEditCopies.saveImage(context, input, uri, checkNotNull(bitmap))
+                        } else {
+                            withContext(Dispatchers.Default) {
+                                val detail = MediaEditCopies.image(context, input, exportPixels)
+                                try {
+                                    val rendered = MediaEditCopies.adjust(detail, rotation, ratio, exposure, saturation, contrast, warmth, mirror, caption)
+                                    try {
+                                        MediaEditCopies.saveImage(context, input, uri, rendered)
+                                    } finally {
+                                        rendered.eraseColor(0)
+                                        rendered.recycle()
+                                    }
+                                } finally {
+                                    detail.recycle()
+                                }
+                            }
+                        }
+                    } else if (!preciseTrim && ratio == 0f && exposure == 0f && !grayscale && gain == 1f && contrast == 1f && warmth == 0f && !mirror && exportHeight == 0) {
                         MediaEditCopies.saveVideo(context, input, uri, (range.start * duration).toLong(), (range.endInclusive * duration).toLong(), rotation, mute)
                     } else {
-                        app.televault.data.VideoEditExport.save(context, input, uri, (range.start * duration).toLong(), (range.endInclusive * duration).toLong(), rotation, ratio, videoWidth, videoHeight, exposure, grayscale, gain, mute) { exportProgress = it }
+                        app.televault.data.VideoEditExport.save(context, input, uri, (range.start * duration).toLong(), (range.endInclusive * duration).toLong(), rotation, ratio, videoWidth, videoHeight, exposure, grayscale, gain, mute, contrast, warmth, mirror, exportHeight) { exportProgress = it }
                     }
                     val now = System.currentTimeMillis()
                     val local = withContext(Dispatchers.IO) {
@@ -106,6 +131,8 @@ internal fun MediaEditorSheet(item: MediaEntry, prepared: Uri, model: DriveViewM
                     close()
                 } catch (e: CancellationException) {
                     throw e
+                } catch (_: OutOfMemoryError) {
+                    failure = "Not enough memory for this export. Choose Balanced photo detail or a lower video resolution and retry. Original unchanged."
                 } catch (_: Exception) {
                     failure = "Could not export. Choose a writable local folder and supported format. Original unchanged."
                 } finally {
@@ -120,8 +147,17 @@ internal fun MediaEditorSheet(item: MediaEntry, prepared: Uri, model: DriveViewM
             Text(label("The original is never replaced. Saved copies stay local until you back them up.", "মূল ফাইল কখনো বদলাবে না। ব্যাকআপ না করা পর্যন্ত সেভ করা কপি লোকাল থাকবে।"), style = MaterialTheme.typography.bodySmall)
             if (failure.isNotEmpty()) Text(failure, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             if (image) {
-                preview?.let { Image(it.asImageBitmap(), item.name, Modifier.fillMaxWidth().height(220.dp), contentScale = ContentScale.Fit) }
-                Text(label("Rotate, center crop and adjust. Edited image copies are limited to 4 megapixels to bound memory use.", "রোটেট, মাঝখান থেকে crop ও adjust করুন। মেমোরি নিয়ন্ত্রণে এডিট করা কপি সর্বোচ্চ ৪ মেগাপিক্সেল।"), style = MaterialTheme.typography.bodySmall)
+                (if (compareOriginal) original else preview)?.let { Image(it.asImageBitmap(), item.name, Modifier.fillMaxWidth().height(220.dp), contentScale = ContentScale.Fit) }
+                Text(label("Preview uses a memory-safe copy. Choose Balanced (up to 4 MP) or High detail (up to 16 MP) for the saved PNG. Original stays unchanged.", "প্রিভিউতে মেমোরি নিয়ন্ত্রণে ছোট কপি ব্যবহৃত হয়। PNG সেভে Balanced (সর্বোচ্চ ৪ MP) বা High detail (সর্বোচ্চ ১৬ MP) বাছুন। মূল ফাইল অক্ষত থাকবে।"), style = MaterialTheme.typography.bodySmall)
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    Text(label("Before / after", "আগে / পরে"), Modifier.weight(1f))
+                    Switch(compareOriginal, { compareOriginal = it })
+                }
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(exportPixels == 4_000_000L, { exportPixels = 4_000_000 }, enabled = !busy, label = { Text("Balanced · 4 MP") })
+                    FilterChip(exportPixels == 16_000_000L, { exportPixels = 16_000_000 }, enabled = !busy, label = { Text("High detail · 16 MP") })
+                }
+                OutlinedTextField(caption, { caption = it.take(120) }, Modifier.fillMaxWidth(), enabled = !busy, singleLine = true, label = { Text(label("Caption", "ছবিতে লেখা")) })
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(0f to "Fit", 1f to "1:1", 4f / 3f to "4:3", 16f / 9f to "16:9").forEach { (value, title) -> FilterChip(ratio == value, { ratio = value }, enabled = !busy, label = { Text(title) }) }
                 }
@@ -130,7 +166,7 @@ internal fun MediaEditorSheet(item: MediaEntry, prepared: Uri, model: DriveViewM
                 Text(label("Color", "রং"))
                 Slider(saturation, { saturation = it }, valueRange = 0f..2f, enabled = !busy)
             } else {
-                source?.let { VideoEditPreview(it, duration, range, rotation, ratio, videoWidth, videoHeight, exposure, grayscale, gain, mute) }
+                source?.let { VideoEditPreview(it, duration, range, rotation, ratio, videoWidth, videoHeight, exposure, grayscale, gain, mute, contrast, warmth, mirror, exportHeight) }
                 Text(label("Trim and rotate keep encoded tracks when possible. Crop, color or volume exports an H.264/AAC copy using your device codec; subtitles are not exported.", "সম্ভব হলে trim ও rotate-এ encoded track রাখা হয়। Crop, রং বা volume বদলালে ফোনের codec দিয়ে H.264/AAC কপি সেভ হবে; সাবটাইটেল export হয় না।"), style = MaterialTheme.typography.bodySmall)
                 FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     listOf(0f to "Fit", 1f to "1:1", 9f / 16f to "9:16", 16f / 9f to "16:9").forEach { (value, title) -> FilterChip(ratio == value, { ratio = value }, enabled = !busy && (value == 0f || videoWidth > 0 && videoHeight > 0), label = { Text(title) }) }
@@ -143,11 +179,48 @@ internal fun MediaEditorSheet(item: MediaEntry, prepared: Uri, model: DriveViewM
                 }
                 Text(label("Volume", "ভলিউম") + " · ${(gain * 100).toInt()}%")
                 Slider(gain, { gain = it }, valueRange = 0f..2f, enabled = !busy && !mute)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(0 to "Source", 720 to "720p", 1080 to "1080p").forEach { (height, title) -> FilterChip(exportHeight == height, { exportHeight = height }, enabled = !busy, label = { Text(title) }) }
+                }
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    Checkbox(preciseTrim, { preciseTrim = it }, enabled = !busy)
+                    Text(label("Precise trim · re-encode", "নির্ভুল trim · নতুন করে encode"))
+                }
                 Text("${(range.start * duration / 1000).toLong()}s – ${(range.endInclusive * duration / 1000).toLong()}s")
                 RangeSlider(range, { range = it }, enabled = !busy && duration > 0)
                 Row {
                     Checkbox(mute, { mute = it }, enabled = !busy)
                     Text(label("Remove audio from copy", "কপি থেকে অডিও সরান"))
+                }
+            }
+            Text(label("Contrast", "কনট্রাস্ট"))
+            Slider(contrast, { contrast = it }, valueRange = 0f..2f, enabled = !busy)
+            Text(label("Warmth", "রঙের উষ্ণতা"))
+            Slider(warmth, { warmth = it }, valueRange = -1f..1f, enabled = !busy)
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Checkbox(mirror, { mirror = it }, enabled = !busy)
+                Text(label("Flip horizontally", "ডান-বাম উল্টান"))
+            }
+            TextButton({
+                rotation = 0
+                ratio = 0f
+                exposure = 0f
+                saturation = 1f
+                contrast = 1f
+                warmth = 0f
+                mirror = false
+                caption = ""
+                range = 0f..1f
+                gain = 1f
+                mute = false
+                grayscale = false
+                compareOriginal = false
+            }, enabled = !busy) { Text(label("Reset adjustments", "সব পরিবর্তন রিসেট")) }
+            if (external != null) {
+                TextButton(external, enabled = !busy) {
+                    Icon(Icons.Outlined.OpenInNew, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(label("Edit in another app", "অন্য অ্যাপে এডিট"))
                 }
             }
             OutlinedButton({ rotation = (rotation + 1) % 4 }, enabled = !busy) {
@@ -157,7 +230,7 @@ internal fun MediaEditorSheet(item: MediaEntry, prepared: Uri, model: DriveViewM
             Button({
                 val name = item.name.substringBeforeLast('.', item.name).take(80) + "_edited_${System.currentTimeMillis()}_${UUID.randomUUID().toString().take(6)}.$extension"
                 save.launch(name)
-            }, Modifier.fillMaxWidth().heightIn(min = 50.dp), enabled = !busy && source != null && (if (image) preview != null else duration > 0 && range.endInclusive - range.start > .005f)) { Text(if (busy) label("Saving copy…", "কপি সেভ হচ্ছে…") + exportProgress?.let { " $it%" }.orEmpty() else label("Save as copy", "কপি হিসেবে সেভ")) }
+            }, Modifier.fillMaxWidth().heightIn(min = 50.dp), enabled = !busy && source != null && (if (image) preview != null else duration > 0 && (range.endInclusive - range.start) * duration >= 250)) { Text(if (busy) label("Saving copy…", "কপি সেভ হচ্ছে…") + exportProgress?.let { " $it%" }.orEmpty() else label("Save as copy", "কপি হিসেবে সেভ")) }
             Spacer(Modifier.height(24.dp))
         }
     }
@@ -165,7 +238,7 @@ internal fun MediaEditorSheet(item: MediaEntry, prepared: Uri, model: DriveViewM
 
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
-private fun VideoEditPreview(source: Uri, duration: Long, range: ClosedFloatingPointRange<Float>, rotation: Int, ratio: Float, width: Int, height: Int, brightness: Float, grayscale: Boolean, gain: Float, mute: Boolean) {
+private fun VideoEditPreview(source: Uri, duration: Long, range: ClosedFloatingPointRange<Float>, rotation: Int, ratio: Float, width: Int, height: Int, brightness: Float, grayscale: Boolean, gain: Float, mute: Boolean, contrast: Float, warmth: Float, mirror: Boolean, exportHeight: Int) {
     val context = LocalContext.current
     val owner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     val player = remember(source) {
@@ -175,9 +248,9 @@ private fun VideoEditPreview(source: Uri, duration: Long, range: ClosedFloatingP
         }
     }
     var previewFailure by remember(source) { mutableStateOf(false) }
-    LaunchedEffect(player, rotation, ratio, width, height, brightness, grayscale, gain, mute) {
+    LaunchedEffect(player, rotation, ratio, width, height, brightness, grayscale, gain, mute, contrast, warmth, mirror, exportHeight) {
         delay(120)
-        val effects = app.televault.data.VideoEditExport.effects(rotation, ratio.takeIf { width > 0 && height > 0 } ?: 0f, width, height, brightness, grayscale, gain)
+        val effects = app.televault.data.VideoEditExport.effects(rotation, ratio.takeIf { width > 0 && height > 0 } ?: 0f, width, height, brightness, grayscale, gain, contrast, warmth, mirror, exportHeight)
         previewFailure = runCatching { player.setVideoEffects(effects.videoEffects) }.isFailure
         player.volume = if (mute) 0f else gain.coerceAtMost(1f)
     }
