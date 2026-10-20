@@ -1,0 +1,7 @@
+{
+  "scope": "Selected Java collection/string/Stream factories and record backport references in hardened DEX; not device acceptance",
+  "unsupportedFactoryReferences": [],
+  "unsupportedRecordTypes": [],
+  "minSdk": 26,
+  "productionVerified": false
+}
