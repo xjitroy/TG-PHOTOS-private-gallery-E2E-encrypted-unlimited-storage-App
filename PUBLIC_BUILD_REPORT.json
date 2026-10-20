@@ -1,8 +1,8 @@
 {
-  "version": "1.20.36",
-  "code": 48,
+  "version": "1.20.37",
+  "code": 49,
   "checks": {
-    "distinctHostTests": 570,
+    "distinctHostTests": 575,
     "suites": {
       "domain": {
         "tests": 322,
@@ -23,33 +23,33 @@
         "skipped": 0
       },
       "app": {
-        "tests": 179,
+        "tests": 184,
         "failures": 0,
         "errors": 0,
         "skipped": 0
       }
     },
     "lintErrors": 0,
-    "lintWarnings": 107,
+    "lintWarnings": 108,
     "finalLintVerified": true,
     "localChecks": 8,
-    "nativeAcceptance": "Unavailable: no attached Android target; cloud has no emulator/system image/KVM/USB; native adb configuration read-only. Affected-phone video/crash/restore/biometric/OEM/frame/audio behavior not verified.",
+    "nativeAcceptance": "Unavailable: no attached Android target or emulator/KVM; native rendering/gesture/frame/codec/OEM acceptance pending.",
     "independentSecurityAudit": "Not performed; scoped source self-review only",
-    "runtimeModelPins": "Existing face/OCR/subject/runtime packs preserved; no natural-language model installed",
+    "runtimeModelPins": "Existing face/OCR/subject/runtime packs preserved; no new model installed",
     "privateDataReset": false,
     "privateApkBuilt": false,
-    "regressions": "Metadata-only backup candidate indexing, whole-byte identity and renamed/retired cases; blocked-source/storage retry policy; honest byte progress; standard audio path with optional isolated native effect; one-shot foreground fallback/error classification; bounded authenticated and sparse5/10GiB seeks; prior load/lock/backup/crypto/UI regressions"
+    "regressions": "Shared compact overlay cannot cover a returning introduction, repeated section resets; real lazy-index/date mapping with10001 targets in a one-million-item virtual timeline; prior575 host playback/backup/crypto/lock/geometry regressions"
   },
   "artifact": {
-    "apk": "TG-Photos-1.20.36-universal.apk",
-    "bytes": 88370238,
-    "sha256": "4d5b1b022875cbe85cf6a3fed95ff0c5b13f5151771d5761e6c9abca1cb59d06",
-    "versionCode": 48,
-    "versionName": "1.20.36",
+    "apk": "TG-Photos-1.20.37-universal.apk",
+    "bytes": 88376302,
+    "sha256": "b9f1f4fb52f57106bcd2608f51e32889bbca21b8278b4afd24895312344a3b7b",
+    "versionCode": 49,
+    "versionName": "1.20.37",
     "package": "app.televault.photos",
     "distribution": "public",
-    "sourceCommit": "9bc2300225c72ae41d52f3eeb40b4f3e52947b17",
-    "sourceTree": "c5ce584a922243715ea9921e9c2c59c4549fa91a",
+    "sourceCommit": "788269af437dfe81e7ec6e40dc2c454863fe5962",
+    "sourceTree": "c73c1fdac752ce24847b8507615c81451285cf7b",
     "certificateSHA256": "3e7c1029cb5e2da80026758abd483b5bd7f0551b6a56bee6b21640b8ae774559",
     "debuggable": false,
     "productionVerified": false,

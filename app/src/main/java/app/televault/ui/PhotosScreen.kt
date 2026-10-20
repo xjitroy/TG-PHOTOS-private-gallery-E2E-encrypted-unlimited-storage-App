@@ -32,6 +32,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.*
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -379,19 +380,31 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
             resumeLifecycle.addObserver(observer)
             onDispose { resumeLifecycle.removeObserver(observer) }
         }
-        val photoChrome = remember(tab, section, folder, album, libraryDevice, galleryCloud) { app.televault.domain.PhotoChromePolicy() }
-        var photoChromeMode by remember(tab, section, folder, album, libraryDevice, galleryCloud) { mutableStateOf(app.televault.domain.PhotoChromePolicy.Mode.EXPANDED) }
+        val chromeDensity = LocalDensity.current.density
+        val photoChrome = remember(tab, section, folder, album, libraryDevice, galleryCloud, timelineGrid, browseList, usesBrowseList, chromeDensity) {
+            BrowseChromeState(
+                { if (usesBrowseList) !browseList.canScrollBackward else !timelineGrid.canScrollBackward },
+                { if (usesBrowseList) browseList.firstVisibleItemIndex > 0 else timelineGrid.firstVisibleItemIndex > 0 },
+                chromeDensity
+            )
+        }
         LaunchedEffect(timelineGrid, browseList, usesBrowseList, isBrowse) {
             snapshotFlow { if (usesBrowseList) !browseList.canScrollBackward else !timelineGrid.canScrollBackward }.collect { atTop ->
                 if (atTop) {
                     photoChrome.reset()
-                    photoChromeMode = app.televault.domain.PhotoChromePolicy.Mode.EXPANDED
                 }
             }
         }
+        val introductionCleared by remember(timelineGrid, browseList, usesBrowseList) {
+            derivedStateOf {
+                if (usesBrowseList) browseList.firstVisibleItemIndex > 0 else timelineGrid.firstVisibleItemIndex > 0
+            }
+        }
+        var compactChromeHeight by remember(tab, section, folder, album) { mutableStateOf(0.dp) }
         val compactChromeTransition = remember(tab, section, folder, album) { androidx.compose.animation.core.MutableTransitionState(false) }
-        compactChromeTransition.targetState = isBrowse && tab != PhotoTab.VAULT && !fileLibrary && selected.isEmpty() && photoChromeMode == app.televault.domain.PhotoChromePolicy.Mode.COMPACT
-        val showTimelineDates = !compactChromeTransition.currentState && !compactChromeTransition.targetState
+        // Reverse scrolling must not put a second filter bar over the returning title.
+        compactChromeTransition.targetState = isBrowse && tab != PhotoTab.VAULT && !fileLibrary && selected.isEmpty() && photoChrome.compactVisible
+        val showTimelineDates = !compactChromeTransition.targetState
         val statusPull = remember(tab, section, selected.isEmpty(), headerScroll, edgeReveal, photoChrome, timelineGrid, browseList, usesBrowseList, isBrowse, isPhotoTimeline) {
             object : NestedScrollConnection {
                 override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
@@ -403,7 +416,7 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
                     if (!isBrowse) return headerScroll.nestedScrollConnection.onPostScroll(consumed, available, source)
                     if (source == NestedScrollSource.UserInput) {
                         if (consumed.y + available.y != 0f) initialScrollInterrupted = true
-                        photoChromeMode = photoChrome.scroll((consumed.y + available.y) / context.resources.displayMetrics.density, (if (usesBrowseList) !browseList.canScrollBackward else !timelineGrid.canScrollBackward))
+                        photoChrome.connection.onPostScroll(consumed, available, source)
                         if (consumed.y + available.y < 0) backupStatusVisible = false
                         if (isPhotoTimeline && edgeReveal.pull(available.y, !timelineGrid.canScrollBackward)) backupStatusVisible = true
                     }
@@ -1051,7 +1064,12 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
                     }
                 } else if (!fileLibrary && tab != PhotoTab.VAULT) {
                     if (tab in setOf(PhotoTab.TIMELINE, PhotoTab.GALLERY) && section !in setOf("Trash", "Transfers")) MediaFilterBar(mediaFilters)
-                    if ((tab == PhotoTab.LIBRARY || section !in setOf("Albums", "Folders", "Trash", "Transfers"))) {
+                    if (tab != PhotoTab.LIBRARY && section !in setOf("Albums", "Folders", "Trash", "Transfers")) {
+                        PhotoSectionPills(section, { key ->
+                            section = key
+                            selected = emptySet()
+                        }, Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
+                    } else if (tab == PhotoTab.LIBRARY) {
                         Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             (if (tab == PhotoTab.LIBRARY) listOf("All files", "Documents", "Audio", "Transfers") else listOf("All", "Photos", "Videos", "Favorites")).forEach { key ->
                                 FilterChip(section == key, {
@@ -1875,7 +1893,10 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
                                     } else {
                                         MediaGrid(
                                             visible, selected, model, deviceContext, click, hold, density, { density = it }, grid = timelineGrid, mosaic = mosaicLayout, selectionChanged = { selectVisible(it) },
-                                            leadingContent = if (isBrowse) browsingIntroduction else null, showDateHeaders = showTimelineDates
+                                            leadingContent = if (isBrowse) browsingIntroduction else null, showDateHeaders = showTimelineDates, onFastScroll = {
+                                                initialScrollInterrupted = true
+                                                clearReturnFocus()
+                                            }, fastScrollTop = if (compactChromeTransition.targetState || compactChromeTransition.currentState) compactChromeHeight else 0.dp
                                         )
                                     }
                                 }
@@ -1883,18 +1904,20 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
                         }
                     }
                 }
-                androidx.compose.animation.AnimatedVisibility(compactChromeTransition, Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 8.dp, start = 16.dp, end = 16.dp), enter = androidx.compose.animation.fadeIn(), exit = androidx.compose.animation.fadeOut()) {
-                    if (isPhotoTimeline) {
-                        PhotoSectionPills(section, choosePhotoSection)
-                    } else {
-                        AppSurface(shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, shadowElevation = 4.dp) {
-                            Column {
-                                if (!isPhotoTimeline && section != "Trash") MediaFilterBar(mediaFilters)
-                                if (section !in setOf("Albums", "Folders", "Trash")) {
-                                    PhotoSectionPills(section, { key ->
-                                        section = key
-                                        selected = emptySet()
-                                    })
+                androidx.compose.animation.AnimatedVisibility(compactChromeTransition, Modifier.align(Alignment.TopCenter).then(Modifier.onSizeChanged { compactChromeHeight = with(context.resources.displayMetrics.density) { (it.height / this).dp } }).statusBarsPadding().padding(top = 8.dp, start = 16.dp, end = 16.dp), enter = androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(180)) + androidx.compose.animation.slideInVertically(androidx.compose.animation.core.tween(180)) { -it / 8 }, exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(140))) {
+                    if (introductionCleared) {
+                        if (isPhotoTimeline) {
+                            PhotoSectionPills(section, choosePhotoSection)
+                        } else {
+                            AppSurface(shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, shadowElevation = 4.dp) {
+                                Column {
+                                    if (!isPhotoTimeline && section != "Trash") MediaFilterBar(mediaFilters)
+                                    if (section !in setOf("Albums", "Folders", "Trash")) {
+                                        PhotoSectionPills(section, { key ->
+                                            section = key
+                                            selected = emptySet()
+                                        })
+                                    }
                                 }
                             }
                         }

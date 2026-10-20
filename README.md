@@ -1,4 +1,18 @@
+# TG Photos1.20.37 — stable timeline and fast scroll
+
+TG Photos1.20.37 keeps timeline date/header geometry unchanged when compact controls appear. Date labels fade over180ms instead of removing and reinserting sticky rows, so reverse scrolling does not change the height of every photo/document group.
+
+Compact controls are eligible only after the introduction has left the viewport. The same scroll policy covers Photos, Albums, file lists and the unlocked Vault gallery; returning to the introduction suppresses the duplicate overlay. Reverse controls use a short fade/slide without resizing the list viewport.
+
+Categories, Clean view and Movies wrap within the available width instead of clipping inside a horizontal strip. All/Photos/Videos/Favorites fills its available width with equal touch targets and an animated selected color; narrow windows or large text use two rows. Existing category selection, hidden categories, Clean view, Movies threshold and all filter actions remain.
+
+Compatible public Universal1.20.37/code49, Android8+, all4ABIs and the existing public signer. No feature, data, key, cipher, Room schema, session path, model pack, backup policy or prior artifact is removed or reset. No new model is installed. Existing1.20.36 playback compatibility, bounded5/10GiB reads and authenticated backup matching remain.
+
+Verification uses host regression tests, source review and signed artifact checks. There is no runnable Android target/emulator/KVM here; exact rendered animation, small-screen/large-font layout, frame timing, affected-phone crashes, codecs and OEM behavior remain unverified. No permanent crash-free or zero-latency claim.
+
 Standard Media3 audio output is restored for video playback; optional native200percent gain cannot prevent normal playback. Unsupported formats have a bounded foreground Open with fallback. Synthetic5/10GiB range/authenticated-seek tests are host checks; actual device codec/HEVC/frame acceptance remains pending.
+
+The right-edge draggable fast-scroll handle appears for scrollable photo/video grids with at least100 entries, including Photos, Albums and shared search results. It shows the target date while dragging, maps real lazy indices including mosaic blocks/date headings, uses a conflated latest-target channel and bounded immediate seeks rather than animating through an entire large library. A48dp thumb target leaves the rest of the gallery gestures available, and accessibility supports set-progress. Selection hides the handle; direct user scrubbing interrupts an outstanding initial-position restore. No extra polling/network/model work is introduced. Host mapping tests exercise one million lazy items and10001 seek positions; native gesture/frame acceptance remains pending.
 
 # TG Photos1.20.36 — metadata-first existing-copy checks
 
@@ -28,7 +42,7 @@ Compatible public Universal1.20.35/code47, Android8+. Automated tests/static art
 
 Native Android photo gallery, encrypted Telegram backups, media player, file management and an independent Private Vault. Android8.0+; One Universal APK includes ARM64, ARMv7, x86 and x86_64 with the same app and signing identity.
 
-[Download public APK](https://github.com/xjitroy/TG-PHOTOS-private-gallery-E2E-encrypted-unlimited-storage-App/tree/apk-downloads/public-1.20.34) · [Build source](BUILD.md) · [Privacy](PRIVACY.md) · [Security](SECURITY.md)
+[Download public APK](https://github.com/xjitroy/TG-PHOTOS-private-gallery-E2E-encrypted-unlimited-storage-App/tree/apk-downloads/public-1.20.37) · [Build source](BUILD.md) · [Privacy](PRIVACY.md) · [Security](SECURITY.md)
 
 Settings offer independent last-folder and viewed-item return switches. Limited backup starts at250MB/day with Camera videos up to2minutes; explicit manual Upload ignores these limits. No limit requires confirmation of an unlimited internet plan. Fully viewed Memories dim subtly. Existing saved settings and backup-folder grants are retained. A one-time feature tour precedes the Telegram-file notice; setup asks before enabling Camera backup, and the status card links to enable/manage it. Downloads have no daily app data allowance.
 

@@ -1,11 +1,11 @@
 {
-  "version": "1.20.36",
-  "code": 48,
-  "compiledSourceCommit": "9bc2300225c72ae41d52f3eeb40b4f3e52947b17",
+  "version": "1.20.37",
+  "code": 49,
+  "compiledSourceCommit": "788269af437dfe81e7ec6e40dc2c454863fe5962",
   "files": [
     {
       "path": "app/build.gradle.kts",
-      "sha256": "c9fda991f64897dcd345589713ae7229cbda1c8fa1dfba3ac2d8d254dec6264c"
+      "sha256": "bc5b35fdf4aa7804c85550654401ca9be372eb5133ef1ecc3deb98d18c4b9f94"
     },
     {
       "path": "app/libs/onnxruntime-android-1.22.0.aar",
@@ -573,7 +573,7 @@
     },
     {
       "path": "app/src/main/java/app/televault/ui/BrowseChrome.kt",
-      "sha256": "f2aec5efd5a4920ae570d5f8223c9d340e90ee0316b1cb34e8cb17946bf657a5"
+      "sha256": "e4e004acb274118fa31eae7492611136283998165abaf9b4b73ff7f5ae54106d"
     },
     {
       "path": "app/src/main/java/app/televault/ui/BrowseFocus.kt",
@@ -641,7 +641,7 @@
     },
     {
       "path": "app/src/main/java/app/televault/ui/FileLibrary.kt",
-      "sha256": "e23efce844ad7496e2ff0f99cd00bc2eed9b043c5da1d1ff2d806287057094c5"
+      "sha256": "c2e9ebead24a830cde1f742472554883d39bc8593a0e496d9b42f6b9a1869cca"
     },
     {
       "path": "app/src/main/java/app/televault/ui/FilmstripGesture.kt",
@@ -685,7 +685,7 @@
     },
     {
       "path": "app/src/main/java/app/televault/ui/MediaFilters.kt",
-      "sha256": "b9d66700f55c6a197a03179b4ffe28256efe585e080eee5e555cebe00c85e75c"
+      "sha256": "ac04014b480cc11e224bd0e5b1dbabd92b197bbb23c7f4d2de6d82a6633a4877"
     },
     {
       "path": "app/src/main/java/app/televault/ui/MediaSharing.kt",
@@ -741,7 +741,7 @@
     },
     {
       "path": "app/src/main/java/app/televault/ui/PhotoComponents.kt",
-      "sha256": "8162c7d5a2b175bf49c8652bb03121d131e471d446a46c12550e69c927c80f6b"
+      "sha256": "607af929dd45ae5961e70d44d536fdf36772881e22f80e706066ec30e8dd06a6"
     },
     {
       "path": "app/src/main/java/app/televault/ui/PhotoExplore.kt",
@@ -749,7 +749,7 @@
     },
     {
       "path": "app/src/main/java/app/televault/ui/PhotoMemories.kt",
-      "sha256": "9a17bbdf98f9effcf816d0ef6cdf424d848087124522f940426bb107bb785059"
+      "sha256": "30cf8e48527edb92e23103aa03bdbc3499bcee06a93a3549abd86e7562e976c3"
     },
     {
       "path": "app/src/main/java/app/televault/ui/PhotoTextSelection.kt",
@@ -761,7 +761,7 @@
     },
     {
       "path": "app/src/main/java/app/televault/ui/PhotosScreen.kt",
-      "sha256": "cad1bed1c4ec0dd267e01173ff5cbb45e18254f6f8e6f05c6210a9758e4754c4"
+      "sha256": "00597c5004fd2eb1988617f1ffc70c455bc0ffc4568e23032d0d4a8634377007"
     },
     {
       "path": "app/src/main/java/app/televault/ui/PlaybackFailure.kt",
@@ -777,7 +777,7 @@
     },
     {
       "path": "app/src/main/java/app/televault/ui/PrivateVaultScreen.kt",
-      "sha256": "e22a32234cc040dc4e0b0f841b3e20910f1c67642a49019fedb4c960a47efb9e"
+      "sha256": "90c95347ba477b5a38842a8473c8c581e23b3e76cb4af8cc9cbd4d1d382e8f57"
     },
     {
       "path": "app/src/main/java/app/televault/ui/ProtectionScreen.kt",
@@ -842,6 +842,10 @@
     {
       "path": "app/src/main/java/app/televault/ui/Theme.kt",
       "sha256": "9dc4718fbb722fe8430e1bfa67508c673f74bb0fb95110cbf67c87940d1ef658"
+    },
+    {
+      "path": "app/src/main/java/app/televault/ui/TimelineFastScroll.kt",
+      "sha256": "ef7febff6a4f013ac8169c9dc625c22aa91ebadcab438497445ba7321b91476b"
     },
     {
       "path": "app/src/main/java/app/televault/ui/TransferQueue.kt",
@@ -1125,7 +1129,7 @@
     },
     {
       "path": "app/src/test/java/app/televault/ui/BrowseChromeStateTest.kt",
-      "sha256": "94d12e7a2ed08289bebfee21847a351581a9b6e774acd3c92077a7761b816348"
+      "sha256": "6e14dda3eb929ababb4a44fe68c36ff8fcbf6fc1615b51415656f370470c4431"
     },
     {
       "path": "app/src/test/java/app/televault/ui/BrowseFocusGeometryTest.kt",
@@ -1190,6 +1194,10 @@
     {
       "path": "app/src/test/java/app/televault/ui/SearchMediaFilterTest.kt",
       "sha256": "be6b6cfca0981aa7ebff72e06c6afd36ef25efb2f54732ec6ffcbd2b0a9222b3"
+    },
+    {
+      "path": "app/src/test/java/app/televault/ui/TimelineFastScrollMapTest.kt",
+      "sha256": "d2173f0e3737eb851f6c807c75cc0e9c79570731ac96ec86fae625db778aa459"
     },
     {
       "path": "app/src/test/java/app/televault/ui/VideoVolumeBoostTest.kt",

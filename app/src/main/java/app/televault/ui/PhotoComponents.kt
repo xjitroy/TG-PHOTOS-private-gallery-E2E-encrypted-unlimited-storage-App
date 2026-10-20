@@ -284,7 +284,8 @@ internal fun timeGroups(files: List<MediaEntry>, density: Float): Map<String, Li
 }
 
 @Composable
-internal fun MediaGrid(files: List<MediaEntry>, selected: Set<String>, model: DriveViewModel, device: Boolean, click: (MediaEntry) -> Unit, hold: (MediaEntry) -> Unit, density: Float, densityChanged: (Float) -> Unit, grid: LazyGridState = rememberLazyGridState(), mosaic: Boolean = true, selectionChanged: (Set<String>) -> Unit = {}, leadingContent: (@Composable () -> Unit)? = null, showDateHeaders: Boolean = true) {
+internal fun MediaGrid(files: List<MediaEntry>, selected: Set<String>, model: DriveViewModel, device: Boolean, click: (MediaEntry) -> Unit, hold: (MediaEntry) -> Unit, density: Float, densityChanged: (Float) -> Unit, grid: LazyGridState = rememberLazyGridState(), mosaic: Boolean = true, selectionChanged: (Set<String>) -> Unit = {}, leadingContent: (@Composable () -> Unit)? = null, showDateHeaders: Boolean = true, onFastScroll: () -> Unit = {}, fastScrollTop: androidx.compose.ui.unit.Dp = 0.dp) {
+    val dateAlpha by animateFloatAsState(if (showDateHeaders) 1f else 0f, tween(180), label = "Timeline dates")
     val snapshot by model.contentState.collectAsStateWithLifecycle()
     var anchor by remember { mutableStateOf<String?>(null) }
     val columns = TimelineZoom.columns(density)
@@ -356,38 +357,47 @@ internal fun MediaGrid(files: List<MediaEntry>, selected: Set<String>, model: Dr
         anchor = grid.layoutInfo.visibleItemsInfo.firstOrNull { item -> item.key is String && !(item.key as String).startsWith("date:") }?.key as? String
         densityChanged(value)
     }
-    LazyVerticalGrid(columns = GridCells.Fixed(columns), state = grid, modifier = Modifier.fillMaxSize().browseFocusViewport().nestedScroll(input).then(dragModifier).timelinePinch(density, change, enabled = !drag.active), contentPadding = PaddingValues(bottom = browseFocusBottom(92.dp)), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        if (leadingContent != null) item(key = "timeline-introduction", span = { GridItemSpan(maxLineSpan) }, contentType = "timeline-introduction") { leadingContent() }
-        groups.forEach { (date, group) ->
-            stickyHeader(key = "date:$date") {
-                if (showDateHeaders) {
-                    Box(Modifier.fillMaxWidth().padding(top = if (leadingContent != null) WindowInsets.statusBars.asPaddingValues().calculateTopPadding() else 0.dp, bottom = 8.dp), contentAlignment = Alignment.Center) {
+    val fastScrollMap = remember(groups, blocks, leadingContent != null) {
+        var index = if (leadingContent != null) 1 else 0
+        val dates = groups.map { (date, entries) ->
+            TimelineScrollSection(index, date).also { index += 1 + if (useMosaic) blocks.getValue(date).size else entries.size }
+        }
+        TimelineFastScrollMap(index, dates)
+    }
+    Box(Modifier.fillMaxSize()) {
+        LazyVerticalGrid(columns = GridCells.Fixed(columns), state = grid, modifier = Modifier.fillMaxSize().browseFocusViewport().nestedScroll(input).then(dragModifier).timelinePinch(density, change, enabled = !drag.active), contentPadding = PaddingValues(bottom = browseFocusBottom(92.dp)), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            if (leadingContent != null) item(key = "timeline-introduction", span = { GridItemSpan(maxLineSpan) }, contentType = "timeline-introduction") { leadingContent() }
+            groups.forEach { (date, group) ->
+                stickyHeader(key = "date:$date") {
+                    // Fade paint only: changing a sticky item's height moves every media row.
+                    Box(Modifier.fillMaxWidth().graphicsLayer { alpha = dateAlpha }.padding(top = if (leadingContent != null) WindowInsets.statusBars.asPaddingValues().calculateTopPadding() else 0.dp, bottom = 8.dp), contentAlignment = Alignment.Center) {
                         AppSurface(shape = RoundedCornerShape(32.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = .94f), shadowElevation = 3.dp) {
                             Text(date, Modifier.padding(horizontal = 18.dp, vertical = 10.dp), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium)
                         }
                     }
+                }
+                if (useMosaic) {
+                    items(blocks.getValue(date), key = { group[it.cells().first().index()].id }, span = { GridItemSpan(maxLineSpan) }) { block ->
+                        MosaicPhotoBlock(group, block, selected, snapshot, model, click, guardedHold, drag, Modifier)
+                    }
                 } else {
-                    Spacer(Modifier.fillMaxWidth().height(0.dp))
+                    items(group, key = { it.id }) { entry ->
+                        MediaGridCell(
+                            entry,
+                            selected,
+                            snapshot,
+                            model,
+                            ThumbnailQuality.gridPixels(columns, false),
+                            click,
+                            guardedHold,
+                            Modifier.aspectRatio(1f).animateItem(placementSpec = null).dragSelectionTile(entry.id, drag)
+                        )
+                    }
                 }
             }
-            if (useMosaic) {
-                items(blocks.getValue(date), key = { group[it.cells().first().index()].id }, span = { GridItemSpan(maxLineSpan) }) { block ->
-                    MosaicPhotoBlock(group, block, selected, snapshot, model, click, guardedHold, drag, Modifier)
-                }
-            } else {
-                items(group, key = { it.id }) { entry ->
-                    MediaGridCell(
-                        entry,
-                        selected,
-                        snapshot,
-                        model,
-                        ThumbnailQuality.gridPixels(columns, false),
-                        click,
-                        guardedHold,
-                        Modifier.aspectRatio(1f).animateItem(placementSpec = null).dragSelectionTile(entry.id, drag)
-                    )
-                }
-            }
+        }
+        if (files.size >= 100 && selected.isEmpty() && (leadingContent == null || grid.firstVisibleItemIndex > 0) && (grid.canScrollForward || grid.canScrollBackward)) {
+            TimelineFastScroll(grid, fastScrollMap, onUserScroll = onFastScroll, topObstruction = fastScrollTop)
         }
     }
 }
@@ -461,6 +471,7 @@ private fun MediaGridCell(entry: MediaEntry, selected: Set<String>, snapshot: Dr
 
 @Composable
 internal fun DocumentTimeline(files: List<MediaEntry>, selected: Set<String>, model: DriveViewModel, density: Float, changed: (Float) -> Unit, open: (MediaEntry) -> Unit, hold: (MediaEntry) -> Unit, scroll: androidx.compose.foundation.lazy.LazyListState = androidx.compose.foundation.lazy.rememberLazyListState(), leadingContent: (@Composable () -> Unit)? = null, showDateHeaders: Boolean = true) {
+    val dateAlpha by animateFloatAsState(if (showDateHeaders) 1f else 0f, tween(180), label = "Document dates")
     val layoutScope = listOf(model.playbackEpoch, LocalBrowseFocus.current ?: scroll, TimelineZoom.period(density), java.time.ZoneId.systemDefault(), Locale.getDefault())
     val groups = rememberBackgroundProjection(layoutScope, files, emptyMap<String, List<MediaEntry>>()) { timeGroups(it, density) }.value
     val positions = remember(groups, leadingContent != null) {
@@ -477,7 +488,7 @@ internal fun DocumentTimeline(files: List<MediaEntry>, selected: Set<String>, mo
         if (leadingContent != null) item(key = "browse-introduction") { leadingContent() }
         groups.forEach { (date, entries) ->
             stickyHeader(key = "date:$date") {
-                if (showDateHeaders) Text(date, Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).padding(top = if (leadingContent != null) WindowInsets.statusBars.asPaddingValues().calculateTopPadding() else 0.dp).padding(vertical = 12.dp), style = MaterialTheme.typography.titleSmall) else Spacer(Modifier.fillMaxWidth().height(0.dp))
+                Text(date, Modifier.fillMaxWidth().graphicsLayer { alpha = dateAlpha }.background(MaterialTheme.colorScheme.background).padding(top = if (leadingContent != null) WindowInsets.statusBars.asPaddingValues().calculateTopPadding() else 0.dp).padding(vertical = 12.dp), style = MaterialTheme.typography.titleSmall)
             }
             items(entries, key = { it.id }) { entry ->
                 AppSurface(shape = RoundedCornerShape(22.dp), color = if (entry.id in selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.animateItem(placementSpec = null).browseFocus(entry.id).combinedClickable(onClick = { open(entry) }, onLongClick = { hold(entry) })) {

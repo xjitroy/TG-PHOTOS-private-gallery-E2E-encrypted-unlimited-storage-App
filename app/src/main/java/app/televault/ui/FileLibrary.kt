@@ -233,7 +233,7 @@ internal fun FileLibrary(files: List<MediaEntry>, cloud: Boolean, chooseCloud: (
             item(key = "browse-introduction") {
                 Column(Modifier.fillMaxWidth()) {
                     leadingContent?.invoke()
-                    Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FlowRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), itemVerticalAlignment = Alignment.CenterVertically) {
                         FilterChip(!cloud, {
                             chooseCloud(false)
                             selection(emptySet())
@@ -463,8 +463,8 @@ internal fun FileLibrary(files: List<MediaEntry>, cloud: Boolean, chooseCloud: (
                 }
             }
         }
-        BrowseCompactBar(managerChrome.mode == app.televault.domain.PhotoChromePolicy.Mode.COMPACT && selected.isEmpty(), Modifier.align(Alignment.TopCenter)) {
-            Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        BrowseCompactBar(managerChrome.compactVisible && selected.isEmpty(), Modifier.align(Alignment.TopCenter), clearOfIntroduction = managerChrome.introductionCleared) {
+            FlowRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), itemVerticalAlignment = Alignment.CenterVertically) {
                 FilterChip(!cloud, {
                     chooseCloud(false)
                     selection(emptySet())

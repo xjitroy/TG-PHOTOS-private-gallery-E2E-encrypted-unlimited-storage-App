@@ -4,10 +4,10 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -16,6 +16,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -148,10 +150,22 @@ internal fun PhotoMemories(cards: List<PhotoMemory>, model: DriveViewModel, open
 
 @Composable
 internal fun PhotoSectionPills(section: String, choose: (String) -> Unit, modifier: Modifier = Modifier) {
-    AppSurface(modifier, shape = RoundedCornerShape(32.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, shadowElevation = 4.dp) {
-        Row(Modifier.padding(horizontal = 6.dp, vertical = 2.dp).horizontalScroll(androidx.compose.foundation.rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
-            listOf("All", "Photos", "Videos", "Favorites").forEach { key ->
-                FilterChip(section == key, { choose(key) }, label = { Text(sectionLabel(key)) }, shape = RoundedCornerShape(28.dp), border = null, colors = FilterChipDefaults.filterChipColors(containerColor = Color.Transparent, selectedContainerColor = MaterialTheme.colorScheme.primaryContainer))
+    AppSurface(modifier.fillMaxWidth(), shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, shadowElevation = 4.dp) {
+        BoxWithConstraints(Modifier.padding(6.dp)) {
+            // Keep full labels and touch targets; narrow windows / large text get two rows.
+            val columns = if (maxWidth.value / LocalDensity.current.fontScale >= 304f) 4 else 2
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                listOf("All", "Photos", "Videos", "Favorites").chunked(columns).forEach { keys ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+                        keys.forEach { key ->
+                            val chosen = section == key
+                            val tint by androidx.compose.animation.animateColorAsState(if (chosen) MaterialTheme.colorScheme.primaryContainer else Color.Transparent, tween(160), label = "Section selection")
+                            Box(Modifier.weight(1f).heightIn(min = 48.dp).clip(RoundedCornerShape(24.dp)).background(tint).selectable(chosen, role = Role.Tab) { choose(key) }.padding(horizontal = 6.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
+                                Text(sectionLabel(key), style = MaterialTheme.typography.labelLarge, color = if (chosen) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                            }
+                        }
+                    }
+                }
             }
         }
     }

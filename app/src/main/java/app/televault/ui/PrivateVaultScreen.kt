@@ -485,7 +485,7 @@ internal fun PrivateVaultScreen(model: DriveViewModel, modifier: Modifier = Modi
                         Text(label("Files", "ফাইল"))
                     }
                 }
-                Row(Modifier.horizontalScroll(rememberScrollState()).padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf("All", "Photos", "Videos", "Audio", "Files").forEach { name -> FilterChip(category == name, { category = name }, label = { Text(name) }) }
                 }
             }
@@ -570,8 +570,8 @@ internal fun PrivateVaultScreen(model: DriveViewModel, modifier: Modifier = Modi
                         }
                     }
                 }
-                BrowseCompactBar(chrome.mode == app.televault.domain.PhotoChromePolicy.Mode.COMPACT && selected.isEmpty(), Modifier.align(Alignment.TopCenter)) {
-                    Row(Modifier.horizontalScroll(rememberScrollState()).padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                BrowseCompactBar(chrome.compactVisible && selected.isEmpty(), Modifier.align(Alignment.TopCenter), clearOfIntroduction = chrome.introductionCleared) {
+                    FlowRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf("All", "Photos", "Videos", "Audio", "Files").forEach { name -> FilterChip(category == name, { category = name }, label = { Text(name) }) }
                     }
                 }

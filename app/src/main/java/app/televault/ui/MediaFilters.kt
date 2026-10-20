@@ -1,11 +1,9 @@
 package app.televault.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -61,14 +59,14 @@ internal fun rememberMediaFilters(model: DriveViewModel?, changed: () -> Unit): 
 internal fun MediaFilterBar(controls: MediaFilterControls, modifier: Modifier = Modifier) {
     var sheet by rememberSaveable { mutableStateOf(false) }
     val options = controls.options
-    Row(modifier.fillMaxWidth().padding(horizontal = 16.dp).background(MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = .84f), RoundedCornerShape(28.dp)).horizontalScroll(rememberScrollState()).padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    FlowRow(modifier.fillMaxWidth().padding(horizontal = 12.dp).background(MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = .84f), RoundedCornerShape(24.dp)).padding(horizontal = 8.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(2.dp), itemVerticalAlignment = Alignment.CenterVertically) {
         FilterChip(options.category != Category.ALL || options.hidden != 0, { sheet = true }, shape = RoundedCornerShape(28.dp), label = { Text(if (options.category == Category.ALL) label("Categories", "ক্যাটাগরি") else mediaCategoryLabel(options.category)) }, leadingIcon = { Icon(Icons.Outlined.FilterAlt, null, Modifier.size(18.dp)) }, trailingIcon = { Icon(Icons.Outlined.ExpandMore, null, Modifier.size(18.dp)) })
-        Row(Modifier.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(label("Clean view", "ক্লিন ভিউ"), style = MaterialTheme.typography.labelLarge)
             val cleanDescription = label("Clean view", "ক্লিন ভিউ")
             Switch(options.clean, controls.clean, Modifier.semantics { contentDescription = cleanDescription })
         }
-        FilterChip(options.category == Category.MOVIES, { controls.select(if (options.category == Category.MOVIES) Category.ALL else Category.MOVIES) }, label = { Text(mediaCategoryLabel(Category.MOVIES)) })
+        FilterChip(options.category == Category.MOVIES, { controls.select(if (options.category == Category.MOVIES) Category.ALL else Category.MOVIES) }, label = { Text(mediaCategoryLabel(Category.MOVIES)) }, leadingIcon = { Icon(Icons.Outlined.Movie, null, Modifier.size(18.dp)) })
     }
     if (sheet) {
         ModalBottomSheet(onDismissRequest = { sheet = false }) {
