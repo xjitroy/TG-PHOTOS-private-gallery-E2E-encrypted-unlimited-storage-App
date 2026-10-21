@@ -1,0 +1,36 @@
+{
+  "scope": "Static hardened DEX retention for WorkManager/manifest class identities; not native construction/execution acceptance",
+  "classes": [
+    "MediaIntelligenceWorker",
+    "UploadQueueWorker",
+    "CloudExportWorker",
+    "BackupRecoveryWorker",
+    "FolderBackupWorker",
+    "CameraChangeWorker",
+    "TransferWorker",
+    "BackupEventReceiver",
+    "SharedMediaCleanupWorker",
+    "TrashRetentionWorker",
+    "CloudRestoreWorker",
+    "ForgottenVaultWorker",
+    "app.televault.memories.MemoryModelsWorker",
+    "app.televault.ocr.OcrModelsWorker",
+    "app.televault.people.FaceModelsWorker",
+    "app.televault.smart.SmartModelsWorker"
+  ],
+  "productionVerified": false,
+  "smartRuntimeSHA256": {
+    "libtgsmart.so": "15457862a92b1dd177427b802dd34ebe52c0d83191203160293c9b85e4a39a00",
+    "libllama.so": "0bce50b1c16e93a97e158ba0fdc344cc8903e6e274b8db7b92a783f5ae5c831d",
+    "libmtmd.so": "3d10f2b416a7636f680bcdf1482db9d50e51fa16f834b2c56a97651737889304",
+    "libggml.so": "65e2e511567d65071d13ebc7bb45aa80a3b210a35482b78f16f28d9faa6a9dcc",
+    "libggml-base.so": "9ad0933b9cafd9f5775685ef834b108ea6f34b7c00a932227abf3358dde59e37",
+    "libggml-cpu-android_armv8.0_1.so": "519ddc8168d48ea80acbca2241fb5af65cc246dcc7d8349b219ec01ff812c63c",
+    "liblitertlm_jni.so": "4a94a3f955ad7c58cbcdfc5cb4ff566187bb9e8c5bc2c4056b4e226646c7e8fd"
+  },
+  "largeInferenceAbis": [
+    "arm64-v8a"
+  ],
+  "inferenceServiceExported": false,
+  "runtimeAcceptVerified": false
+}
