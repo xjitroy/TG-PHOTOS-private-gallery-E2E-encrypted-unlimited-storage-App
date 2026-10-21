@@ -1,3 +1,9 @@
+# Public1.20.41 · on-device AI choices
+
+Four selectable large models, one active at a time: SmolVLM2-256M, SmolVLM2-500M, Qwen3.5-0.8B and full EmbeddingGemma2. Advertised8–12GB phones select EmbeddingGemma2; low-RAM tiers use smaller models. Replacement waits for verification and real initialization before durable activation and old-model/cache cleanup. Face/OCR packs remain separate. New inference needs ARM64; existing Android8+ four-ABI gallery features stay. Java21 compiler is required to read the LiteRT-LM0.18 API; app Java/Kotlin bytecode targets17. Models download after setup; none are bundled. Working caches require additional storage.
+
+Natural search uses encrypted per-photo cached results and a bounded semantic shortlist; generated descriptions can be wrong and are not verified identities or exact OCR. Text/photo matching has been exercised with synthetic host fixtures. Real Android model/RAM/frame/recognition/OEM acceptance is unavailable here. No perfect-accuracy claim.
+
 # TG Photos1.20.40 — private analysis recovery and free editing
 
 TG Photos1.20.40 limits More albums to the six device folders with most photos/videos, newest content then stable identity as ties. View all opens the remaining ranked folders with search in a bounded sheet. Equal display names remain separate. People and Recently deleted use one vertically measured footer with spacing and a separate themed deletion row. Photos offers persistent Photos mode / Folder mode in the three-dot menu; Folder mode starts with All photos/videos, then cloud folders/albums. The Albums tab remains device-only and does not duplicate cloud collections.

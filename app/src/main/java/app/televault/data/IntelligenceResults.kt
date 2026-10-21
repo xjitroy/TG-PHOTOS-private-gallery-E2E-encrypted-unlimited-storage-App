@@ -196,6 +196,12 @@ internal class IntelligenceResults(private val context: Context, private val dri
             check(it.getInt("engineRevision") == 3)
             app.televault.ocr.OcrText.read(it)
         }
+        body.optJSONObject("smart")?.let {
+            check(it.getInt("version") == 1 && app.televault.domain.AiModelPolicy.known(it.getString("model")))
+            check(it.getString("revision").matches(Regex("[0-9a-f]{40}")) && it.optString("caption").length <= 1024 && it.optString("text").length <= 4096)
+            val v = android.util.Base64.decode(it.optString("vector"), android.util.Base64.NO_WRAP)
+            check(v.isEmpty() || it.getString("model") == "embedding" && v.size == 256)
+        }
         body.optJSONObject("scene")?.let { check(it.getString("model") == "mobilenetv2-c1c51358-v1" && it.getString("labels").length <= 1024) }
         body.optJSONObject("face")?.let { row ->
             check(row.getString("model") == app.televault.people.PeopleStore.MODEL && row.getInt("count") in 0..256)
@@ -204,7 +210,7 @@ internal class IntelligenceResults(private val context: Context, private val dri
             for (i in 0 until people.length()) check(app.televault.domain.ForgottenVaultPolicy.validId(people.getString(i)))
         }
     }
-    private fun safe(body: JSONObject): Boolean = body.optJSONObject("text") != null && !IntelligenceResultPolicy.localOnly(body.getJSONObject("text").optString("text"), body.optJSONObject("scene")?.optString("labels").orEmpty(), body.optBoolean("video", true))
+    private fun safe(body: JSONObject): Boolean = (body.optJSONObject("smart") == null || !IntelligenceResultPolicy.localOnly(body.getJSONObject("smart").optString("text"), body.getJSONObject("smart").optString("caption"), body.optBoolean("video", true))) && body.optJSONObject("text") != null && !IntelligenceResultPolicy.localOnly(body.getJSONObject("text").optString("text"), body.optJSONObject("scene")?.optString("labels").orEmpty(), body.optBoolean("video", true))
     private fun digest(body: JSONObject): String = MessageDigest.getInstance("SHA-256").digest(body.toString().toByteArray()).joinToString("") { "%02x".format(it) }
     private suspend fun authenticated(ref: RemoteDocument, key: String, hash: String, scope: Pair<Long, String>, token: Long): JSONObject {
         check(IntelligenceResultPolicy.ownedCaption(ref.marker, scope.second, key) && ref.bytes in 28..MAX_BYTES.toLong())
@@ -268,7 +274,7 @@ internal class IntelligenceResults(private val context: Context, private val dri
             }
         }
     }
-    suspend fun checkpoint(hash: String, video: Boolean, text: JSONObject?, face: JSONObject?, scene: JSONObject?): Boolean = withContext(Dispatchers.IO) {
+    suspend fun checkpoint(hash: String, video: Boolean, text: JSONObject?, face: JSONObject?, scene: JSONObject?, smart: JSONObject? = null): Boolean = withContext(Dispatchers.IO) {
         if (hash.isBlank()) return@withContext false
         activate()
         gate.withLock {
@@ -283,6 +289,7 @@ internal class IntelligenceResults(private val context: Context, private val dri
             if (text != null) body.put("text", text)
             if (face != null) body.put("face", face)
             if (scene != null) body.put("scene", scene)
+            (smart ?: previous?.optJSONObject("smart"))?.let { body.put("smart", it) }
             valid(body, hash, scope)
             val safe = safe(body)
             val before = entries[key]

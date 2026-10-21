@@ -13,6 +13,7 @@ import androidx.documentfile.provider.DocumentFile
 import androidx.room.Room
 import androidx.work.*
 import app.televault.PreferencesRepository
+import app.televault.TeleVaultApplication
 import app.televault.crypto.AuthenticatedRecords
 import app.televault.crypto.CipherParts
 import app.televault.crypto.CipherRangeCache
@@ -50,6 +51,7 @@ import app.televault.memories.SceneStore
 import app.televault.ocr.OcrStore
 import app.televault.ocr.decodeOcrPhoto
 import app.televault.people.PeopleStore
+import app.televault.smart.SmartIndex
 import app.televault.telegram.RemoteDocument
 import app.televault.telegram.TelegramFailure
 import app.televault.telegram.TelegramGateway
@@ -162,6 +164,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
         listFiles()?.forEach { it.delete() }
     }
 
+    internal val smart by lazy { SmartIndex(this, (app as TeleVaultApplication).smartModels) }
     fun trimMemory() {
         backupMediaSnapshot = null
         photoPreviews.clear()
@@ -575,6 +578,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
             people.lock()
             ocr.lock()
             scenes.lock()
+            smart.lock()
             analysisResults.lock()
             privateAi.lock()
             restoreMutable.value = null
@@ -708,6 +712,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
         privateAi.block(emptySet(), setOf(encode(hash)))
         ocr.cleanPrivateSources()
         scenes.cleanPrivateSources()
+        smart.cleanPrivateSources()
         people.cleanPrivateSources()
         analysisResults.cleanPrivateSources()
     }
@@ -718,6 +723,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
         people.cleanPrivateSources()
         ocr.cleanPrivateSources()
         scenes.cleanPrivateSources()
+        smart.cleanPrivateSources()
         people.sync()
         analysisResults.cleanPrivateSources()
         privateAi.finishCleanup()
@@ -734,6 +740,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
         privateAi.block(ids, setOf(encoded)) // Persist before network/deletion; failed cleanup cannot re-enable scanning.
         ocr.cleanPrivateSources()
         scenes.cleanPrivateSources()
+        smart.cleanPrivateSources()
         people.cleanPrivateSources()
         privateAi.sync() // Read back the encrypted exclusion before removing owned remote references/originals.
         people.sync()
@@ -1254,6 +1261,7 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
         people.retire(owner, scope)
         ocr.retire(owner, scope)
         scenes.retire(owner, scope)
+        smart.retire(owner, scope)
         analysisResults.retire(owner, scope)
         privateAi.retire(owner, scope)
         dao.removeVault(owner, scope)

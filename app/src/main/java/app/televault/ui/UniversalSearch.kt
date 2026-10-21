@@ -33,15 +33,19 @@ import app.televault.domain.UniversalMediaSearch
 import app.televault.people.PeopleState
 import java.time.ZoneId
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
-private data class SearchIndexInput(val files: List<MediaEntry>, val people: PeopleState, val textRevision: Pair<Long, Int>, val favorites: Set<String>, val sceneLabels: Map<String, String>)
+private data class SearchIndexInput(val files: List<MediaEntry>, val people: PeopleState, val textRevision: Pair<Long, Int>, val favorites: Set<String>, val sceneLabels: Map<String, String>, val smartRevision: Long, val smartModel: Pair<String, Boolean>)
 
 /** One search across normal Photos/device/cloud media; never includes Private Vault or Trash. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun UniversalSearch(files: List<MediaEntry>, people: PeopleState, model: DriveViewModel, initialPerson: String?, viewedId: String = "", viewerOpen: Boolean = false, close: () -> Unit, open: (MediaEntry, List<MediaEntry>) -> Unit) {
     val sceneIndex by model.scenes.state.collectAsStateWithLifecycle()
+    val smartRevision by model.smart.revision.collectAsStateWithLifecycle()
+    val smartModel by remember(model.smartModels) { model.smartModels.state.map { it.active to it.enabled }.distinctUntilChanged() }.collectAsStateWithLifecycle(initialValue = "" to false)
     val textIndex by model.ocr.state.collectAsStateWithLifecycle()
     val mediaState by model.contentState.collectAsStateWithLifecycle()
     var query by remember { mutableStateOf("") }
@@ -99,20 +103,22 @@ internal fun UniversalSearch(files: List<MediaEntry>, people: PeopleState, model
     }
 
     val person = people.people.find { it.id == personId }
-    val parsed = remember(query, start, end) { UniversalMediaSearch.parse(query, start, end) }
+    val parsed = remember(query, start, end) { UniversalMediaSearch.parseNatural(query, start, end, java.time.LocalDate.now()) }
     val scope = listOf(model.playbackEpoch, query, start, end, type, personId, companion, alone, filters.options)
-    val projection = rememberCoalescedProjection(scope, SearchIndexInput(files, people, textIndex.processed to textIndex.indexed, mediaState.localFavorites, sceneIndex.labels), emptyList<MediaEntry>()) { (all, index, _, favorites, sceneLabels) ->
+    val projection = rememberCoalescedProjection(scope, SearchIndexInput(files, people, textIndex.processed to textIndex.indexed, mediaState.localFavorites, sceneIndex.labels, smartRevision, smartModel), emptyList<MediaEntry>()) { (all, index, _, favorites, sceneLabels) ->
+        val smartDescriptions = model.smart.descriptions(all.mapTo(hashSetOf()) { it.id })
         val personNames = mutableMapOf<String, MutableList<String>>()
         index.people.filter { it.name.isNotBlank() }.forEach { group -> group.members.forEach { personNames.getOrPut(it) { mutableListOf() }.add(group.name) } }
         val dateQuery = UniversalMediaSearch.Query("", parsed.start(), parsed.end(), parsed.valid())
         fun metadata(file: MediaEntry): String {
             val tags = MediaCategories.Category.entries.filter { it.mask and file.mediaCategories != 0 }.joinToString(" ") { it.name.replace('_', ' ') }
-            return "${personNames[file.id].orEmpty().joinToString(" ")} ${sceneLabels[file.id].orEmpty()} $tags ${file.local?.folder ?: file.cloud?.album.orEmpty()}"
+            return "${personNames[file.id].orEmpty().joinToString(" ")} ${sceneLabels[file.id].orEmpty()} ${smartDescriptions[file.id].orEmpty()} $tags ${file.local?.folder ?: file.cloud?.album.orEmpty()}"
         }
         val selection = SearchMediaFilter(type, personId, alone, companion, filters.options)
         val candidates = all.filter { file -> selection.matches(file, index, favorites) && UniversalMediaSearch.matches(dateQuery, "", "", file.date, ZoneId.systemDefault()) }
         val matches = model.ocr.search(candidates.associate { it.id to "${it.name} ${metadata(it)}" }, parsed.text())
-        candidates.filter { it.id in matches }.sortedByDescending { it.date }
+        val semantic = model.smart.rank(candidates.mapTo(hashSetOf()) { it.id }, parsed.text())
+        candidates.filter { it.id in matches || it.id in semantic }.sortedWith(compareByDescending<MediaEntry> { semantic[it.id] ?: 0f }.thenByDescending { it.date })
     }
     val draftDates = remember(draftStart, draftEnd) { UniversalMediaSearch.parse("", draftStart, draftEnd) }
     fun applyDates() {

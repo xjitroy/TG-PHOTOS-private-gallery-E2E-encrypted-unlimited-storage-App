@@ -15,6 +15,7 @@ class TeleVaultApplication : Application() {
     }
 
     @Volatile internal var intelligencePaused = false
+    internal val smartModels by lazy { app.televault.smart.SmartModels(this) }
     internal val faceModels by lazy { app.televault.people.FaceModels(this) }
     internal val memoryModels by lazy { app.televault.memories.MemoryModels(this) }
     internal val ocrModels by lazy { app.televault.ocr.OcrModels(this) }
@@ -40,6 +41,9 @@ class TeleVaultApplication : Application() {
     private val driveLazy = lazy { DriveRepository(this, telegram, protection) }
     override fun onCreate() {
         super.onCreate()
+        // The bound inference process must never start account services or background jobs.
+        val process = if (android.os.Build.VERSION.SDK_INT >= 28) getProcessName() else runCatching { java.io.File("/proc/self/cmdline").readText().trimEnd('\u0000') }.getOrDefault("")
+        if (process.endsWith(":intelligence")) return
         RuntimeDiagnostics.install(this)
         val animationClock = motion
         androidx.compose.ui.platform.WindowRecomposerPolicy.setFactory { view ->
@@ -60,6 +64,7 @@ class TeleVaultApplication : Application() {
     }
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
+        if (level == TRIM_MEMORY_RUNNING_CRITICAL) smartModels.memoryPressure()
         if (level >= TRIM_MEMORY_RUNNING_LOW && driveLazy.isInitialized()) driveLazy.value.trimMemory()
     }
     val telegram: TelegramGateway by lazy {

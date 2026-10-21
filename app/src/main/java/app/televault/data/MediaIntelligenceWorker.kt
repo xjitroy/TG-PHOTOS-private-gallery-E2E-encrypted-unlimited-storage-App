@@ -104,7 +104,7 @@ class MediaIntelligenceWorker(context: Context, params: WorkerParameters) : Coro
             people.activate(syncRemote = false)
             ocr.activate()
             scenes.activate()
-            if (!people.state.value.enabled && !ocr.state.value.enabled && !scenes.state.value.enabled) return@withContext Result.success()
+            if (!people.state.value.enabled && !ocr.state.value.enabled && !scenes.state.value.enabled && !app.smartModels.state.value.enabled) return@withContext Result.success()
             setForeground(transferForeground(applicationContext, 71908, "Indexing photos privately · on-device"))
             val retryNeeded = withTimeout(8 * 60 * 1000L) {
                 delay(500)
@@ -120,6 +120,8 @@ class MediaIntelligenceWorker(context: Context, params: WorkerParameters) : Coro
                         { app.memoryModels.prepareInstalled() }
                     )
                 )
+                app.smartModels.install()
+                var smartReady = app.smartModels.prepare()
                 var faceReady = prepared[0]
                 var textReady = prepared[1]
                 var sceneReady = prepared[2]
@@ -130,7 +132,7 @@ class MediaIntelligenceWorker(context: Context, params: WorkerParameters) : Coro
                 if (enabled[2] && !sceneReady) app.memoryModels.install()
                 var incomplete = false
                 var recoveryPending = recoveryUnavailable
-                if (!faceReady && !textReady && !sceneReady) {
+                if (!faceReady && !textReady && !sceneReady && !smartReady) {
                     MediaIntelligenceScheduling.status.value = "Waiting for verified models or encrypted People references; automatic retry is scheduled."
                     return@withTimeout waiting
                 }
@@ -155,6 +157,7 @@ class MediaIntelligenceWorker(context: Context, params: WorkerParameters) : Coro
                         }
                         val saved = drive.analysisResults.restore(hash)
                         if (saved != null) {
+                            drive.smart.restore(id, stamp, hash, saved.optJSONObject("smart"))
                             if (ocr.state.value.enabled) ocr.reuse(id, stamp, hash, saved.optJSONObject("text"))
                             if (people.state.value.enabled) people.reuse(id, stamp, hash, saved.optJSONObject("face"))
                             if (scenes.state.value.enabled) scenes.reuse(id, stamp, hash, saved.optJSONObject("scene"))
@@ -163,6 +166,20 @@ class MediaIntelligenceWorker(context: Context, params: WorkerParameters) : Coro
                         throw cancel
                     } catch (_: Exception) {
                         recoveryPending = true
+                    }
+                    // One selected all-rounder pass before specialist OCR/face analysis. Never download
+                    // an original if an authenticated local copy or representative preview is available.
+                    if (smartReady && app.smartModels.available()) {
+                        try {
+                            drive.smart.analyze(id, stamp, hash) {
+                                if (photo) drive.analysisPhoto(id, app.ocrModels.backgroundAllowed()) else preview()?.copy(android.graphics.Bitmap.Config.ARGB_8888, true)
+                            }
+                        } catch (cancel: CancellationException) {
+                            throw cancel
+                        } catch (_: Exception) {
+                            incomplete = true
+                        }
+                        smartReady = app.smartModels.available()
                     }
                     // OCR comes first so document text can route ALL derived results to local-only storage.
                     if (textReady && ocr.state.value.enabled) {
@@ -211,7 +228,7 @@ class MediaIntelligenceWorker(context: Context, params: WorkerParameters) : Coro
                         }
                     }
                     try {
-                        val changed = drive.analysisResults.checkpoint(hash, video, ocr.snapshot(id, stamp), people.snapshot(id, stamp), scenes.snapshot(id, stamp))
+                        val changed = drive.analysisResults.checkpoint(hash, video, ocr.snapshot(id, stamp), people.snapshot(id, stamp), scenes.snapshot(id, stamp), drive.smart.snapshot(id, stamp))
                         if (changed) people.privacyChanged(hash)
                         withTimeout(20_000) { drive.analysisResults.sync(hash) }
                     } catch (_: TimeoutCancellationException) {
@@ -290,6 +307,7 @@ class MediaIntelligenceWorker(context: Context, params: WorkerParameters) : Coro
                 runCatching { scenes.finish() }
                 runCatching { people.pauseEngine() }
                 runCatching { ocr.pauseEngine() }
+                app.smartModels.pause()
             }
         }
     }

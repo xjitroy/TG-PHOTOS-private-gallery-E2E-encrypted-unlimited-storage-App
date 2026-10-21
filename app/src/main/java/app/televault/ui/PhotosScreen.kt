@@ -1422,6 +1422,7 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
                                 item { TelegramStorageWarning() }
                                 item { Text(settingsCategory, style = MaterialTheme.typography.titleLarge) }
                                 if (settingsCategory == "People & text search") {
+                                    item { SmartModelControls(model) }
                                     item {
                                         PeopleAlbums(people, model) { person ->
                                             searchPerson = person.id

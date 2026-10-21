@@ -34,6 +34,7 @@
         <meta-data android:name="asset_statements" android:resource="@string/asset_statements" tools:ignore="CredManMissingDal" />
         <provider android:name=".data.EncryptedPreviewProvider" android:authorities="${applicationId}.private-media" android:exported="false" android:grantUriPermissions="true" />
         <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.files" android:exported="false" android:grantUriPermissions="true"><meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/shared_paths" /></provider>
+        <service android:name=".smart.InferenceService" android:process=":intelligence" android:exported="false" android:stopWithTask="false" />
         <service android:name="androidx.work.impl.foreground.SystemForegroundService" android:foregroundServiceType="dataSync" tools:node="merge" />
         <activity android:name=".MainActivity" android:exported="true" android:supportsPictureInPicture="true" android:launchMode="singleTop"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode">

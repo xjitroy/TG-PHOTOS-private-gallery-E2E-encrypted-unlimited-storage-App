@@ -27,6 +27,8 @@ import kotlinx.coroutines.withTimeout
 
 class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
     internal val scenes = repository.scenes
+    internal val smart = repository.smart
+    internal val smartModels = (repository.localMediaContext() as TeleVaultApplication).smartModels
     internal val ocr = repository.ocr
     internal val people = repository.people
     val state = repository.state
@@ -120,6 +122,7 @@ class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
                         ocr.activate()
                         scenes.activate()
                         val application = repository.localMediaContext() as TeleVaultApplication
+                        application.smartModels.install()
                         if (people.state.value.enabled) application.faceModels.install()
                         if (ocr.state.value.enabled) application.ocrModels.install()
                         if (scenes.state.value.enabled) application.memoryModels.install()

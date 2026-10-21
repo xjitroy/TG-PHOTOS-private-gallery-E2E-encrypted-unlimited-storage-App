@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "models": [
+    {
+      "id": "small",
+      "repository": "ggml-org/SmolVLM2-256M-Video-Instruct-GGUF",
+      "revision": "a8383113a70b406f088ac936e5f1918ed08e620d",
+      "files": [
+        {
+          "path": "SmolVLM2-256M-Video-Instruct-Q4_K_M.gguf",
+          "bytes": 131234176,
+          "sha256": "1d86050bd8ef9b4404ba682dcbf0f37a3144070c32e8825402c0b99a8e89f48e",
+          "url": "https://huggingface.co/ggml-org/SmolVLM2-256M-Video-Instruct-GGUF/resolve/a8383113a70b406f088ac936e5f1918ed08e620d/SmolVLM2-256M-Video-Instruct-Q4_K_M.gguf"
+        },
+        {
+          "path": "mmproj-SmolVLM2-256M-Video-Instruct-Q8_0.gguf",
+          "bytes": 103771616,
+          "sha256": "05d5751132244a6ebd64cba9b34898c0d874b2cb78159d758e1d4da3aad91581",
+          "url": "https://huggingface.co/ggml-org/SmolVLM2-256M-Video-Instruct-GGUF/resolve/a8383113a70b406f088ac936e5f1918ed08e620d/mmproj-SmolVLM2-256M-Video-Instruct-Q8_0.gguf"
+        }
+      ]
+    },
+    {
+      "id": "balanced",
+      "repository": "ggml-org/SmolVLM2-500M-Video-Instruct-GGUF",
+      "revision": "ccd7aae53bcb1997355c2f094959e72b3642ce17",
+      "files": [
+        {
+          "path": "SmolVLM2-500M-Video-Instruct-Q8_0.gguf",
+          "bytes": 436808704,
+          "sha256": "6f67b8036b2469fcd71728702720c6b51aebd759b78137a8120733b4d66438bc",
+          "url": "https://huggingface.co/ggml-org/SmolVLM2-500M-Video-Instruct-GGUF/resolve/ccd7aae53bcb1997355c2f094959e72b3642ce17/SmolVLM2-500M-Video-Instruct-Q8_0.gguf"
+        },
+        {
+          "path": "mmproj-SmolVLM2-500M-Video-Instruct-Q8_0.gguf",
+          "bytes": 108785184,
+          "sha256": "921dc7e259f308e5b027111fa185efcbf33db13f6e35749ddf7f5cdb60ef520b",
+          "url": "https://huggingface.co/ggml-org/SmolVLM2-500M-Video-Instruct-GGUF/resolve/ccd7aae53bcb1997355c2f094959e72b3642ce17/mmproj-SmolVLM2-500M-Video-Instruct-Q8_0.gguf"
+        }
+      ]
+    },
+    {
+      "id": "qwen",
+      "repository": "unsloth/Qwen3.5-0.8B-GGUF",
+      "revision": "6ab461498e2023f6e3c1baea90a8f0fe38ab64d0",
+      "files": [
+        {
+          "path": "Qwen3.5-0.8B-Q4_K_M.gguf",
+          "bytes": 532517120,
+          "sha256": "bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517",
+          "url": "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/6ab461498e2023f6e3c1baea90a8f0fe38ab64d0/Qwen3.5-0.8B-Q4_K_M.gguf"
+        },
+        {
+          "path": "mmproj-F16.gguf",
+          "bytes": 204987232,
+          "sha256": "56e4c6cfe73b0c82e3e82bc518d7591997e61d81f723fc41a586f4fa69ea2453",
+          "url": "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/6ab461498e2023f6e3c1baea90a8f0fe38ab64d0/mmproj-F16.gguf"
+        }
+      ]
+    },
+    {
+      "id": "embedding",
+      "repository": "litert-community/embeddinggemma-2-740m-litert-lm",
+      "revision": "24d962e906c7d332c6428e71c9676855024569e2",
+      "files": [
+        {
+          "path": "embeddinggemma-2-740m.litertlm",
+          "bytes": 484622336,
+          "sha256": "e7a8a2204b91e0f96e92960e84a09a89212e1633dcb7575a9bf3378b4df77f4c",
+          "url": "https://huggingface.co/litert-community/embeddinggemma-2-740m-litert-lm/resolve/24d962e906c7d332c6428e71c9676855024569e2/embeddinggemma-2-740m.litertlm"
+        }
+      ]
+    }
+  ]
+}

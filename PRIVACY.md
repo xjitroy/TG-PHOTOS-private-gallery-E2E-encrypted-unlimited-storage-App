@@ -1,3 +1,9 @@
+# Public1.20.41 · on-device AI choices
+
+Four selectable large models, one active at a time: SmolVLM2-256M, SmolVLM2-500M, Qwen3.5-0.8B and full EmbeddingGemma2. Advertised8–12GB phones select EmbeddingGemma2; low-RAM tiers use smaller models. Replacement waits for verification and real initialization before durable activation and old-model/cache cleanup. Face/OCR packs remain separate. New inference needs ARM64; existing Android8+ four-ABI gallery features stay. Java21 compiler is required to read the LiteRT-LM0.18 API; app Java/Kotlin bytecode targets17. Models download after setup; none are bundled. Working caches require additional storage.
+
+Natural search uses encrypted per-photo cached results and a bounded semantic shortlist; generated descriptions can be wrong and are not verified identities or exact OCR. Text/photo matching has been exercised with synthetic host fixtures. Real Android model/RAM/frame/recognition/OEM acceptance is unavailable here. No perfect-accuracy claim.
+
 # Privacy and data storage
 
 TG Photos runs on Android and uses your Telegram account's Saved Messages to store application-encrypted backup attachments and authenticated encrypted catalogs. Telegram authentication and transport require account/session information under Telegram's own service policies. TG Photos does not operate an additional hosted storage backend. No advertising/analytics SDK is included in the declared app dependencies.

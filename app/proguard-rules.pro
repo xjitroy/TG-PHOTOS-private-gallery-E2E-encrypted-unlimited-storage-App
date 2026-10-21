@@ -35,3 +35,20 @@
 -keep,allowoptimization class app.televault.memories.MemoryModelsWorker {
     public <init>(android.content.Context, androidx.work.WorkerParameters);
 }
+
+# Owned inference JNI and vendor JNI/parcel identities. Models run in a non-exported process.
+-keep class app.televault.smart.VlmNative { *; }
+# Keep only the vendor JNI surface actually used by EmbeddingEngine. Other generative
+# SDK tools are unused and may shrink; they must not pull in unrelated Gson/reflection APIs.
+-keep class com.google.ai.edge.litertlm.LiteRtLmJni {
+    public static ** INSTANCE;
+    public native long nativeCreateEmbeddingEngine(...);
+    public native void nativeDeleteEmbeddingEngine(long);
+    public native com.google.ai.edge.litertlm.EmbeddingResponse nativeComputeEmbedding(...);
+    public native void nativeSetMinLogSeverity(int);
+}
+-keep class com.google.ai.edge.litertlm.NativeLibraryLoader { *; }
+-keep class com.google.ai.edge.litertlm.InputData { *; }
+-keep class com.google.ai.edge.litertlm.InputData$* { *; }
+-keep class com.google.ai.edge.litertlm.EmbeddingResponse { *; }
+-keep,allowoptimization class app.televault.smart.SmartModelsWorker { public <init>(android.content.Context, androidx.work.WorkerParameters); }

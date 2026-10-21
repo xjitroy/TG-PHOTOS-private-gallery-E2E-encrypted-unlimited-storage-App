@@ -31,8 +31,8 @@ android {
         applicationId = providers.gradleProperty("televault.applicationId").getOrElse("app.televault")
         minSdk = 26
         targetSdk = 36
-        versionCode = 52
-        versionName = "1.20.40"
+        versionCode = 53
+        versionName = "1.20.41"
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64") }
         javaCompileOptions {
             annotationProcessorOptions {
@@ -132,6 +132,7 @@ tasks.configureEach {
 }
 dependencies {
     implementation(files("libs/onnxruntime-android-1.22.0.aar", "libs/tesseract4android-4.9.0.aar"))
+    implementation(files("libs/litertlm-android-0.18.0-arm64.aar"))
     implementation(files("libs/zip4j-2.11.5.jar"))
     implementation(project(":core:domain"))
     implementation(project(":core:telegram"))
@@ -162,4 +163,16 @@ dependencies {
     implementation("androidx.documentfile:documentfile:1.1.0")
     testImplementation(libs.junit)
     testImplementation("net.sf.kxml:kxml2:2.3.0")
+}
+
+// The vendor LiteRT-LM 0.18 API is compiled as Java21. Emit Android-compatible Java17
+// bytecode for app sources while using a compiler that can read that API.
+tasks.withType<JavaCompile>().configureEach {
+    val localCompiler = providers.gradleProperty("tgJavacExecutable").orNull
+    if (localCompiler != null) {
+        options.isFork = true
+        options.forkOptions.executable = localCompiler
+    } else {
+        javaCompiler.set(javaToolchains.compilerFor { languageVersion.set(JavaLanguageVersion.of(21)) })
+    }
 }

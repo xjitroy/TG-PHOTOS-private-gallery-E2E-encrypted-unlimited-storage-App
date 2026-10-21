@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "llamaCommit": "d80619397c2ba5cf1366c29f7d43699ca3a159b9",
+  "llamaTag": "b11756",
+  "llamaArchiveUrl": "https://github.com/ggml-org/llama.cpp/releases/download/b11756/llama-b11756-bin-android-arm64.tar.gz",
+  "llamaArchiveSHA256": "ee8ea11d367b4118e5468dfdc243b95a6a793d1d6e4b1158034ce0e3362c119f",
+  "liteRtUrl": "https://dl.google.com/dl/android/maven2/com/google/ai/edge/litertlm/litertlm-android/0.18.0/litertlm-android-0.18.0.aar",
+  "liteRtUpstreamSHA256": "706cbb8a87739b2818111bf3a19a78b8f7781586d10f80adf3415581fab7595f",
+  "liteRtSourceCommit": "07fae70e4f50d5162957290542504d8ce9728694",
+  "packaging": "ARM64 inference only; established four-ABI gallery/ONNX/OCR/TDLib engines retained. LiteRT AAR omits x86_64 JNI and Kotlin module metadata; all vendor class bytecode is unchanged. App sources target Java17; Java21 compiler reads vendor Java21 API. Models download after setup, never bundled.",
+  "files": [
+    {
+      "path": "app/libs/litertlm-android-0.18.0-arm64.aar",
+      "bytes": 10202526,
+      "sha256": "5c26b2b9db9a229221490d9dc9b80cb13684ea5e95e6b3e98cbfedcfa7668ea9"
+    },
+    {
+      "path": "app/src/main/jniLibs/arm64-v8a/libtgsmart.so",
+      "bytes": 42832,
+      "sha256": "15457862a92b1dd177427b802dd34ebe52c0d83191203160293c9b85e4a39a00"
+    },
+    {
+      "path": "app/src/main/jniLibs/arm64-v8a/libllama.so",
+      "bytes": 3789616,
+      "sha256": "0bce50b1c16e93a97e158ba0fdc344cc8903e6e274b8db7b92a783f5ae5c831d"
+    },
+    {
+      "path": "app/src/main/jniLibs/arm64-v8a/libmtmd.so",
+      "bytes": 1437352,
+      "sha256": "3d10f2b416a7636f680bcdf1482db9d50e51fa16f834b2c56a97651737889304"
+    },
+    {
+      "path": "app/src/main/jniLibs/arm64-v8a/libggml.so",
+      "bytes": 666424,
+      "sha256": "65e2e511567d65071d13ebc7bb45aa80a3b210a35482b78f16f28d9faa6a9dcc"
+    },
+    {
+      "path": "app/src/main/jniLibs/arm64-v8a/libggml-base.so",
+      "bytes": 1058736,
+      "sha256": "9ad0933b9cafd9f5775685ef834b108ea6f34b7c00a932227abf3358dde59e37"
+    },
+    {
+      "path": "app/src/main/jniLibs/arm64-v8a/libggml-cpu-android_armv8.0_1.so",
+      "bytes": 933728,
+      "sha256": "519ddc8168d48ea80acbca2241fb5af65cc246dcc7d8349b219ec01ff812c63c"
+    }
+  ],
+  "modelManifestSHA256": "94ba9f503ca7db0b9ef8813d27c9610770067e2acd4dbd28df0ae0f2e61e5a9e",
+  "notices": [
+    "llama.cpp-MIT.txt",
+    "stb-image-MIT.txt",
+    "miniaudio-MIT-0.txt",
+    "SmolVLM2-Apache-2.0.txt",
+    "Qwen3.5-Apache-2.0.txt",
+    "EmbeddingGemma2-Apache-2.0.txt",
+    "LiteRT-LM-Apache-2.0.txt"
+  ]
+}
