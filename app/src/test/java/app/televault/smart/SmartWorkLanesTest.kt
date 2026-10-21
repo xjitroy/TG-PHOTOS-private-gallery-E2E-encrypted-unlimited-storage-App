@@ -76,4 +76,25 @@ class SmartWorkLanesTest {
         finishRead.complete(Unit)
         assertEquals("kept", old.await())
     }
+
+    @Test fun batchCleanupCannotAbortOrWaitForAnInstallingModel() = runBlocking {
+        val lanes = SmartWorkLanes()
+        val started = CompletableDeferred<Unit>()
+        val finish = CompletableDeferred<Unit>()
+        var stopped = false
+        val install = launch {
+            lanes.runtime {
+                started.complete(Unit)
+                finish.await()
+            }
+        }
+        started.await()
+        assertFalse(withTimeout(1000) { lanes.idle { stopped = true } })
+        assertFalse(stopped)
+        assertTrue(install.isActive)
+        finish.complete(Unit)
+        install.join()
+        assertTrue(lanes.idle { stopped = true })
+        assertTrue(stopped)
+    }
 }

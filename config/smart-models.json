@@ -16,8 +16,8 @@
     },
     {
       "path": "app/src/main/jniLibs/arm64-v8a/libtgsmart.so",
-      "bytes": 42832,
-      "sha256": "15457862a92b1dd177427b802dd34ebe52c0d83191203160293c9b85e4a39a00"
+      "bytes": 42848,
+      "sha256": "2563128b07624e73226f9037cc4ceaa2997f227764f6c8f852e5b658cbc3934d"
     },
     {
       "path": "app/src/main/jniLibs/arm64-v8a/libllama.so",

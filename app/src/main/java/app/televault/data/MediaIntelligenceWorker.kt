@@ -12,6 +12,7 @@ import kotlinx.coroutines.sync.withLock
 /** No key is placed in WorkManager. A locked vault always waits for an explicit unlock. */
 internal object MediaIntelligenceScheduling {
     val gate = kotlinx.coroutines.sync.Mutex()
+    val cursor = IntelligenceBatchCursor()
     val status = kotlinx.coroutines.flow.MutableStateFlow("")
     private const val NAME = "normal-media-intelligence-v2"
 
@@ -68,6 +69,7 @@ class MediaIntelligenceWorker(context: Context, params: WorkerParameters) : Coro
         }
         val epoch = drive.playbackEpoch
         val binding = drive.privateVaultBinding()
+        MediaIntelligenceScheduling.cursor.begin("$binding/$epoch")
         val people = drive.people
         val ocr = drive.ocr
         val scenes = drive.scenes
@@ -121,7 +123,7 @@ class MediaIntelligenceWorker(context: Context, params: WorkerParameters) : Coro
                     )
                 )
                 app.smartModels.install()
-                var smartReady = app.smartModels.prepare()
+                var smartReady = false
                 var faceReady = prepared[0]
                 var textReady = prepared[1]
                 var sceneReady = prepared[2]
@@ -132,11 +134,11 @@ class MediaIntelligenceWorker(context: Context, params: WorkerParameters) : Coro
                 if (enabled[2] && !sceneReady) app.memoryModels.install()
                 var incomplete = false
                 var recoveryPending = recoveryUnavailable
-                if (!faceReady && !textReady && !sceneReady && !smartReady) {
+                if (!faceReady && !textReady && !sceneReady && !app.smartModels.available()) {
                     MediaIntelligenceScheduling.status.value = "Waiting for verified models or encrypted People references; automatic retry is scheduled."
                     return@withTimeout waiting
                 }
-                suspend fun scan(id: String, stamp: String, mime: String, original: android.net.Uri?, preview: suspend () -> android.graphics.Bitmap?) {
+                suspend fun scan(id: String, stamp: String, mime: String, original: android.net.Uri?, advanced: Boolean, preview: suspend () -> android.graphics.Bitmap?) {
                     currentCoroutineContext().ensureActive()
                     if (!current() || !app.ocrModels.backgroundAllowed(false) || drive.privateVaultBinding() != binding) throw AnalysisPaused()
                     if (!drive.normalIntelligenceMedia(id)) return
@@ -144,7 +146,7 @@ class MediaIntelligenceWorker(context: Context, params: WorkerParameters) : Coro
                     val video = mime.startsWith("video/")
                     if (!photo && !video) return
                     drive.photoPriority.await("background-intelligence")
-                    val hash = drive.intelligenceContentHash(id)
+                    val hash = ocr.cachedContentHash(id, stamp).ifBlank { drive.intelligenceContentHash(id) }
                     try {
                         if (original != null && original.toString() != id && hash.isNotBlank()) {
                             // preferredDeviceSource was verified against the cloud full-content hash.
@@ -167,70 +169,72 @@ class MediaIntelligenceWorker(context: Context, params: WorkerParameters) : Coro
                     } catch (_: Exception) {
                         recoveryPending = true
                     }
-                    // One selected all-rounder pass before specialist OCR/face analysis. Never download
-                    // an original if an authenticated local copy or representative preview is available.
-                    if (smartReady && app.smartModels.available()) {
-                        try {
-                            drive.smart.analyze(id, stamp, hash) {
-                                if (photo) drive.analysisPhoto(id, app.ocrModels.backgroundAllowed()) else preview()?.copy(android.graphics.Bitmap.Config.ARGB_8888, true)
+                    if (!advanced) {
+                        // OCR comes first so document text can route ALL derived results to local-only storage.
+                        if (textReady && ocr.state.value.enabled) {
+                            try {
+                                val before = ocr.state.value.processed
+                                ocr.analyze(id, stamp, { original ?: drive.privateMediaUri(id) }, preview = if (video) preview else null)
+                                if (ocr.state.value.processed > before) delay(120)
+                            } catch (cancel: CancellationException) {
+                                throw cancel
+                            } catch (_: LinkageError) {
+                                textReady = false
+                                nativeUnavailable = true
+                                incomplete = true
+                            } catch (_: Exception) {
+                                incomplete = true
                             }
-                        } catch (cancel: CancellationException) {
-                            throw cancel
-                        } catch (_: Exception) {
-                            incomplete = true
                         }
-                        smartReady = app.smartModels.available()
-                    }
-                    // OCR comes first so document text can route ALL derived results to local-only storage.
-                    if (textReady && ocr.state.value.enabled) {
-                        try {
-                            val before = ocr.state.value.processed
-                            ocr.analyze(id, stamp, { original ?: drive.privateMediaUri(id) }, preview = if (video) preview else null)
-                            if (ocr.state.value.processed > before) delay(120)
-                        } catch (cancel: CancellationException) {
-                            throw cancel
-                        } catch (_: LinkageError) {
-                            textReady = false
-                            nativeUnavailable = true
-                            incomplete = true
-                        } catch (_: Exception) {
-                            incomplete = true
-                        }
-                    }
-                    if (faceReady && people.state.value.enabled) {
-                        try {
-                            val changed = people.analyze(id, stamp, ownedSource = photo) {
-                                if (photo) drive.analysisPhoto(id, app.ocrModels.backgroundAllowed()) else preview()
+                        if (faceReady && people.state.value.enabled) {
+                            try {
+                                val changed = people.analyze(id, stamp, ownedSource = photo) {
+                                    if (photo) drive.analysisPhoto(id, app.ocrModels.backgroundAllowed()) else preview()
+                                }
+                                if (changed) delay(120)
+                            } catch (cancel: CancellationException) {
+                                throw cancel
+                            } catch (_: LinkageError) {
+                                faceReady = false
+                                nativeUnavailable = true
+                                incomplete = true
+                            } catch (_: Exception) {
+                                incomplete = true
                             }
-                            if (changed) delay(120)
-                        } catch (cancel: CancellationException) {
-                            throw cancel
-                        } catch (_: LinkageError) {
-                            faceReady = false
-                            nativeUnavailable = true
-                            incomplete = true
-                        } catch (_: Exception) {
-                            incomplete = true
                         }
-                    }
-                    if ((photo || video) && sceneReady && scenes.state.value.enabled && !scenes.state.value.capacityReached && app.ocrModels.backgroundAllowed(original == null)) {
-                        try {
-                            val changed = scenes.analyze(id, stamp, preview = if (video) preview else null) { original ?: drive.privateMediaUri(id) }
-                            if (changed) delay(120)
-                        } catch (cancel: CancellationException) {
-                            throw cancel
-                        } catch (_: LinkageError) {
-                            sceneReady = false
-                            nativeUnavailable = true
-                            incomplete = true
-                        } catch (_: Exception) {
-                            incomplete = true
+                        if ((photo || video) && sceneReady && scenes.state.value.enabled && !scenes.state.value.capacityReached && app.ocrModels.backgroundAllowed(original == null)) {
+                            try {
+                                val changed = scenes.analyze(id, stamp, preview = if (video) preview else null) { original ?: drive.privateMediaUri(id) }
+                                if (changed) delay(120)
+                            } catch (cancel: CancellationException) {
+                                throw cancel
+                            } catch (_: LinkageError) {
+                                sceneReady = false
+                                nativeUnavailable = true
+                                incomplete = true
+                            } catch (_: Exception) {
+                                incomplete = true
+                            }
+                        }
+                    } else {
+                        // One selected all-rounder pass before specialist OCR/face analysis. Never download
+                        // an original if an authenticated local copy or representative preview is available.
+                        if (smartReady && app.smartModels.available()) {
+                            try {
+                                drive.smart.analyze(id, stamp, hash) {
+                                    if (photo) drive.analysisPhoto(id, app.ocrModels.backgroundAllowed()) else preview()?.copy(android.graphics.Bitmap.Config.ARGB_8888, true)
+                                }
+                            } catch (cancel: CancellationException) {
+                                throw cancel
+                            } catch (_: Exception) {
+                                incomplete = true
+                            }
+                            smartReady = app.smartModels.available()
                         }
                     }
                     try {
                         val changed = drive.analysisResults.checkpoint(hash, video, ocr.snapshot(id, stamp), people.snapshot(id, stamp), scenes.snapshot(id, stamp), drive.smart.snapshot(id, stamp))
                         if (changed) people.privacyChanged(hash)
-                        withTimeout(20_000) { drive.analysisResults.sync(hash) }
                     } catch (_: TimeoutCancellationException) {
                         recoveryPending = true
                     } catch (cancel: CancellationException) {
@@ -242,50 +246,63 @@ class MediaIntelligenceWorker(context: Context, params: WorkerParameters) : Coro
 
                 // One per-photo pipeline; refreshed candidates let new arrivals interrupt the old backlog.
                 data class Candidate(val id: String, val stamp: String, val mime: String, val time: Long, val local: LocalMedia? = null)
-                val visited = hashSetOf<Pair<String, String>>()
-                var locals: List<LocalMedia>? = null
-                var clouds: List<DriveFile>? = null
-                var candidates = emptyList<Candidate>()
-                var cursor = 0
-                var checked = 0
-                while (true) {
-                    val nextLocal = drive.localMedia.changes.value
-                    val nextCloud = drive.state.value.files
-                    if (nextLocal !== locals || nextCloud !== clouds) {
-                        locals = nextLocal
-                        clouds = nextCloud
-                        val links = drive.state.value.backedDeviceFiles
-                        candidates = (
-                            nextLocal.asSequence().filter { !it.trashed && !it.galleryHidden && links[it.fingerprint] == null }.map { Candidate(it.uri.toString(), it.fingerprint, it.mime, maxOf(it.date, it.addedAt), it) } +
-                                nextCloud.asSequence().filter { it.trashedAt == 0L }.map { Candidate(it.id, it.hash, it.mime, maxOf(it.date, it.backedUpAt)) }
-                            )
-                            .filter { it.mime.startsWith("image/") || it.mime.startsWith("video/") }.distinctBy { it.id }
-                            .sortedWith(compareByDescending<Candidate> { it.time }.thenBy { it.id }).toList()
-                        cursor = 0
+                for (advanced in listOf(false, true)) {
+                    if (advanced) {
+                        people.finishScan()
+                        scenes.finish()
+                        people.pauseEngine()
+                        ocr.pauseEngine()
+                        smartReady = app.smartModels.prepare()
+                        if (!smartReady) break
                     }
-                    while (cursor < candidates.size && (candidates[cursor].id to candidates[cursor].stamp) in visited) cursor++
-                    val item = candidates.getOrNull(cursor++) ?: break
-                    visited += item.id to item.stamp
-                    checked++
-                    if (checked == 1 || checked % 10 == 0) MediaIntelligenceScheduling.status.value = "Checking media privately · $checked / ${candidates.size}"
-                    val device = item.local
-                    scan(item.id, item.stamp, item.mime, device?.uri ?: drive.preferredDeviceSource(item.id)) {
-                        if (device != null) drive.localMedia.thumbnail(device, 768) else drive.thumbnail(item.id, 384)
+                    val visited = hashSetOf<Pair<String, String>>()
+                    var locals: List<LocalMedia>? = null
+                    var clouds: List<DriveFile>? = null
+                    var candidates = emptyList<Candidate>()
+                    var cursor = 0
+                    var checked = 0
+                    while (true) {
+                        val nextLocal = drive.localMedia.changes.value
+                        val nextCloud = drive.state.value.files
+                        if (nextLocal !== locals || nextCloud !== clouds) {
+                            locals = nextLocal
+                            clouds = nextCloud
+                            val links = drive.state.value.backedDeviceFiles
+                            val ordered = (
+                                nextLocal.asSequence().filter { !it.trashed && !it.galleryHidden && links[it.fingerprint] == null }.map { Candidate(it.uri.toString(), it.fingerprint, it.mime, maxOf(it.date, it.addedAt), it) } +
+                                    nextCloud.asSequence().filter { it.trashedAt == 0L }.map { Candidate(it.id, it.hash, it.mime, maxOf(it.date, it.backedUpAt)) }
+                                )
+                                .filter { it.mime.startsWith("image/") || it.mime.startsWith("video/") }.distinctBy { it.id }
+                                .sortedWith(compareByDescending<Candidate> { it.time }.thenBy { it.id }).toList()
+                            candidates = MediaIntelligenceScheduling.cursor.order(advanced, ordered) { it.id to it.stamp }
+                            cursor = 0
+                        }
+                        while (cursor < candidates.size && (candidates[cursor].id to candidates[cursor].stamp) in visited) cursor++
+                        val item = candidates.getOrNull(cursor++) ?: break
+                        visited += item.id to item.stamp
+                        MediaIntelligenceScheduling.cursor.mark(advanced, item.id, item.stamp)
+                        checked++
+                        if (checked == 1 || checked % 10 == 0) MediaIntelligenceScheduling.status.value = "Checking media privately · $checked / ${candidates.size}"
+                        val succeeded = runIntelligenceItem {
+                            val device = item.local
+                            scan(item.id, item.stamp, item.mime, device?.uri ?: drive.preferredDeviceSource(item.id), advanced) {
+                                if (device != null) drive.localMedia.thumbnail(device, 768) else drive.thumbnail(item.id, 384)
+                            }
+                        }
+                        if (!succeeded) incomplete = true
                     }
                 }
                 people.finishScan()
                 scenes.finish()
-                if (people.state.value.pendingSync && app.ocrModels.backgroundAllowed()) {
-                    withTimeoutOrNull(30_000) { runCatching { people.sync() } }
-                }
                 MediaIntelligenceScheduling.status.value = when {
                     nativeUnavailable -> "An analysis engine is unavailable on this phone. Other available analysis continues; originals and saved results are kept."
                     waiting -> "Available engines finished; waiting for models or encrypted People restore. Retrying automatically."
+                    app.smartModels.state.value.enabled && !smartReady -> "Face/text/subject results are saved. The selected large AI is preparing or needs attention in Settings."
                     incomplete -> "Some media could not be read. Successful results are kept; retry from these controls."
                     recoveryPending || drive.analysisResults.syncPending -> "On-device results are saved. Encrypted recovery sync will retry automatically."
                     else -> "Available media checked. New photos are analysed automatically."
                 }
-                waiting || recoveryPending || drive.analysisResults.syncPending || incomplete && runAttemptCount < 3
+                waiting || recoveryUnavailable || incomplete && runAttemptCount < 3
             }
             if (retryNeeded) Result.retry() else Result.success()
         } catch (_: TimeoutCancellationException) {
@@ -307,9 +324,11 @@ class MediaIntelligenceWorker(context: Context, params: WorkerParameters) : Coro
                 runCatching { scenes.finish() }
                 runCatching { people.pauseEngine() }
                 runCatching { ocr.pauseEngine() }
-                app.smartModels.pause()
+                // Routine batch completion must never abort another worker's model activation.
+                runCatching { app.smartModels.releaseWhenIdle() }
+                IntelligenceRecoveryScheduling.request(applicationContext)
             }
         }
     }
-    private class AnalysisPaused : Exception()
+    private class AnalysisPaused : CancellationException()
 }

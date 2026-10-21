@@ -1,3 +1,15 @@
+# Public1.20.42 · model activation and independent analysis
+
+TG Photos1.20.42 repairs model activation and analysis scheduling. Completed verified face/OCR/subject partial downloads now install locally instead of requesting an invalid EOF range. The hardened APK retains LiteRT's native exception/benchmark classes. Model initialization uses a short8-token image test and a separate longer first-setup deadline; downloading, verification, initialization and ready status are distinct. One image failure does not cascade through model choices. The prior automatic failure/blocked flags are reset once without changing manual choice, explicit Off/Pause, installed files or verified model pins.
+
+Face, exact text and subject analysis run across the library before the optional large-model pass. Unreadable items do not stop later files; independent RAM-only session cursors stop bounded retries repeatedly starting at the same prefix. Routine batch cleanup never aborts concurrent model initialization. Unchanged-source OCR hashes are reused, and OCR pixels are normalized to mutable sRGB ARGB8888. Existing face identities, manual names/reviews and eight-language OCR packs remain.
+
+Encrypted per-photo results save locally before independent bounded recovery work. Its optional pending flag is backward compatible with existing encrypted cache records; original media encryption, master keys and Room1 are unchanged. General filename/OCR/People search renders without waiting for cold semantic inference; model results enhance it asynchronously with a bounded RAM query cache. Private exclusions, lock/account gates and authenticated Telegram recovery remain.
+
+632 distinct JVM tests, all ktlint, nine root/nine sanitized-source checks and zero-error release lint are required before publication. Runtime derivatives reproduce byte-for-byte. Real Android activation, RAM, OCR/face accuracy, layout, OEM and account acceptance remain unverified: no usable Android target/KVM is available in this environment. Public model pins and prior host smoke results are retained; no perfect-accuracy claim.
+
+Prior releases follow.
+
 # Public1.20.41 · on-device AI choices
 
 Four selectable large models, one active at a time: SmolVLM2-256M, SmolVLM2-500M, Qwen3.5-0.8B and full EmbeddingGemma2. Advertised8–12GB phones select EmbeddingGemma2; low-RAM tiers use smaller models. Replacement waits for verification and real initialization before durable activation and old-model/cache cleanup. Face/OCR packs remain separate. New inference needs ARM64; existing Android8+ four-ABI gallery features stay. Java21 compiler is required to read the LiteRT-LM0.18 API; app Java/Kotlin bytecode targets17. Models download after setup; none are bundled. Working caches require additional storage.

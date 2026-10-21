@@ -20,7 +20,7 @@ import org.json.JSONObject
  * The current unlocked account/vault and durable Private Vault exclusions guard every publication.
  */
 internal class IntelligenceResults(private val context: Context, private val drive: DriveRepository, private val telegram: TelegramGateway) {
-    private data class Entry(val hash: String, val safe: Boolean, val ack: String)
+    private data class Entry(val hash: String, val safe: Boolean, val ack: String, val pending: Boolean = true)
     private val gate = Mutex()
     private val generation = AtomicLong()
 
@@ -33,7 +33,7 @@ internal class IntelligenceResults(private val context: Context, private val dri
     private var remote: Map<String, List<RemoteDocument>>? = null
     private var remoteAttempted = false
     private var remoteUnavailable = false
-    val syncPending: Boolean get() = remoteUnavailable
+    val syncPending: Boolean get() = remoteUnavailable || entries.values.any { it.pending }
     private fun root(scope: Pair<Long, String>) = File(context.noBackupFilesDir, "analysis-results/${scope.first}/${scope.second}")
     private fun prefix(scope: Pair<Long, String>) = "TGDRIVE_V1_ANALYSIS:${scope.second}:"
     private fun guard(scope: Pair<Long, String>, token: Long) {
@@ -90,14 +90,14 @@ internal class IntelligenceResults(private val context: Context, private val dri
         for (key in changed) {
             val row = value[key]
             val body = JSONObject().put("key", key).put("removed", row == null)
-            if (row != null) body.put("hash", row.hash).put("safe", row.safe).put("ack", row.ack)
+            if (row != null) body.put("hash", row.hash).put("safe", row.safe).put("ack", row.ack).put("pending", row.pending)
             write(scope, token, "policy-$key", body)
         }
         guard(scope, token)
         entries = value
         policyChanges += changed.size
         if (policyChanges >= 64) {
-            val body = JSONObject().put("version", 1).put("rows", JSONArray(value.map { (key, row) -> JSONArray().put(key).put(row.hash).put(row.safe).put(row.ack) }))
+            val body = JSONObject().put("version", 1).put("rows", JSONArray(value.map { (key, row) -> JSONArray().put(key).put(row.hash).put(row.safe).put(row.ack).put(row.pending) }))
             write(scope, token, "index", body)
             guard(scope, token)
             root(scope).listFiles().orEmpty().filter { it.name.startsWith("policy-") && it.extension == "bin" }.forEach { AtomicFile(it).delete() }
@@ -119,7 +119,7 @@ internal class IntelligenceResults(private val context: Context, private val dri
                 val key = row.getString(0)
                 val hash = row.getString(1)
                 check(hash.length in 1..128 && key == drive.analysisObjectId(hash, scope))
-                restored[key] = Entry(hash, row.getBoolean(2), row.getString(3).also { check(it.length <= 64) })
+                restored[key] = Entry(hash, row.getBoolean(2), row.getString(3).also { check(it.length <= 64) }, row.optBoolean(4, true))
             }
             val deltas = root(scope).listFiles().orEmpty().map { it.name.removeSuffix(".bak") }.filter { it.startsWith("policy-") && it.endsWith(".bin") }.distinct()
             check(deltas.size <= 50000)
@@ -133,7 +133,7 @@ internal class IntelligenceResults(private val context: Context, private val dri
                 } else {
                     val hash = row.getString("hash")
                     check(hash.length in 1..128 && key == drive.analysisObjectId(hash, scope))
-                    restored[key] = Entry(hash, row.getBoolean("safe"), row.getString("ack").also { check(it.length <= 64) })
+                    restored[key] = Entry(hash, row.getBoolean("safe"), row.getString("ack").also { check(it.length <= 64) }, row.optBoolean("pending", true))
                 }
             }
             check(restored.size <= 50000)
@@ -261,7 +261,7 @@ internal class IntelligenceResults(private val context: Context, private val dri
                 val body = withTimeout(15_000) { authenticated(ref, key, hash, scope, token) }
                 if (drive.privateAi.excluded("", hash)) return@withLock null
                 write(scope, token, key, body)
-                saveIndex(scope, token, entries + (key to Entry(hash, true, digest(body))))
+                saveIndex(scope, token, entries + (key to Entry(hash, true, digest(body), false)))
                 body
             } catch (cancel: TimeoutCancellationException) {
                 remoteUnavailable = true
@@ -293,19 +293,28 @@ internal class IntelligenceResults(private val context: Context, private val dri
             valid(body, hash, scope)
             val safe = safe(body)
             val before = entries[key]
-            val row = Entry(hash, safe, before?.ack.orEmpty())
+            val changed = previous?.toString() != body.toString()
+            val row = Entry(hash, safe, before?.ack.orEmpty(), before?.pending != false || changed || before?.safe != safe)
             // A restrictive verdict commits before new payload bytes, and blocks synchronously
             // even if storage fails. A permissive verdict publishes only after durable ciphertext.
             if (!safe) {
                 localOnly += hash
                 if (before != row) saveIndex(scope, token, entries + (key to row))
             }
-            if (previous?.toString() != body.toString()) write(scope, token, key, body)
+            if (changed) write(scope, token, key, body)
             if (safe) {
                 if (before != row) saveIndex(scope, token, entries + (key to row))
                 localOnly -= hash
             }
             before?.safe != safe
+        }
+    }
+    suspend fun pendingRecoveryHashes(): List<String> = withContext(Dispatchers.IO) {
+        activate()
+        gate.withLock {
+            val scope = checkNotNull(binding)
+            guard(scope, generation.get())
+            entries.values.filter { it.pending }.map { it.hash }
         }
     }
     suspend fun sync(hash: String) = withContext(Dispatchers.IO) {
@@ -327,11 +336,14 @@ internal class IntelligenceResults(private val context: Context, private val dri
                     guard(scope, token)
                     remote = all - key
                 }
-                if (row.ack.isNotEmpty()) saveIndex(scope, token, entries + (key to row.copy(ack = "")))
+                if (row.ack.isNotEmpty() || row.pending) saveIndex(scope, token, entries + (key to row.copy(ack = "", pending = false)))
                 return@withLock
             }
             val digest = digest(body)
-            if (row.ack == digest && !all[key].isNullOrEmpty()) return@withLock
+            if (row.ack == digest && !all[key].isNullOrEmpty()) {
+                if (row.pending) saveIndex(scope, token, entries + (key to row.copy(pending = false)))
+                return@withLock
+            }
             val bytes = body.toString().toByteArray()
             val cipher = try {
                 drive.ocrEnvelope(bytes, "analysis-v1/$key", scope, false)
@@ -351,7 +363,7 @@ internal class IntelligenceResults(private val context: Context, private val dri
                     return@withLock
                 }
                 remote = all + (key to (all[key].orEmpty() + sent.copy(marker = prefix(scope) + key)))
-                saveIndex(scope, token, entries + (key to row.copy(ack = digest)))
+                saveIndex(scope, token, entries + (key to row.copy(ack = digest, pending = false)))
                 val old = all[key].orEmpty().filter { it.messageId != sent.messageId }
                 if (old.isNotEmpty()) {
                     telegram.deleteAnalysisDocuments(old, scope.second, key)

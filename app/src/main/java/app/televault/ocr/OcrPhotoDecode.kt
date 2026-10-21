@@ -10,11 +10,19 @@ internal fun decodeOcrPhoto(context: Context, uri: Uri): Bitmap? {
     check(uri.scheme == "content" || uri.scheme == "file")
     check("private-vault" !in uri.pathSegments)
     if (Build.VERSION.SDK_INT >= 28) {
-        return ImageDecoder.decodeBitmap(ImageDecoder.createSource(context.contentResolver, uri)) { decoder, info, _ ->
+        val decoded = ImageDecoder.decodeBitmap(ImageDecoder.createSource(context.contentResolver, uri)) { decoder, info, _ ->
             decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
             decoder.isMutableRequired = true
+            decoder.setTargetColorSpace(ColorSpace.get(ColorSpace.Named.SRGB))
             val size = app.televault.domain.AnalysisImageSize.fit(info.size.width, info.size.height, maxEdge, maxPixels)
             decoder.setTargetSize(size.width(), size.height())
+        }
+        if (decoded.config == Bitmap.Config.ARGB_8888 && decoded.isMutable) return decoded
+        return try {
+            checkNotNull(decoded.copy(Bitmap.Config.ARGB_8888, true))
+        } finally {
+            if (decoded.isMutable) decoded.eraseColor(0)
+            decoded.recycle()
         }
     }
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }

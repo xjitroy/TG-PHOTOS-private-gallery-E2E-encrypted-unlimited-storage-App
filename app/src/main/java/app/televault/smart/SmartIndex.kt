@@ -19,11 +19,20 @@ internal class SmartIndex(private val drive: DriveRepository, private val models
     private val epoch = AtomicLong()
     private val gate = Any()
     private var bytes = 0
+    private val queryVectors = object : LinkedHashMap<String, FloatArray>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, FloatArray>?): Boolean {
+            if (size <= 16) return false
+            eldest?.value?.fill(0f)
+            return true
+        }
+    }
     val revision = MutableStateFlow(0L)
     fun lock() {
         synchronized(gate) {
             epoch.incrementAndGet()
             rows.clear()
+            queryVectors.values.forEach { it.fill(0f) }
+            queryVectors.clear()
             bytes = 0
             revision.value++
         }
@@ -92,7 +101,7 @@ internal class SmartIndex(private val drive: DriveRepository, private val models
         } finally {
             image.eraseColor(0)
             image.recycle()
-        } ?: return
+        } ?: error("Large AI returned no result for this image")
         currentCoroutineContext().ensureActive()
         if (drive.privateVaultBinding() != binding || selected != active())return
         check(output.vector.isNotEmpty() || output.caption.isNotBlank() || output.text.isNotBlank()) { "AI returned no usable result" }
@@ -124,18 +133,31 @@ internal class SmartIndex(private val drive: DriveRepository, private val models
         if (!models.state.value.enabled || query.isBlank() || active() != "embedding")return@withContext emptyMap()
         val token = epoch.get()
         val binding = drive.privateVaultBinding()
-        val q = models.query(query) ?: return@withContext emptyMap()
-        val qNorm = sqrt(q.sumOf { (it * it).toDouble() }).toFloat()
-        if (qNorm <= 0)return@withContext emptyMap()
-        val allowed = normalIds()
-        val matches = mutableListOf<Pair<String, Float>>()
-        for ((id, row) in rows) {
-            currentCoroutineContext().ensureActive()
-            if (id !in ids || row.model != "embedding" || row.vector.size != q.size || id !in allowed || drive.privateAi.excluded(id, row.hash))continue
-            val score = AiVectorSearch.score(row.vector, q)
-            if (score.isFinite() && score >= 0.30f)matches += id to score
+        val cacheKey = "$token/${active()}/${query.take(2048)}"
+        val q = synchronized(gate) { queryVectors[cacheKey]?.copyOf() } ?: run {
+            val vector = models.query(query) ?: return@withContext emptyMap()
+            if (epoch.get() != token || drive.privateVaultBinding() != binding || !models.state.value.enabled) {
+                vector.fill(0f)
+                return@withContext emptyMap()
+            }
+            synchronized(gate) { if (epoch.get() == token) queryVectors[cacheKey] = vector.copyOf() }
+            vector
         }
-        if (epoch.get() != token || drive.privateVaultBinding() != binding)return@withContext emptyMap()
-        AiVectorSearch.shortlist(matches.toMap())
+        try {
+            val qNorm = sqrt(q.sumOf { (it * it).toDouble() }).toFloat()
+            if (qNorm <= 0)return@withContext emptyMap()
+            val allowed = normalIds()
+            val matches = mutableListOf<Pair<String, Float>>()
+            for ((id, row) in rows) {
+                currentCoroutineContext().ensureActive()
+                if (id !in ids || row.model != "embedding" || row.vector.size != q.size || id !in allowed || drive.privateAi.excluded(id, row.hash))continue
+                val score = AiVectorSearch.score(row.vector, q)
+                if (score.isFinite() && score >= 0.30f)matches += id to score
+            }
+            if (epoch.get() != token || drive.privateVaultBinding() != binding)return@withContext emptyMap()
+            AiVectorSearch.shortlist(matches.toMap())
+        } finally {
+            q.fill(0f)
+        }
     }
 }

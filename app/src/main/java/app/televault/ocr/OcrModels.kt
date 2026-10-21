@@ -3,6 +3,7 @@ package app.televault.ocr
 import android.content.Context
 import androidx.work.*
 import app.televault.data.MediaIntelligenceScheduling
+import app.televault.data.promoteVerifiedModelPart
 import app.televault.domain.BackgroundAnalysisPolicy
 import java.io.File
 import java.net.HttpURLConnection
@@ -63,8 +64,13 @@ internal class OcrModels(context: Context) {
             }
             verified.remove(id)
             target.parentFile!!.mkdirs()
-            check(directory.usableSpace > pack.bytes + 64L * 1024 * 1024)
             val part = File(target.path + ".partial")
+            if (promoteVerifiedModelPart(part, target, pack.bytes, pack.hash)) {
+                verified += id
+                mutable.value = OcrModelState()
+                return@withLock target
+            }
+            check(directory.usableSpace > (pack.bytes - part.length()).coerceAtLeast(0) + 64L * 1024 * 1024)
             if (part.length() > pack.bytes) part.delete()
             var offset = part.length()
             var connection = URL(pack.url).openConnection() as HttpURLConnection

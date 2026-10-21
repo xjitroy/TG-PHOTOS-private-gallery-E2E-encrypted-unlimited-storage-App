@@ -26,3 +26,11 @@ with zipfile.ZipFile(root/'app/libs/litertlm-android-0.18.0-arm64.aar') as z:
  assert b'minSdkVersion="24"' in z.read('AndroidManifest.xml')
 manifest=(root/'app/src/main/AndroidManifest.xml').read_text();assert 'android:process=":intelligence" android:exported="false"' in manifest
 print('PASS: immutable four-model pins, licensed ARM64 inference, 16KB native alignment and private process declaration')
+
+# Native FindClass names must survive hardened shrinking, including exception paths.
+rules=(root/'app/proguard-rules.pro').read_text()
+for name in ['LiteRtLmJniException','BenchmarkInfo','EmbeddingResponse']:
+ assert '-keep class com.google.ai.edge.litertlm.'+name+' { *; }' in rules,name
+search=(root/'app/src/main/java/app/televault/ui/UniversalSearch.kt').read_text()
+projection=search.split('val projection = rememberCoalescedProjection',1)[1].split('val draftDates',1)[0]
+assert 'model.smart.rank(' not in projection, 'Semantic startup must not block exact results'

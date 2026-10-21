@@ -30,3 +30,15 @@ internal suspend fun prepareIntelligence(
         }
     }.map { it.await() }
 }
+
+/** A missing/corrupt source must not starve every later photo; session cancellation still wins. */
+internal suspend fun runIntelligenceItem(block: suspend () -> Unit): Boolean = try {
+    block()
+    true
+} catch (cancel: CancellationException) {
+    throw cancel
+} catch (_: LinkageError) {
+    false
+} catch (_: Exception) {
+    false
+}

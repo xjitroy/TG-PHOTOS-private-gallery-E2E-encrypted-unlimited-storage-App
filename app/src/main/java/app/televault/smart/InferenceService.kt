@@ -27,7 +27,18 @@ class InferenceService : Service() {
                 Process.killProcess(Process.myPid())
                 return true
             }
-            val timeout = deadline.schedule({ Process.killProcess(Process.myPid()) }, 100, TimeUnit.SECONDS)
+            var stage = "request"
+            val timeout = deadline.schedule(
+                { Process.killProcess(Process.myPid()) },
+                if (code == OPEN) {
+                    300
+                } else if (code == TEXT) {
+                    30
+                } else {
+                    100
+                },
+                TimeUnit.SECONDS
+            )
             try {
                 synchronized(gate) {
                     when (code) {
@@ -40,8 +51,10 @@ class InferenceService : Service() {
                             val spec = SmartCatalog.read(this@InferenceService).single { it.id == id }
                             val folder = File(noBackupFilesDir, "smart-models-v1/$id-${spec.revision}")
                             check(spec.files.all { File(folder, it.path).length() == it.bytes })
+                            stage = "initialize-$id"
                             if (id == "embedding") {
                                 embedding = EmbeddingBridge(File(folder, spec.files[0].path).path, File(cacheDir, "embedding-2").apply { mkdirs() }.path)
+                                stage = "embedding-text-test"
                                 valid(embedding!!.text("photo"))
                                 val sample = android.graphics.Bitmap.createBitmap(64, 64, android.graphics.Bitmap.Config.ARGB_8888)
                                 try {
@@ -49,6 +62,7 @@ class InferenceService : Service() {
                                     check(sample.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, stream))
                                     val buffer = stream.toByteArray()
                                     try {
+                                        stage = "embedding-image-test"
                                         valid(embedding!!.image(buffer))
                                     } finally {
                                         buffer.fill(0)
@@ -58,13 +72,16 @@ class InferenceService : Service() {
                                     sample.recycle()
                                 }
                             } else {
+                                stage = "cpu-libraries"
                                 for (lib in listOf("ggml-base", "ggml", "llama", "mtmd")) System.loadLibrary(lib)
+                                stage = "vision-model-load"
                                 handle = VlmNative.open(File(folder, spec.files[0].path).path, File(folder, spec.files[1].path).path, File(applicationInfo.nativeLibraryDir, "libggml-cpu-android_armv8.0_1.so").path)
                                 check(handle != 0L)
                                 // Real image prefill/decode verifies the projector as well as the decoder.
                                 val image = android.graphics.Bitmap.createBitmap(64, 64, android.graphics.Bitmap.Config.ARGB_8888)
                                 try {
-                                    check(VlmNative.read(handle, image, "Describe this image in a few words.").isNotEmpty())
+                                    stage = "vision-image-test"
+                                    check(VlmNative.read(handle, image, "Describe the image briefly.", 8).isNotEmpty())
                                 } finally {
                                     image.eraseColor(0)
                                     image.recycle()
@@ -77,6 +94,7 @@ class InferenceService : Service() {
                             val bytes = data.createByteArray() ?: error("Missing image")
                             check(bytes.size <= 512 * 1024)
                             try {
+                                stage = "image"
                                 val e = embedding
                                 if (e != null) {
                                     val vector = e.image(bytes)
@@ -88,7 +106,7 @@ class InferenceService : Service() {
                                     val bitmap = checkNotNull(BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inPreferredConfig = android.graphics.Bitmap.Config.ARGB_8888 }))
                                     try {
                                         check(bitmap.width <= 768 && bitmap.height <= 768)
-                                        val result = VlmNative.read(handle, bitmap, "Return only JSON with caption (one sentence describing visible objects and scene) and text (visible printed words, empty if none). Do not invent details or identities.")
+                                        val result = VlmNative.read(handle, bitmap, "Return only JSON with caption (one sentence describing visible objects and scene) and text (visible printed words, empty if none). Do not invent details or identities.", 128)
                                         reply!!.writeNoException()
                                         reply.writeFloatArray(floatArrayOf())
                                         reply.writeByteArray(result)
@@ -105,6 +123,7 @@ class InferenceService : Service() {
                         TEXT -> {
                             val text = data.readString().orEmpty()
                             check(text.length in 1..2048)
+                            stage = "query"
                             val vector = checkNotNull(embedding).text(text)
                             valid(vector)
                             reply!!.writeNoException()
@@ -114,11 +133,11 @@ class InferenceService : Service() {
                     }
                 }
             } catch (_: OutOfMemoryError) {
-                reply?.writeException(IllegalStateException("model-memory"))
+                reply?.writeException(IllegalStateException("model-memory:$stage"))
             } catch (_: LinkageError) {
-                reply?.writeException(IllegalStateException("model-runtime"))
+                reply?.writeException(IllegalStateException("model-runtime:$stage"))
             } catch (_: Exception) {
-                reply?.writeException(IllegalStateException("model-request"))
+                reply?.writeException(IllegalStateException("model-request:$stage"))
             } finally {
                 timeout.cancel(false)
             }

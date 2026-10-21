@@ -52,3 +52,7 @@
 -keep class com.google.ai.edge.litertlm.InputData$* { *; }
 -keep class com.google.ai.edge.litertlm.EmbeddingResponse { *; }
 -keep,allowoptimization class app.televault.smart.SmartModelsWorker { public <init>(android.content.Context, androidx.work.WorkerParameters); }
+
+# JNI FindClass names used when LiteRT reports an error or benchmark information.
+-keep class com.google.ai.edge.litertlm.LiteRtLmJniException { *; }
+-keep class com.google.ai.edge.litertlm.BenchmarkInfo { *; }

@@ -1,8 +1,8 @@
 {
-  "version": "1.20.41",
-  "code": 53,
+  "version": "1.20.42",
+  "code": 54,
   "checks": {
-    "distinctHostTests": 622,
+    "distinctHostTests": 632,
     "suites": {
       "domain": {
         "tests": 348,
@@ -23,7 +23,7 @@
         "skipped": 0
       },
       "app": {
-        "tests": 202,
+        "tests": 212,
         "failures": 0,
         "errors": 0,
         "skipped": 0
@@ -31,26 +31,25 @@
     },
     "localChecks": 9,
     "lintErrors": 0,
-    "lintWarnings": 120,
+    "lintWarnings": 121,
     "finalLintVerified": true,
-    "nativeAcceptance": "Unavailable: no Android device/emulator/KVM. Native layout/JNI/recognition/RAM/OEM/codec acceptance pending.",
-    "independentSecurityAudit": "Not performed; scoped source self-review only",
+    "nativeAcceptance": "No usable Android target/emulator/KVM. ADB cannot create its read-only default profile here; no phone JNI/RAM/OCR/face/OEM/account acceptance claimed.",
     "privateDataReset": false,
     "privateApkBuilt": false,
-    "runtimeModelPins": "Four immutable on-device model choices; licensed ARM64 inference; existing four-ABI face/OCR/subject/TDLib packs preserved. Runtime binaries reproduced byte-for-byte.",
-    "regressions": "RAM/default/manual/fallback selection, activation failure/commit-before-delete, cancelled download/inference separation, bounded quantized-vector ranking, multilingual calendar filtering, plus existing playback/backup/crypto/privacy/editor/gallery regressions, authenticated local large-media source/model/revision reuse",
-    "hostModelSmoke": "Real image prefill/decode exercised for three VLMs; full EmbeddingGemma2 text/vision/generated-audio vectors and English/Bengali/Hindi synthetic image ranking exercised. Generative captions hallucinated some details; specialist OCR/face identity remain."
+    "independentSecurityAudit": "Not performed; scoped self-review",
+    "runtimeModelPins": "Four unchanged immutable model choices and all specialised packs retained. Only owned JNI token-bound bridge changes; complete runtime derivative reproduction passed.",
+    "regressions": "Complete/corrupt/incomplete partial installation, bad-source continuation/cancellation, fair bounded batch retry positions and noninterfering runtime cleanup, plus all prior playback/backup/privacy/encryption/editor/search checks"
   },
   "artifact": {
-    "apk": "TG-Photos-1.20.41-universal.apk",
-    "bytes": 101260804,
-    "sha256": "f35ac8e6e8b9681befbc8e8d31ccae056fac9e9108d78beca7b40f04da71d75a",
-    "versionCode": 53,
-    "versionName": "1.20.41",
+    "apk": "TG-Photos-1.20.42-universal.apk",
+    "bytes": 101269216,
+    "sha256": "101ed063be511df84f9cf465588900a98ee582b6e8b9b921d281ee07e32b1d5b",
+    "versionCode": 54,
+    "versionName": "1.20.42",
     "package": "app.televault.photos",
     "distribution": "public",
-    "sourceCommit": "fcdeaa66b9c09a7190d78225b96b93c8c6d6e418",
-    "sourceTree": "aab4c595450d15bdb672f4695d28ef72180c755b",
+    "sourceCommit": "a6f6090bce0d6bb1ec24be8714a14dbb2c68e7bf",
+    "sourceTree": "7b182cd74386a433883c6d05b3b0d7c3225fbf1b",
     "certificateSHA256": "3e7c1029cb5e2da80026758abd483b5bd7f0551b6a56bee6b21640b8ae774559",
     "debuggable": false,
     "productionVerified": false,
@@ -90,6 +89,6 @@
     ],
     "nativeAcceptance": "Authorized but unavailable in this workspace: native phone/account/provider/background-worker/performance/security acceptance. See PRODUCTION_READINESS.md for actual release gates."
   },
-  "nativeAcceptance": "Unavailable: no Android device/emulator/KVM. Native layout/JNI/recognition/RAM/OEM/codec acceptance pending.",
+  "nativeAcceptance": "No usable Android target/emulator/KVM. ADB cannot create its read-only default profile here; no phone JNI/RAM/OCR/face/OEM/account acceptance claimed.",
   "productionVerified": false
 }

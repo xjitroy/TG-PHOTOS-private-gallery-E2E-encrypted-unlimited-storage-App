@@ -33,11 +33,16 @@ import app.televault.domain.UniversalMediaSearch
 import app.televault.people.PeopleState
 import java.time.ZoneId
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
-private data class SearchIndexInput(val files: List<MediaEntry>, val people: PeopleState, val textRevision: Pair<Long, Int>, val favorites: Set<String>, val sceneLabels: Map<String, String>, val smartRevision: Long, val smartModel: Pair<String, Boolean>)
+private data class SearchIndexInput(val files: List<MediaEntry>, val people: PeopleState, val textRevision: Pair<Long, Int>, val favorites: Set<String>, val sceneLabels: Map<String, String>, val smartRevision: Long, val smartModel: Pair<String, Boolean>, val semantic: Map<String, Float>)
 
 /** One search across normal Photos/device/cloud media; never includes Private Vault or Trash. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -105,7 +110,24 @@ internal fun UniversalSearch(files: List<MediaEntry>, people: PeopleState, model
     val person = people.people.find { it.id == personId }
     val parsed = remember(query, start, end) { UniversalMediaSearch.parseNatural(query, start, end, java.time.LocalDate.now()) }
     val scope = listOf(model.playbackEpoch, query, start, end, type, personId, companion, alone, filters.options)
-    val projection = rememberCoalescedProjection(scope, SearchIndexInput(files, people, textIndex.processed to textIndex.indexed, mediaState.localFavorites, sceneIndex.labels, smartRevision, smartModel), emptyList<MediaEntry>()) { (all, index, _, favorites, sceneLabels) ->
+    // Exact filenames/OCR/People results render independently of a slow cold AI process.
+    val semanticKey = listOf(model.playbackEpoch, parsed.text(), smartModel)
+    var semantic by remember(semanticKey) { mutableStateOf<Map<String, Float>>(emptyMap()) }
+    LaunchedEffect(semanticKey, files, smartRevision) {
+        if (parsed.text().isBlank() || smartModel != ("embedding" to true)) return@LaunchedEffect
+        delay(300)
+        try {
+            val ranked = withContext(Dispatchers.IO) { model.smart.rank(files.mapTo(hashSetOf()) { it.id }, parsed.text()) }
+            currentCoroutineContext().ensureActive()
+            semantic = ranked
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (_: Exception) {
+            // Existing exact matches stay usable when semantic inference is unavailable.
+        }
+    }
+    val projection = rememberCoalescedProjection(scope, SearchIndexInput(files, people, textIndex.processed to textIndex.indexed, mediaState.localFavorites, sceneIndex.labels, smartRevision, smartModel, semantic), emptyList<MediaEntry>()) { input ->
+        val (all, index, _, favorites, sceneLabels) = input
         val smartDescriptions = model.smart.descriptions(all.mapTo(hashSetOf()) { it.id })
         val personNames = mutableMapOf<String, MutableList<String>>()
         index.people.filter { it.name.isNotBlank() }.forEach { group -> group.members.forEach { personNames.getOrPut(it) { mutableListOf() }.add(group.name) } }
@@ -117,7 +139,7 @@ internal fun UniversalSearch(files: List<MediaEntry>, people: PeopleState, model
         val selection = SearchMediaFilter(type, personId, alone, companion, filters.options)
         val candidates = all.filter { file -> selection.matches(file, index, favorites) && UniversalMediaSearch.matches(dateQuery, "", "", file.date, ZoneId.systemDefault()) }
         val matches = model.ocr.search(candidates.associate { it.id to "${it.name} ${metadata(it)}" }, parsed.text())
-        val semantic = model.smart.rank(candidates.mapTo(hashSetOf()) { it.id }, parsed.text())
+        val semantic = input.semantic
         candidates.filter { it.id in matches || it.id in semantic }.sortedWith(compareByDescending<MediaEntry> { semantic[it.id] ?: 0f }.thenByDescending { it.date })
     }
     val draftDates = remember(draftStart, draftEnd) { UniversalMediaSearch.parse("", draftStart, draftEnd) }

@@ -200,6 +200,23 @@ internal class OcrStore(private val context: Context, private val drive: DriveRe
             }
         }
     }
+
+    /** Reuse the authenticated unchanged-source hash instead of rereading a multi-MB original per pass. */
+    suspend fun cachedContentHash(id: String, stamp: String): String = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val scope = binding ?: return@withLock ""
+            guard(scope, token.get())
+            val body = try {
+                read(scope, id)
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (_: Exception) {
+                null
+            } ?: return@withLock ""
+            val hash = body.optString("contentHash")
+            if (body.optString("stamp") == stamp && !drive.privateAi.excluded(id, hash)) hash else ""
+        }
+    }
     suspend fun snapshot(id: String, stamp: String): JSONObject? = withContext(Dispatchers.IO) {
         mutex.withLock {
             val scope = drive.privateVaultBinding()

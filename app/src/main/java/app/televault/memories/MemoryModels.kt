@@ -2,6 +2,7 @@ package app.televault.memories
 
 import android.content.Context
 import androidx.work.*
+import app.televault.data.promoteVerifiedModelPart
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -71,8 +72,12 @@ internal class MemoryModels(context: Context) {
                         completed += pack.bytes
                         continue
                     }
-                    check(directory.usableSpace > pack.bytes + 64L * 1024 * 1024) { "Not enough space for the memory model" }
                     val part = File(directory, pack.path + ".partial")
+                    if (promoteVerifiedModelPart(part, target, pack.bytes, pack.hash)) {
+                        completed += pack.bytes
+                        continue
+                    }
+                    check(directory.usableSpace > (pack.bytes - part.length()).coerceAtLeast(0) + 64L * 1024 * 1024) { "Not enough space for the model" }
                     if (part.length() > pack.bytes || part.length() == pack.bytes && digest(part) != pack.hash) part.delete()
                     var offset = part.length()
                     val connection = URL(pack.url).openConnection() as HttpURLConnection

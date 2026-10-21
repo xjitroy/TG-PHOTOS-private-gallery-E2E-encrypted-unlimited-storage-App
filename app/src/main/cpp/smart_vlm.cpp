@@ -40,7 +40,7 @@ extern "C" JNIEXPORT jlong JNICALL Java_app_televault_smart_VlmNative_open(JNIEn
  } catch (...) { fail(env); return 0; }
 }
 extern "C" JNIEXPORT void JNICALL Java_app_televault_smart_VlmNative_close(JNIEnv *,jclass,jlong handle) { delete reinterpret_cast<Engine *>(handle); }
-extern "C" JNIEXPORT jbyteArray JNICALL Java_app_televault_smart_VlmNative_read(JNIEnv * env,jclass,jlong handle,jobject bitmap,jstring request) {
+extern "C" JNIEXPORT jbyteArray JNICALL Java_app_televault_smart_VlmNative_read(JNIEnv * env,jclass,jlong handle,jobject bitmap,jstring request,jint maxTokens) {
  try {
   auto * e=reinterpret_cast<Engine *>(handle);if(!e)throw std::runtime_error("closed");
   e->deadline=std::chrono::steady_clock::now()+std::chrono::seconds(75);
@@ -62,7 +62,7 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_app_televault_smart_VlmNative_read(
   llama_pos pos=0;if(mtmd_helper_eval_chunks(e->vision,e->context,chunks.get(),0,0,256,true,&pos)!=0)throw std::runtime_error("encode");
   std::unique_ptr<llama_sampler,decltype(&llama_sampler_free)> sampler(llama_sampler_init_greedy(),llama_sampler_free);
   auto * vocab=llama_model_get_vocab(e->model);std::string result;
-  for(int i=0;i<256 && pos<2000 && !expired(e);i++){
+  for(int i=0;i<std::min(256,std::max(1,static_cast<int>(maxTokens))) && pos<2000 && !expired(e);i++){
    auto token=llama_sampler_sample(sampler.get(),e->context,-1);if(llama_vocab_is_eog(vocab,token))break;
    char piece[512];int bytes=llama_token_to_piece(vocab,token,piece,sizeof(piece),0,false);if(bytes<0 || bytes>512)throw std::runtime_error("piece");result.append(piece,bytes);
    auto batch=llama_batch_get_one(&token,1);if(llama_decode(e->context,batch)!=0)throw std::runtime_error("decode");pos++;

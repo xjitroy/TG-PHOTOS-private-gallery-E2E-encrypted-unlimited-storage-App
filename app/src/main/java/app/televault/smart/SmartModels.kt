@@ -51,7 +51,7 @@ internal object SmartCatalog {
         }
     }
 }
-internal data class SmartModelState(val choice: String = "auto", val desired: String = "balanced", val active: String = "", val busy: Boolean = false, val downloaded: Long = 0, val total: Long = 0, val notice: String = "", val fallback: Boolean = false, val enabled: Boolean = true)
+internal data class SmartModelState(val choice: String = "auto", val desired: String = "balanced", val active: String = "", val busy: Boolean = false, val downloaded: Long = 0, val total: Long = 0, val notice: String = "", val fallback: Boolean = false, val enabled: Boolean = true, val phase: String = "idle", val failure: String = "")
 internal data class SmartOutput(val vector: FloatArray = floatArrayOf(), val caption: String = "", val text: String = "")
 
 /** Public weights only. The inference Binder owns no vault/session keys or network client. */
@@ -59,7 +59,10 @@ internal class SmartModels(context: Context) {
     private val app = context.applicationContext
     val specs = SmartCatalog.read(app)
     val supported = android.os.Process.is64Bit() && Build.SUPPORTED_ABIS.firstOrNull() == "arm64-v8a"
-    private val preferences = app.getSharedPreferences("smart-model-choice-v1", Context.MODE_PRIVATE)
+    private val preferences = app.getSharedPreferences("smart-model-choice-v1", Context.MODE_PRIVATE).also { prefs ->
+        // Repair 1.20.41's accidental model-failure cascade once; preserve choice, Off, Pause and files.
+        if (prefs.getInt("runtimeRevision", 0) < 2) check(prefs.edit().putInt("runtimeRevision", 2).putBoolean("fallback", false).putBoolean("blocked", false).commit())
+    }
     private val root = File(app.noBackupFilesDir, "smart-models-v1")
     private val activeFile = AtomicFile(File(root, "active.json"))
     private val lanes = SmartWorkLanes()
@@ -122,8 +125,9 @@ internal class SmartModels(context: Context) {
         install()
         MediaIntelligenceScheduling.request(app)
     }
+    fun installAllowed() = mutable.value.enabled && !preferences.getBoolean("downloadPaused", false) && !preferences.getBoolean("blocked", false)
     fun install() {
-        if (!mutable.value.enabled || preferences.getBoolean("downloadPaused", false) || preferences.getBoolean("blocked", false)) return
+        if (!installAllowed()) return
         if (active() == desired() && active() in verified && !preferences.getBoolean("cleanupPending", false)) return
         if (!supported) {
             mutable.update { it.copy(notice = "Smart models require ARM64. Existing on-device face, text and subject engines remain available.") }
@@ -200,8 +204,11 @@ internal class SmartModels(context: Context) {
             lanes.runtime { if (remote === owned || remote == null) release() }
         }
     }
+    suspend fun releaseWhenIdle() = withContext(Dispatchers.IO) {
+        lanes.idle { release() }
+    }
     fun memoryPressure() {
-        if (loaded.isNotBlank()) scope.launch { lanes.runtime { fallback("The selected AI met memory pressure. The small model will be used.") } }
+        if (loaded.isNotBlank()) scope.launch { lanes.runtime { fallback("The selected AI met memory pressure. The small model will be used.", memory = true) } }
     }
     private suspend fun bind(): IBinder {
         remote?.takeIf { it.isBinderAlive }?.let { return it }
@@ -242,19 +249,22 @@ internal class SmartModels(context: Context) {
     }
     private suspend fun load(id: String) {
         if (loaded == id && remote?.isBinderAlive == true)return
-        check(memoryAllowed(id)) { "model-memory" }
         release()
+        check(memoryAllowed(id)) { "model-memory" }
         val b = bind()
         rpc(b, InferenceService.OPEN, { it.writeString(id) }) { check(it.readInt() != Process.myPid()) }
         loaded = id
     }
-    private suspend fun fallback(message: String, failedId: String = active()) {
+    private suspend fun fallback(message: String, failedId: String = active(), memory: Boolean = false) {
         suspended = true
         release()
         if (desired() != failedId) return // A stale model failure cannot override a newer choice.
         if (desired() != "small") {
             check(preferences.edit().putBoolean("fallback", true).commit())
             mutable.update { it.copy(desired = "small", fallback = true, notice = message) }
+            install()
+        } else if (memory) {
+            mutable.update { it.copy(notice = "Waiting for available memory. Small AI will retry; face/OCR analysis continues.") }
             install()
         } else {
             check(preferences.edit().putBoolean("blocked", true).commit())
@@ -273,8 +283,9 @@ internal class SmartModels(context: Context) {
             } catch (cancel: CancellationException) {
                 release()
                 throw cancel
-            } catch (_: Exception) {
-                if (request == interruptions.get()) fallback("AI could not run reliably; switching to the small model.", id)
+            } catch (e: Exception) {
+                mutable.update { it.copy(failure = safeFailure(e)) }
+                if (request == interruptions.get()) fallback("AI could not run reliably; switching to the small model.", id, e.message?.startsWith("model-memory") == true)
                 false
             }
         }
@@ -287,7 +298,7 @@ internal class SmartModels(context: Context) {
             try {
                 load(id)
                 if (!memoryAllowed(id)) {
-                    fallback("Low available memory; switching to the small AI.")
+                    fallback("Low available memory; switching to the small AI.", memory = true)
                     return@runtime null
                 }
                 val scale = minOf(1f, 512f / maxOf(image.width, image.height))
@@ -326,8 +337,10 @@ internal class SmartModels(context: Context) {
             } catch (cancel: CancellationException) {
                 release()
                 throw cancel
-            } catch (_: Exception) {
-                if (request == interruptions.get()) fallback("The AI process stopped; switching safely to the small model.", id)
+            } catch (e: Exception) {
+                // An unreadable/slow image is not proof that the selected model is incompatible.
+                release()
+                mutable.update { it.copy(failure = safeFailure(e), notice = "This image could not be analysed by the large AI. Other photos and face/OCR analysis continue.") }
                 null
             }
         }
@@ -347,6 +360,14 @@ internal class SmartModels(context: Context) {
                 null
             }
         }
+    }
+    private fun safeFailure(error: Exception): String = when {
+        error is DeadObjectException -> "process-stopped"
+        error.message == "model-storage" -> "storage"
+        error.message == "model-verification" -> "verification"
+        error.message == "model-memory" -> "memory"
+        error.message?.startsWith("model-") == true -> error.message.orEmpty().take(80).takeIf { it.matches(Regex("[a-z0-9:_ -]+")) } ?: "runtime"
+        else -> "setup-or-runtime"
     }
     private fun connect(url: String, offset: Long): HttpURLConnection {
         var current = URL(url)
@@ -385,16 +406,33 @@ internal class SmartModels(context: Context) {
     }
     suspend fun download() = withContext(Dispatchers.IO) {
         lanes.download {
+            if (!installAllowed()) return@download
             val id = desired()
             val s = spec(id)
             if (active() == id && valid(id)) {
-                lanes.runtime { retireInactive(id) }
-                mutable.update { it.copy(busy = false, desired = id, total = s.bytes, downloaded = s.bytes) }
+                mutable.update { it.copy(busy = true, phase = "initializing", downloaded = s.bytes, total = s.bytes, failure = "", notice = "Verifying the installed model can run…") }
+                try {
+                    lanes.runtime {
+                        try {
+                            load(id)
+                        } catch (cancel: CancellationException) {
+                            throw cancel
+                        } catch (e: Exception) {
+                            mutable.update { it.copy(phase = "failed", failure = safeFailure(e)) }
+                            fallback("Installed AI could not initialize; existing specialised engines continue.", id, e.message?.startsWith("model-memory") == true)
+                            throw e
+                        }
+                        retireInactive(id)
+                    }
+                } finally {
+                    mutable.update { it.copy(busy = false) }
+                }
+                mutable.update { it.copy(busy = false, phase = "ready", failure = "", desired = id, total = s.bytes, downloaded = s.bytes) }
                 return@download
             }
             val folder = directory(id)
             folder.mkdirs()
-            mutable.update { it.copy(busy = true, desired = id, total = s.bytes, downloaded = 0, notice = "Downloading verified AI. The previous model stays until this one works.") }
+            mutable.update { it.copy(busy = true, phase = "downloading", failure = "", desired = id, total = s.bytes, downloaded = 0, notice = "Downloading verified AI. The previous model stays until this one works.") }
             var complete = 0L
             var lastProgress = 0L
             try {
@@ -446,17 +484,20 @@ internal class SmartModels(context: Context) {
                     check(part.renameTo(target))
                     complete += f.bytes
                 }
+                mutable.update { it.copy(phase = "verifying", downloaded = s.bytes) }
                 check(valid(id))
                 currentCoroutineContext().ensureActive()
                 lanes.runtime {
                     val initialization = interruptions.get()
                     try {
                         try {
+                            mutable.update { it.copy(phase = "initializing", downloaded = s.bytes, failure = "", notice = "Download verified. Initializing and testing the model; first setup can take several minutes.") }
                             load(id)
                         } catch (cancel: CancellationException) {
                             throw cancel
-                        } catch (_: Exception) {
-                            if (initialization == interruptions.get()) fallback("This AI could not initialize. The previous model is kept; a small-model fallback is scheduled.", id)
+                        } catch (e: Exception) {
+                            mutable.update { it.copy(failure = safeFailure(e), phase = "failed") }
+                            if (initialization == interruptions.get()) fallback("This AI could not initialize. The previous model is kept; a small-model fallback is scheduled.", id, e.message?.startsWith("model-memory") == true)
                             throw IllegalStateException("model-initialize")
                         }
                         currentCoroutineContext().ensureActive()
@@ -471,7 +512,7 @@ internal class SmartModels(context: Context) {
                                     activeFile.failWrite(out)
                                     throw t
                                 }
-                                mutable.update { it.copy(active = id, downloaded = s.bytes, notice = "AI ready. Face recognition and local OCR remain available.") }
+                                mutable.update { it.copy(active = id, downloaded = s.bytes, phase = "ready", failure = "", notice = "AI ready. Face recognition and local OCR remain available.") }
                             }, { retireInactive(id) })
                         }
                     } catch (cancel: CancellationException) {
@@ -480,10 +521,10 @@ internal class SmartModels(context: Context) {
                     }
                 }
             } catch (cancel: CancellationException) {
-                mutable.update { it.copy(notice = "Download paused. The previous model is kept; Retry resumes verified partial files.") }
+                mutable.update { it.copy(phase = "paused", notice = "Download paused. The previous model is kept; Retry resumes verified partial files.") }
                 throw cancel
             } catch (e: Exception) {
-                if (!mutable.value.fallback) mutable.update { it.copy(notice = if (active() == id) "New AI is ready. Old model cleanup will retry." else "AI setup incomplete. Check connection and free space, then Retry. The previous model is kept.") }
+                if (!mutable.value.fallback) mutable.update { it.copy(phase = "failed", failure = safeFailure(e), notice = if (active() == id) "New AI is ready. Old model cleanup will retry." else "AI setup incomplete. Check connection and free space, then Retry. The previous model is kept.") }
                 throw e
             } finally {
                 mutable.update { it.copy(busy = false) }
@@ -495,6 +536,7 @@ internal class SmartModels(context: Context) {
 class SmartModelsWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         val app = applicationContext as app.televault.TeleVaultApplication
+        if (!app.smartModels.installAllowed()) return Result.success()
         return try {
             setForeground(transferForeground(applicationContext, 71910, "Preparing on-device AI"))
             app.smartModels.download()
@@ -503,7 +545,7 @@ class SmartModelsWorker(context: Context, params: WorkerParameters) : CoroutineW
         } catch (cancel: CancellationException) {
             throw cancel
         } catch (_: Exception) {
-            if (runAttemptCount < 3)Result.retry() else Result.failure()
+            if (app.smartModels.installAllowed()) Result.retry() else Result.success()
         }
     }
 }
