@@ -1,8 +1,8 @@
 {
-  "version": "1.20.42",
-  "code": 54,
+  "version": "1.20.43",
+  "code": 55,
   "checks": {
-    "distinctHostTests": 632,
+    "distinctHostTests": 646,
     "suites": {
       "domain": {
         "tests": 348,
@@ -17,13 +17,13 @@
         "skipped": 0
       },
       "telegram": {
-        "tests": 8,
+        "tests": 12,
         "failures": 0,
         "errors": 0,
         "skipped": 0
       },
       "app": {
-        "tests": 212,
+        "tests": 222,
         "failures": 0,
         "errors": 0,
         "skipped": 0
@@ -37,19 +37,19 @@
     "privateDataReset": false,
     "privateApkBuilt": false,
     "independentSecurityAudit": "Not performed; scoped self-review",
-    "runtimeModelPins": "Four unchanged immutable model choices and all specialised packs retained. Only owned JNI token-bound bridge changes; complete runtime derivative reproduction passed.",
-    "regressions": "Complete/corrupt/incomplete partial installation, bad-source continuation/cancellation, fair bounded batch retry positions and noninterfering runtime cleanup, plus all prior playback/backup/privacy/encryption/editor/search checks"
+    "runtimeModelPins": "Four unchanged immutable model choices and all specialised packs retained. All model/runtime bytes remain unchanged from byte-reproduced1.20.42; no new model/phone benchmark claim.",
+    "regressions": "Exact encrypted AI metadata namespaces and fresh reference validation; interrupted authenticated exclusion restore; scoped saved-result progress and retry/source replacement; prior playback/backup/crypto/search checks"
   },
   "artifact": {
-    "apk": "TG-Photos-1.20.42-universal.apk",
-    "bytes": 101269216,
-    "sha256": "101ed063be511df84f9cf465588900a98ee582b6e8b9b921d281ee07e32b1d5b",
-    "versionCode": 54,
-    "versionName": "1.20.42",
+    "apk": "TG-Photos-1.20.43-universal.apk",
+    "bytes": 101281352,
+    "sha256": "1848d0f482cc982856775d4b4252d47fe764be09e7251cd899676dc5bd0997fc",
+    "versionCode": 55,
+    "versionName": "1.20.43",
     "package": "app.televault.photos",
     "distribution": "public",
-    "sourceCommit": "a6f6090bce0d6bb1ec24be8714a14dbb2c68e7bf",
-    "sourceTree": "7b182cd74386a433883c6d05b3b0d7c3225fbf1b",
+    "sourceCommit": "2e5ee62f0977706f18c5ada1846bdf61dd960df8",
+    "sourceTree": "1ed562d99e17ae3cef606f733145b56b1d4344a2",
     "certificateSHA256": "3e7c1029cb5e2da80026758abd483b5bd7f0551b6a56bee6b21640b8ae774559",
     "debuggable": false,
     "productionVerified": false,

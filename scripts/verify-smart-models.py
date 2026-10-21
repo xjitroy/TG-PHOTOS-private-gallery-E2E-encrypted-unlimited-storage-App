@@ -34,3 +34,14 @@ for name in ['LiteRtLmJniException','BenchmarkInfo','EmbeddingResponse']:
 search=(root/'app/src/main/java/app/televault/ui/UniversalSearch.kt').read_text()
 projection=search.split('val projection = rememberCoalescedProjection',1)[1].split('val draftDates',1)[0]
 assert 'model.smart.rank(' not in projection, 'Semantic startup must not block exact results'
+
+assert "if (!input.privacyReady) return@rememberCoalescedProjection emptyList()" in projection, "Search must wait for authenticated private exclusions"
+
+# These encrypted namespaces cannot use the DATA-only original-media reader.
+for name in ['data/PrivateIntelligenceExclusions.kt','data/IntelligenceResults.kt','people/PeopleStore.kt']:
+ reader=(root/'app/src/main/java/app/televault'/name).read_text()
+ assert 'telegram.readIntelligenceDocumentPart(' in reader and 'telegram.readDocumentPart(' not in reader, name
+transport=(root/'core/telegram/src/main/java/app/televault/telegram/TdlibTelegramGateway.kt').read_text()
+assert 'IntelligenceDocumentAccess.validate(' in transport
+assert 'return readEncryptedDocumentPart(reference, offset, count, false, access, reference.marker)' in transport
+assert 'startsWith("TGDRIVE_V1_DATA:")' in transport, 'Original-media reader must retain its namespace check'

@@ -219,7 +219,7 @@ internal class IntelligenceResults(private val context: Context, private val dri
             var offset = 0
             while (offset < cipher.size) {
                 guard(scope, token)
-                val part = telegram.readDocumentPart(ref, offset.toLong(), minOf(262144, cipher.size - offset))
+                val part = telegram.readIntelligenceDocumentPart(ref, offset.toLong(), minOf(262144, cipher.size - offset)) { guard(scope, token) }
                 try {
                     check(part.isNotEmpty() && part.size <= cipher.size - offset)
                     part.copyInto(cipher, offset)

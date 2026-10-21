@@ -91,6 +91,8 @@ class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
             }
         }
     }
+    internal fun intelligenceReady() = runCatching { repository.privateAi.analysisReady() }.getOrDefault(false)
+    internal val privacyRestoreProgress get() = repository.privateAi.progress
     init {
         viewModelScope.launch {
             state.map { it.stage }.distinctUntilChanged().collectLatest { stage ->
@@ -128,7 +130,8 @@ class DriveViewModel(private val repository: DriveRepository) : ViewModel() {
                         if (scenes.state.value.enabled) application.memoryModels.install()
                         if (indexLoaded) requestIntelligence()
                         try {
-                            withTimeout(60_000) { repository.privateAi.sync() }
+                            withTimeout(120_000) { repository.privateAi.restore() }
+                            if (indexLoaded) requestIntelligence()
                         } catch (_: TimeoutCancellationException) {
                             // The worker retries the authenticated restore; do not gate local OCR.
                         } catch (cancel: CancellationException) {

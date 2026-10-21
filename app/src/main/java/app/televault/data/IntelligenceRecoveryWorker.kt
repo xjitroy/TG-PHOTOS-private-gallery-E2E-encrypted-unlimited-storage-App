@@ -8,6 +8,7 @@ import kotlinx.coroutines.*
 
 /** Encrypted recovery networking never occupies the per-photo OCR/face/subject pipeline. */
 internal object IntelligenceRecoveryScheduling {
+    val progress = kotlinx.coroutines.flow.MutableStateFlow(PrivacyRestoreProgress())
     fun request(context: Context) {
         val work = OneTimeWorkRequestBuilder<IntelligenceRecoveryWorker>()
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).setRequiresStorageNotLow(true).build())
@@ -24,7 +25,10 @@ class IntelligenceRecoveryWorker(context: Context, params: WorkerParameters) : C
         try {
             if (!drive.privateAi.analysisReady()) return@withContext Result.retry()
             val binding = drive.privateVaultBinding()
+            withTimeout(60_000) { drive.privateAi.sync() }
             val pending = drive.analysisResults.pendingRecoveryHashes()
+            var completed = 0
+            IntelligenceRecoveryScheduling.progress.value = PrivacyRestoreProgress(if (pending.isEmpty()) "ready" else "restoring", 0, pending.size)
             if (pending.isEmpty() && !drive.people.state.value.pendingSync) return@withContext Result.success()
             setForeground(transferForeground(applicationContext, 71911, "Saving encrypted analysis recovery"))
             drive.analysisResults.beginBatch()
@@ -34,6 +38,10 @@ class IntelligenceRecoveryWorker(context: Context, params: WorkerParameters) : C
                     if (MediaIntelligenceScheduling.runningLane != null || app.intelligencePaused || drive.privateVaultBinding() != binding) break
                     try {
                         withTimeout(15_000) { drive.analysisResults.sync(hash) }
+                        if (hash !in drive.analysisResults.pendingRecoveryHashes()) {
+                            completed++
+                            IntelligenceRecoveryScheduling.progress.value = PrivacyRestoreProgress(if (completed == pending.size) "ready" else "restoring", completed, pending.size)
+                        }
                     } catch (_: TimeoutCancellationException) {
                         break
                     } catch (cancel: CancellationException) {
@@ -50,6 +58,7 @@ class IntelligenceRecoveryWorker(context: Context, params: WorkerParameters) : C
         } catch (cancel: CancellationException) {
             throw cancel
         } catch (_: Exception) {
+            IntelligenceRecoveryScheduling.progress.value = IntelligenceRecoveryScheduling.progress.value.copy(phase = "blocked", failure = "recovery-retry")
             Result.retry()
         }
     }

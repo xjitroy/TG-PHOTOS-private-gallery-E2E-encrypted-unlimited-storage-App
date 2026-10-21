@@ -1,11 +1,11 @@
 {
-  "version": "1.20.42",
-  "code": 54,
-  "compiledSourceCommit": "a6f6090bce0d6bb1ec24be8714a14dbb2c68e7bf",
+  "version": "1.20.43",
+  "code": 55,
+  "compiledSourceCommit": "2e5ee62f0977706f18c5ada1846bdf61dd960df8",
   "files": [
     {
       "path": "app/build.gradle.kts",
-      "sha256": "a9c5050d95ec7ddb6c5a946a0d9b19d43acfc4d23e7f38a5528f10a179649ee7"
+      "sha256": "041e4a5ef90d6621916beb7ce51c5c99de292df206e9322fde7a90ecaf345c5f"
     },
     {
       "path": "app/libs/litertlm-android-0.18.0-arm64.aar",
@@ -301,7 +301,7 @@
     },
     {
       "path": "app/src/main/java/app/televault/DriveViewModel.kt",
-      "sha256": "acc1d93a7951ade8e4ff20f32882e2c870a2428b06bf0d754bf4c76cc38a64c2"
+      "sha256": "ff20ca13177302db44eaf2658274e5a5e8e0f27aa45a1d63839ad19aadd26d5d"
     },
     {
       "path": "app/src/main/java/app/televault/ExternalViewerReturn.kt",
@@ -437,7 +437,7 @@
     },
     {
       "path": "app/src/main/java/app/televault/data/DriveRepository.kt",
-      "sha256": "e9c6ecd9cb63ef3bf6c6016930a3387341b28211908fc88532ab1e3e3f678a2a"
+      "sha256": "b45cc21287b22007c734ff862b6ff4ccb151f26721ae014dadcdd1f5d2e498b3"
     },
     {
       "path": "app/src/main/java/app/televault/data/EncryptedMediaSource.kt",
@@ -446,6 +446,10 @@
     {
       "path": "app/src/main/java/app/televault/data/EncryptedPreviewProvider.kt",
       "sha256": "27099d7c581895dfcfa08bf8d768eb8604b2928a0121680fc0c2e2d67b35a791"
+    },
+    {
+      "path": "app/src/main/java/app/televault/data/ExclusionRestore.kt",
+      "sha256": "b7d06171e24ed0fe8fb570d48c4376ab0b4b56671b8585d502117b4e280c962a"
     },
     {
       "path": "app/src/main/java/app/televault/data/FirstOpenProgress.kt",
@@ -464,12 +468,16 @@
       "sha256": "cf3e80034692df39e16c735b1da7616194f381c81e6eac6cf1e30add69d8f29e"
     },
     {
+      "path": "app/src/main/java/app/televault/data/IntelligenceProgress.kt",
+      "sha256": "fcb4ae9cbebab9efa6744183f97146de621659217db0c07d04c097d9647c1b70"
+    },
+    {
       "path": "app/src/main/java/app/televault/data/IntelligenceRecoveryWorker.kt",
-      "sha256": "9f7a798752ee104559b19ed6918624596bead32402b4fdaa73183c11e6d797d5"
+      "sha256": "99a937a8787561f79c201425e9aaf893fd220eac50065331ebd8d8e639c6af76"
     },
     {
       "path": "app/src/main/java/app/televault/data/IntelligenceResults.kt",
-      "sha256": "f1f8d58b33c8b6a0e46789e4809b3729f8b4528ad054a7ae973e4e1dac4dc614"
+      "sha256": "d9638e3d44657d18daa641073b837927139e657623192150621c4411d65220b5"
     },
     {
       "path": "app/src/main/java/app/televault/data/LocalFileActions.kt",
@@ -501,7 +509,7 @@
     },
     {
       "path": "app/src/main/java/app/televault/data/MediaIntelligenceWorker.kt",
-      "sha256": "67f755a3dbb05fdca17e8918785fa0e1b988e077b9f893596072fc7442a2a090"
+      "sha256": "f2657d13c7e6245543d1740c8ffe8768a5e38431ff1af2a13d6626049e8acd86"
     },
     {
       "path": "app/src/main/java/app/televault/data/MediaMemory.kt",
@@ -561,7 +569,7 @@
     },
     {
       "path": "app/src/main/java/app/televault/data/PrivateIntelligenceExclusions.kt",
-      "sha256": "68a5bca2872945c5d384c053593bc0f055a414cb6e26e68830ae45140a497618"
+      "sha256": "84cbb95077e30a43a404183f0238923a1357a9aab02fdb65fabeb7ba5201c40b"
     },
     {
       "path": "app/src/main/java/app/televault/data/PrivateMediaGrants.kt",
@@ -693,7 +701,7 @@
     },
     {
       "path": "app/src/main/java/app/televault/people/PeopleStore.kt",
-      "sha256": "5feb9781d87947a69ae586e7afa0e6ae6ae609ba767c3d07303595bf1ecfefa4"
+      "sha256": "a19a2298fa2b3d875d81c1e339c95c3dbfe633f05f4a542f8a97a49c5be1cb5f"
     },
     {
       "path": "app/src/main/java/app/televault/security/AppLockStore.kt",
@@ -737,7 +745,7 @@
     },
     {
       "path": "app/src/main/java/app/televault/smart/SmartModels.kt",
-      "sha256": "104186863a6290f070aa21acc66bb938cf616e334eed607a27f12397cccb7e88"
+      "sha256": "60eab6235e5dc281d550515adc2b65ddeb42865419d390f2c26edc536704e917"
     },
     {
       "path": "app/src/main/java/app/televault/smart/SmartWorkLanes.kt",
@@ -884,6 +892,10 @@
       "sha256": "8d5d57b6f67f97c94b057c9364fd08f1f2afafa58a788080d843f48ef22d7e92"
     },
     {
+      "path": "app/src/main/java/app/televault/ui/IntelligenceProgressCard.kt",
+      "sha256": "a7eabca39e32073d577871872609e0845fab195988e17d13f2e3c664271ebefd"
+    },
+    {
       "path": "app/src/main/java/app/televault/ui/MediaColors.kt",
       "sha256": "25a9af65794670dda9848de48579b4e42cb74ac0d30c4ada18951e1519ebbe9c"
     },
@@ -969,7 +981,7 @@
     },
     {
       "path": "app/src/main/java/app/televault/ui/PhotosScreen.kt",
-      "sha256": "572a0f203a270ad198486f35048c7d12ad364ab59b61b9759247ce6a503890f1"
+      "sha256": "69b33f5fcb828e6f7bd9211e0cc9de579af9dd6dea7f658cd2b3c2ec16d90c3a"
     },
     {
       "path": "app/src/main/java/app/televault/ui/PlaybackFailure.kt",
@@ -1025,7 +1037,7 @@
     },
     {
       "path": "app/src/main/java/app/televault/ui/SmartModelControls.kt",
-      "sha256": "be922fafefdccfd9c6606d0522fda476a9a6f9cad634035ef9e143224a032d48"
+      "sha256": "5b7c6defe0836f59139a9fdba02d099753b1d09c9ef7fef01dde2b63b8923d8f"
     },
     {
       "path": "app/src/main/java/app/televault/ui/SmartSuggestionControls.kt",
@@ -1069,7 +1081,7 @@
     },
     {
       "path": "app/src/main/java/app/televault/ui/UniversalSearch.kt",
-      "sha256": "0e66138d12756997b129d540070ce988848b7945d81fe21a36481405a8f5e1bc"
+      "sha256": "002b15bc88689846d911d26106fe826d1cd413164876c87b95853a75c24ad08d"
     },
     {
       "path": "app/src/main/java/app/televault/ui/UnlockScreen.kt",
@@ -1296,6 +1308,10 @@
       "sha256": "db37b4c2f62879581ab2e8b43e2d12fd1677c0e51ba318b85650c0d1bbc301c3"
     },
     {
+      "path": "app/src/test/java/app/televault/data/ExclusionRestoreTest.kt",
+      "sha256": "33b66006f8def44d49e763dfaa894e96ef7ead61b3abdbaee4855e3c3a9129a5"
+    },
+    {
       "path": "app/src/test/java/app/televault/data/FirstOpenProgressTest.kt",
       "sha256": "c4e7c07f5037d864482dae802d7a7b5492a4234cbcbcb60e03e4e54d68088786"
     },
@@ -1310,6 +1326,10 @@
     {
       "path": "app/src/test/java/app/televault/data/IntelligencePreparationTest.kt",
       "sha256": "47b019c9ddd9e71e595db83b4971cae77a3500b59da333af51884420e4165e7c"
+    },
+    {
+      "path": "app/src/test/java/app/televault/data/IntelligenceProgressTest.kt",
+      "sha256": "228deffe3e3997f5d9d900430f344a86b15b59d12469ae3a76a83b552e99c122"
     },
     {
       "path": "app/src/test/java/app/televault/data/LocalIndexEnvelopeTest.kt",
@@ -2388,6 +2408,10 @@
       "sha256": "343d5be1ac17cdd45d1a2f2ddc616c509290e655869125a9422a96d88aa66066"
     },
     {
+      "path": "core/telegram/src/main/java/app/televault/telegram/IntelligenceDocumentAccess.kt",
+      "sha256": "743fb5ac77050b2a67ac39633561f4ebcdb573b8df53892b8f8c45323532f9d1"
+    },
+    {
       "path": "core/telegram/src/main/java/app/televault/telegram/NativeCipherRanges.kt",
       "sha256": "8f751eb5d672a16821633807f1cbb000d67b82579cb59a59b2c3a8427d4f600b"
     },
@@ -2397,11 +2421,11 @@
     },
     {
       "path": "core/telegram/src/main/java/app/televault/telegram/TdlibTelegramGateway.kt",
-      "sha256": "96adbafdb428148917eb5ca959181e42fecd174cdbe2008a8f1bbd97b17da52f"
+      "sha256": "d9622f438ca7a987dfeb4fafda64f3653954e5d33ae23e0d4860b64878035454"
     },
     {
       "path": "core/telegram/src/main/java/app/televault/telegram/TelegramGateway.kt",
-      "sha256": "4d0148ce1b378fb757fcb93fc9a540007a4116e35de8d826c7abc0def251a10a"
+      "sha256": "4a62ac191c3b976b8e5a6902c48757f7f50053c258d8d949bfefc0c5b79f2d2a"
     },
     {
       "path": "core/telegram/src/main/java/app/televault/telegram/TelegramSessionHistory.kt",
@@ -2422,6 +2446,10 @@
     {
       "path": "core/telegram/src/test/java/app/televault/telegram/FakeTelegramGateway.kt",
       "sha256": "c1b7a55e223ab9e28b370b5280a5ad76d0648a4ba5eb3970ab6e2f996796bdd9"
+    },
+    {
+      "path": "core/telegram/src/test/java/app/televault/telegram/IntelligenceDocumentAccessTest.kt",
+      "sha256": "0db7f18bdb19f9227ce02579f2ba9c815029cf6bba84066d9572d25e05d7923a"
     },
     {
       "path": "core/telegram/src/test/java/app/televault/telegram/NativeCipherRangesTest.kt",

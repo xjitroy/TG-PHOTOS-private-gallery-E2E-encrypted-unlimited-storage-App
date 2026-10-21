@@ -1422,16 +1422,13 @@ internal fun PhotosScreen(model: DriveViewModel, dynamicColor: Boolean, changeDy
                                 item { TelegramStorageWarning() }
                                 item { Text(settingsCategory, style = MaterialTheme.typography.titleLarge) }
                                 if (settingsCategory == "People & text search") {
+                                    item { IntelligenceProgressCard(model) }
                                     item { SmartModelControls(model) }
                                     item {
                                         PeopleAlbums(people, model) { person ->
                                             searchPerson = person.id
                                             universalSearch = true
                                         }
-                                    }
-                                    item {
-                                        val analysisStatus by app.televault.data.MediaIntelligenceScheduling.status.collectAsStateWithLifecycle()
-                                        if (analysisStatus.isNotBlank()) Text(analysisStatus, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                     item { FaceResetControls(model) }
                                     item { TextSearchControls(model) }

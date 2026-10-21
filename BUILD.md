@@ -1,3 +1,15 @@
+# Public1.20.43 build scope
+
+TG Photos1.20.43 repairs encrypted AI metadata recovery. Private-exclusion, People and per-photo analysis attachments were incorrectly read through the original-media DATA-only gateway; exact authenticated metadata now has its own bounded, freshly validated read path. Ordinary media and Private Vault readers keep their original restrictions. Account/chat/message/caption/size, namespace and cancellation/lock checks precede each encrypted range; existing ciphers, keys and records are unchanged.
+
+Inbound private exclusions now finish independently of pending outbound publication. Each authenticated operation checkpoints before continuing; failures or interrupted enumeration never mark an incomplete first restore ready. A later retry reuses verified checkpoints. Model fast-path success clears the stale “Verifying…” message, and cancellation shows paused status. Existing selected large weights and small face/OCR/subject engines are retained; no new model download or engine migration is introduced.
+
+Settings → People & text search starts with AI progress: privacy restoration, specialist model download percentages, overall and per-engine saved-photo analysis counts/percentages, and encrypted result recovery. Attempts and unreadable photos never count as saved results. Matching saved results count once; changed/deleted candidates and scoped retries are handled. Installation/runtime testing has no measurable time percentage, so it remains explicitly in progress after download reaches100percent. Lock clears scoped progress. Search reports a clear waiting state and retries while authenticated private exclusions are restoring. Once privacy is ready, exact filename/OCR results remain independent of cold large-model startup. All existing OCR/private-exclusion guards remain.
+
+Required scoped checks: all host JVM tests, ktlint, nine root/nine sanitized-source checks and zero-error release lint, plus signed-APK/package/certificate/worker/JNI/API26/pinned-native checks before publication. Runtime/model pins are unchanged from the byte-reproduced1.20.42 derivatives. Actual Android model installation, recognition/RAM/background/UI/account acceptance remains unverified because no usable Android target/KVM is available here. No perfect-accuracy claim.
+
+Prior releases follow.
+
 # Public1.20.42 · model activation and independent analysis
 
 TG Photos1.20.42 repairs model activation and analysis scheduling. Completed verified face/OCR/subject partial downloads now install locally instead of requesting an invalid EOF range. The hardened APK retains LiteRT's native exception/benchmark classes. Model initialization uses a short8-token image test and a separate longer first-setup deadline; downloading, verification, initialization and ready status are distinct. One image failure does not cascade through model choices. The prior automatic failure/blocked flags are reset once without changing manual choice, explicit Off/Pause, installed files or verified model pins.

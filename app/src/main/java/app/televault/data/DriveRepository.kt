@@ -581,6 +581,8 @@ class DriveRepository(context: Context, private val telegram: TelegramGateway, p
             smart.lock()
             analysisResults.lock()
             privateAi.lock()
+            MediaIntelligenceScheduling.clearProgress()
+            IntelligenceRecoveryScheduling.progress.value = PrivacyRestoreProgress()
             restoreMutable.value = null
             vaultChoicesMutable.update { choices -> choices.map { it.copy(name = if (it.createdAt > 0) VaultNames.generated(it.createdAt, java.time.ZoneId.systemDefault(), it.id) else "TG Photos vault · ${it.id.take(8)}") } }
             PrivateMediaGrants.clear()

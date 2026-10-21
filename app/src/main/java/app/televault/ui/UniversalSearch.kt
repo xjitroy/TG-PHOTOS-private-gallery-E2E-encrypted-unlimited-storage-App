@@ -42,7 +42,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private data class SearchIndexInput(val files: List<MediaEntry>, val people: PeopleState, val textRevision: Pair<Long, Int>, val favorites: Set<String>, val sceneLabels: Map<String, String>, val smartRevision: Long, val smartModel: Pair<String, Boolean>, val semantic: Map<String, Float>)
+private data class SearchIndexInput(val files: List<MediaEntry>, val people: PeopleState, val textRevision: Pair<Long, Int>, val favorites: Set<String>, val sceneLabels: Map<String, String>, val smartRevision: Long, val smartModel: Pair<String, Boolean>, val semantic: Map<String, Float>, val privacyReady: Boolean)
 
 /** One search across normal Photos/device/cloud media; never includes Private Vault or Trash. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -50,6 +50,8 @@ private data class SearchIndexInput(val files: List<MediaEntry>, val people: Peo
 internal fun UniversalSearch(files: List<MediaEntry>, people: PeopleState, model: DriveViewModel, initialPerson: String?, viewedId: String = "", viewerOpen: Boolean = false, close: () -> Unit, open: (MediaEntry, List<MediaEntry>) -> Unit) {
     val sceneIndex by model.scenes.state.collectAsStateWithLifecycle()
     val smartRevision by model.smart.revision.collectAsStateWithLifecycle()
+    val privacy by model.privacyRestoreProgress.collectAsStateWithLifecycle()
+    val privacyReady = remember(privacy, model.playbackEpoch) { model.intelligenceReady() }
     val smartModel by remember(model.smartModels) { model.smartModels.state.map { it.active to it.enabled }.distinctUntilChanged() }.collectAsStateWithLifecycle(initialValue = "" to false)
     val textIndex by model.ocr.state.collectAsStateWithLifecycle()
     val mediaState by model.contentState.collectAsStateWithLifecycle()
@@ -111,10 +113,10 @@ internal fun UniversalSearch(files: List<MediaEntry>, people: PeopleState, model
     val parsed = remember(query, start, end) { UniversalMediaSearch.parseNatural(query, start, end, java.time.LocalDate.now()) }
     val scope = listOf(model.playbackEpoch, query, start, end, type, personId, companion, alone, filters.options)
     // Exact filenames/OCR/People results render independently of a slow cold AI process.
-    val semanticKey = listOf(model.playbackEpoch, parsed.text(), smartModel)
+    val semanticKey = listOf(model.playbackEpoch, parsed.text(), smartModel, privacyReady)
     var semantic by remember(semanticKey) { mutableStateOf<Map<String, Float>>(emptyMap()) }
     LaunchedEffect(semanticKey, files, smartRevision) {
-        if (parsed.text().isBlank() || smartModel != ("embedding" to true)) return@LaunchedEffect
+        if (!privacyReady || parsed.text().isBlank() || smartModel != ("embedding" to true)) return@LaunchedEffect
         delay(300)
         try {
             val ranked = withContext(Dispatchers.IO) { model.smart.rank(files.mapTo(hashSetOf()) { it.id }, parsed.text()) }
@@ -126,7 +128,8 @@ internal fun UniversalSearch(files: List<MediaEntry>, people: PeopleState, model
             // Existing exact matches stay usable when semantic inference is unavailable.
         }
     }
-    val projection = rememberCoalescedProjection(scope, SearchIndexInput(files, people, textIndex.processed to textIndex.indexed, mediaState.localFavorites, sceneIndex.labels, smartRevision, smartModel, semantic), emptyList<MediaEntry>()) { input ->
+    val projection = rememberCoalescedProjection(scope, SearchIndexInput(files, people, textIndex.processed to textIndex.indexed, mediaState.localFavorites, sceneIndex.labels, smartRevision, smartModel, semantic, privacyReady), emptyList<MediaEntry>()) { input ->
+        if (!input.privacyReady) return@rememberCoalescedProjection emptyList()
         val (all, index, _, favorites, sceneLabels) = input
         val smartDescriptions = model.smart.descriptions(all.mapTo(hashSetOf()) { it.id })
         val personNames = mutableMapOf<String, MutableList<String>>()
@@ -165,6 +168,10 @@ internal fun UniversalSearch(files: List<MediaEntry>, people: PeopleState, model
                 val grid = remember(scope) { LazyGridState() }
                 val introduction: @Composable () -> Unit = {
                     Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (!privacyReady) {
+                            Text(label("Search is waiting for private-media verification. Analysis will resume after the encrypted exclusions restore.", "সার্চ প্রাইভেট মিডিয়া যাচাইয়ের অপেক্ষায় আছে। এনক্রিপ্টেড বাদ দেওয়ার তালিকা ফিরলে বিশ্লেষণ আবার চলবে।"), Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodySmall)
+                            TextButton({ model.requestIntelligence() }, Modifier.padding(horizontal = 16.dp)) { Text(label("Retry verification", "আবার যাচাই")) }
+                        }
                         if (initialPerson == null) {
                             TextSearchControls(model)
                             SmartSuggestionControls(model)

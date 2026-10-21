@@ -65,6 +65,9 @@ interface TelegramGateway {
     suspend fun retireRecoveryRoots(references: List<RemoteDocument>, vaultId: String)
     suspend fun pruneLocalStreamCache() {}
     suspend fun readDocumentPart(reference: RemoteDocument, offset: Long, count: Int): ByteArray
+
+    /** Exact app-owned encrypted AI metadata; never accepts original/media or arbitrary messages. */
+    suspend fun readIntelligenceDocumentPart(reference: RemoteDocument, offset: Long, count: Int, access: () -> Unit = {}): ByteArray = throw UnsupportedOperationException("AI metadata streaming unavailable")
     suspend fun readSpeculativeDocumentPart(reference: RemoteDocument, offset: Long, count: Int): ByteArray = readDocumentPart(reference, offset, count)
 
     /** Private Vault range: no retained ciphertext; validates the exact app-owned marker. */

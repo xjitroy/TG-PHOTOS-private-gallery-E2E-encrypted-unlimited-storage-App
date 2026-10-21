@@ -723,6 +723,30 @@ class TdlibTelegramGateway(context: Context, private val credentials: TelegramCr
         documentIds[reference.chatId to reference.messageId] = document.getInt("id")
         return readEncryptedDocumentPart(reference, offset, count, false, access, marker)
     }
+    override suspend fun readIntelligenceDocumentPart(reference: RemoteDocument, offset: Long, count: Int, access: () -> Unit): ByteArray {
+        access()
+        require(reference.chatId == selfChat())
+        val message = checked(json("getMessage").put("chat_id", reference.chatId).put("message_id", reference.messageId))
+        val content = message.getJSONObject("content")
+        val document = content.getJSONObject("document").getJSONObject("document")
+        check(message.getString("@type") == "message")
+        val id = IntelligenceDocumentAccess.validate(
+            reference,
+            IntelligenceDocumentMetadata(
+                message.getLong("chat_id"),
+                message.getLong("id"),
+                content.getString("@type") == "messageDocument",
+                content.getJSONObject("caption").getString("text"),
+                document.getLong("size"),
+                document.getInt("id"),
+                !message.isNull("sending_state"),
+                !message.isNull("forward_info")
+            )
+        )
+        if (documentIds.size >= 2048) documentIds.keys.firstOrNull()?.let { documentIds.remove(it) }
+        documentIds[reference.chatId to reference.messageId] = id
+        return readEncryptedDocumentPart(reference, offset, count, false, access, reference.marker)
+    }
     override suspend fun readDocumentPart(reference: RemoteDocument, offset: Long, count: Int): ByteArray = readEncryptedDocumentPart(reference, offset, count, true)
     override suspend fun readSpeculativeDocumentPart(reference: RemoteDocument, offset: Long, count: Int): ByteArray = readEncryptedDocumentPart(reference, offset, count, true, priority = 4)
     private suspend fun readEncryptedDocumentPart(reference: RemoteDocument, offset: Long, count: Int, allowRetention: Boolean, access: () -> Unit = {}, privateMarker: String = "", priority: Int = 32): ByteArray = usingNativeStorage { readEncryptedDocumentPartRetained(reference, offset, count, allowRetention, access, privateMarker, priority) }

@@ -27,9 +27,13 @@ internal fun SmartModelControls(model: DriveViewModel) {
             Text(name(state.active.ifBlank { state.desired }), style = MaterialTheme.typography.bodyMedium)
             Text(label("Private search and image understanding. Face recognition and exact text reading use their own small engines. Only the selected large model downloads.", "ব্যক্তিগত সার্চ ও ছবি বোঝার AI। মুখ চেনা ও হুবহু লেখা পড়ার ছোট ইঞ্জিনগুলোও থাকবে। শুধু নির্বাচিত বড় মডেলটি ডাউনলোড হবে।"), style = MaterialTheme.typography.bodySmall)
             if (state.busy) {
-                LinearProgressIndicator(progress = { (state.downloaded.toFloat() / state.total.coerceAtLeast(1)).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
-                if (state.phase == "initializing" || state.phase == "verifying") Text(label("Verifying and initializing…", "যাচাই করে চালু করা হচ্ছে…"), style = MaterialTheme.typography.labelMedium)
-                Text("${state.downloaded / 1000000} / ${state.total / 1000000} MB", style = MaterialTheme.typography.labelSmall)
+                if (state.phase == "downloading") {
+                    LinearProgressIndicator(progress = { (state.downloaded.toFloat() / state.total.coerceAtLeast(1)).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
+                } else {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                }
+                Text("${label("Download", "ডাউনলোড")}: ${(100 * state.downloaded / state.total.coerceAtLeast(1)).coerceIn(0,100)}% · ${state.downloaded / 1000000} / ${state.total / 1000000} MB", style = MaterialTheme.typography.labelSmall)
+                if (state.phase == "initializing" || state.phase == "verifying") Text(label("Download is complete; installation is still running. Runtime testing has no measurable percentage.", "ডাউনলোড শেষ; ইনস্টল এখনো চলছে। মডেল চালানোর পরীক্ষার শতাংশ মাপা যায় না।"), style = MaterialTheme.typography.labelMedium)
             }
             if (state.failure.isNotBlank()) Text("${label("Technical code", "সমস্যার কোড")}: ${state.failure}", style = MaterialTheme.typography.labelSmall)
             if (state.notice.isNotBlank())Text(state.notice, style = MaterialTheme.typography.bodySmall)

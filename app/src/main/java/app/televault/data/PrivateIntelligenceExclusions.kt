@@ -22,6 +22,7 @@ internal data class PrivateAiScope(val owner: Long = 0, val vault: String = "", 
 /** Durable, encrypted ADD-only exclusions; no photo/text/name/face template is stored here. */
 internal class PrivateIntelligenceExclusions(private val context: Context, private val drive: DriveRepository, private val telegram: TelegramGateway) {
     private val mutex = Mutex()
+    private val outbound = Mutex()
     private val publication = Any()
     private val generation = java.util.concurrent.atomic.AtomicLong()
 
@@ -39,6 +40,8 @@ internal class PrivateIntelligenceExclusions(private val context: Context, priva
     fun hasExclusions(): Boolean = current.ids.isNotEmpty() || current.hashes.isNotEmpty()
 
     @Volatile private var current = PrivateAiScope()
+
+    val progress = kotlinx.coroutines.flow.MutableStateFlow(PrivacyRestoreProgress())
 
     @Volatile private var restored = false
     fun analysisReady(): Boolean {
@@ -184,7 +187,7 @@ internal class PrivateIntelligenceExclusions(private val context: Context, priva
             while (offset < bytes.size) {
                 currentCoroutineContext().ensureActive()
                 access(scope)
-                val part = telegram.readDocumentPart(ref, offset.toLong(), minOf(262144, bytes.size - offset))
+                val part = telegram.readIntelligenceDocumentPart(ref, offset.toLong(), minOf(262144, bytes.size - offset)) { access(scope) }
                 try {
                     check(part.isNotEmpty() && part.size <= bytes.size - offset)
                     part.copyInto(bytes, offset)
@@ -206,24 +209,69 @@ internal class PrivateIntelligenceExclusions(private val context: Context, priva
             bytes.fill(0)
         }
     }
-    suspend fun sync() = withContext(Dispatchers.IO) {
-        mutex.withLock {
-            val scope = drive.privateVaultBinding()
-            activateLocked(scope)
-            val prefix = "TGDRIVE_V1_AI_PRIVATE:${scope.second}:"
-            for (ref in telegram.findDocuments(prefix)) {
+    private suspend fun restoreLocked(scope: Pair<Long, String>) {
+        activateLocked(scope)
+        progress.value = PrivacyRestoreProgress(phase = "listing")
+        val prefix = "TGDRIVE_V1_AI_PRIVATE:${scope.second}:"
+        try {
+            val documents = withTimeout(60_000) { telegram.findDocuments(prefix) }.filter { ref ->
                 val id = ref.marker.removePrefix(prefix)
-                if (!ForgottenVaultPolicy.validId(id) || ref.marker != prefix + id || id in seen)continue
-                val op = read(ref, scope, id)
-                merge(scope, op)
-                seen += id
-                pending.remove(id)
-                save(scope)
+                ForgottenVaultPolicy.validId(id) && ref.marker == prefix + id
+            }.distinctBy { it.marker }
+            restoreExclusionRecords(
+                documents,
+                known = { it.marker.removePrefix(prefix) in seen },
+                apply = { ref ->
+                    val id = ref.marker.removePrefix(prefix)
+                    val op = withTimeout(30_000) { read(ref, scope, id) }
+                    merge(scope, op)
+                    seen += id
+                    pending.remove(id)
+                    save(scope)
+                },
+                commit = {
+                    access(scope)
+                    val previous = restored
+                    restored = true
+                    try {
+                        save(scope)
+                    } catch (error: Throwable) {
+                        restored = previous
+                        throw error
+                    }
+                    progress.value = PrivacyRestoreProgress("ready", documents.size, documents.size)
+                },
+                progress = { done, total -> progress.value = PrivacyRestoreProgress("restoring", done, total) }
+            )
+        } catch (error: Exception) {
+            if (runCatching { access(scope) }.isSuccess) {
+                progress.value = progress.value.copy(
+                    phase = "blocked",
+                    failure = if (error is TimeoutCancellationException) {
+                        "privacy-timeout"
+                    } else if (error is CancellationException) {
+                        "privacy-paused"
+                    } else {
+                        "privacy-read-or-authentication"
+                    }
+                )
             }
-            access(scope)
-            restored = true
-            save(scope) // Complete authenticated remote exclusions restore before any new inference.
-            for (op in pending.values.toList()) {
+            throw error
+        }
+    }
+
+    /** Inbound exclusions are the prerequisite; outbound recovery cannot hold local inference hostage. */
+    suspend fun restore() = withContext(Dispatchers.IO) { mutex.withLock { restoreLocked(drive.privateVaultBinding()) } }
+    suspend fun sync() = withContext(Dispatchers.IO) {
+        outbound.withLock {
+            restore()
+            val scope = drive.privateVaultBinding()
+            val operations = mutex.withLock {
+                access(scope)
+                pending.values.toList()
+            }
+            val prefix = "TGDRIVE_V1_AI_PRIVATE:${scope.second}:"
+            for (op in operations) {
                 access(scope)
                 val body = JSONObject().put("account", scope.first).put("vault", scope.second).put("operation", op.json()).toString().toByteArray()
                 val cipher = try {
@@ -235,12 +283,16 @@ internal class PrivateIntelligenceExclusions(private val context: Context, priva
                 try {
                     staging.writeBytes(cipher)
                     access(scope)
-                    val sent = telegram.sendDocument(staging, prefix + op.id) { _, _ -> }
-                    val confirmed = read(sent, scope, op.id)
-                    check(confirmed == op)
-                    pending.remove(op.id)
-                    seen.add(op.id)
-                    save(scope)
+                    withTimeout(60_000) {
+                        val sent = telegram.sendDocument(staging, prefix + op.id) { _, _ -> }
+                        check(read(sent, scope, op.id) == op)
+                    }
+                    mutex.withLock {
+                        access(scope)
+                        pending.remove(op.id)
+                        seen.add(op.id)
+                        save(scope)
+                    }
                 } finally {
                     cipher.fill(0)
                     staging.delete()
@@ -257,6 +309,7 @@ internal class PrivateIntelligenceExclusions(private val context: Context, priva
         }
     }
     fun lock() {
+        progress.value = PrivacyRestoreProgress()
         restored = false
         synchronized(publication) {
             generation.incrementAndGet()

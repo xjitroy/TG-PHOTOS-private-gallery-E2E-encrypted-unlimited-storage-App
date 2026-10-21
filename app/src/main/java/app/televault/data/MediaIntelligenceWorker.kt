@@ -14,6 +14,13 @@ internal object MediaIntelligenceScheduling {
     val gate = kotlinx.coroutines.sync.Mutex()
     val cursor = IntelligenceBatchCursor()
     val status = kotlinx.coroutines.flow.MutableStateFlow("")
+    val progress = kotlinx.coroutines.flow.MutableStateFlow(IntelligenceProgress())
+    val tracker = IntelligenceProgressTracker { progress.value = it }
+    fun clearProgress() {
+        status.value = ""
+        progress.value = IntelligenceProgress()
+        tracker.begin(emptySet())
+    }
     private const val NAME = "normal-media-intelligence-v2"
 
     @Volatile var runningLane: String? = null
@@ -78,11 +85,12 @@ class MediaIntelligenceWorker(context: Context, params: WorkerParameters) : Coro
         // index and observes new photos. No new Android storage permission is requested here.
         val observer = launch { drive.localMedia.changes.collect { } }
         try {
+            setForeground(transferForeground(applicationContext, 71908, "Preparing private on-device analysis"))
             drive.privateAi.activate()
             if (!drive.privateAi.analysisReady()) {
-                val privacyReady = withTimeoutOrNull(30_000) {
+                val privacyReady = withTimeoutOrNull(120_000) {
                     try {
-                        drive.privateAi.sync()
+                        drive.privateAi.restore()
                         drive.privateAi.analysisReady()
                     } catch (cancel: CancellationException) {
                         throw cancel
@@ -106,6 +114,16 @@ class MediaIntelligenceWorker(context: Context, params: WorkerParameters) : Coro
             people.activate(syncRemote = false)
             ocr.activate()
             scenes.activate()
+            val progress = MediaIntelligenceScheduling.tracker
+            progress.begin(
+                buildSet {
+                    if (people.state.value.enabled) add("face")
+                    if (ocr.state.value.enabled) add("text")
+                    if (scenes.state.value.enabled) add("scene")
+                    if (app.smartModels.state.value.enabled) add("smart")
+                },
+                "$binding/$epoch/${app.smartModels.state.value.desired}"
+            )
             if (!people.state.value.enabled && !ocr.state.value.enabled && !scenes.state.value.enabled && !app.smartModels.state.value.enabled) return@withContext Result.success()
             setForeground(transferForeground(applicationContext, 71908, "Indexing photos privately · on-device"))
             val retryNeeded = withTimeout(8 * 60 * 1000L) {
@@ -147,6 +165,10 @@ class MediaIntelligenceWorker(context: Context, params: WorkerParameters) : Coro
                     if (!photo && !video) return
                     drive.photoPriority.await("background-intelligence")
                     val hash = ocr.cachedContentHash(id, stamp).ifBlank { drive.intelligenceContentHash(id) }
+                    if (drive.privateAi.excluded(id, hash)) {
+                        progress.exclude(id, stamp)
+                        return
+                    }
                     try {
                         if (original != null && original.toString() != id && hash.isNotBlank()) {
                             // preferredDeviceSource was verified against the cloud full-content hash.
@@ -233,7 +255,21 @@ class MediaIntelligenceWorker(context: Context, params: WorkerParameters) : Coro
                         }
                     }
                     try {
-                        val changed = drive.analysisResults.checkpoint(hash, video, ocr.snapshot(id, stamp), people.snapshot(id, stamp), scenes.snapshot(id, stamp), drive.smart.snapshot(id, stamp))
+                        val textResult = ocr.snapshot(id, stamp)
+                        val faceResult = people.snapshot(id, stamp)
+                        val sceneResult = scenes.snapshot(id, stamp)
+                        val smartResult = drive.smart.snapshot(id, stamp)
+                        val changed = drive.analysisResults.checkpoint(hash, video, textResult, faceResult, sceneResult, smartResult)
+                        progress.record(
+                            id,
+                            stamp,
+                            buildSet {
+                                if (textResult != null) add("text")
+                                if (faceResult != null) add("face")
+                                if (sceneResult != null) add("scene")
+                                if (smartResult != null) add("smart")
+                            }
+                        )
                         if (changed) people.privacyChanged(hash)
                     } catch (_: TimeoutCancellationException) {
                         recoveryPending = true
@@ -247,6 +283,7 @@ class MediaIntelligenceWorker(context: Context, params: WorkerParameters) : Coro
                 // One per-photo pipeline; refreshed candidates let new arrivals interrupt the old backlog.
                 data class Candidate(val id: String, val stamp: String, val mime: String, val time: Long, val local: LocalMedia? = null)
                 for (advanced in listOf(false, true)) {
+                    progress.phase(if (advanced) "smart" else "specialists")
                     if (advanced) {
                         people.finishScan()
                         scenes.finish()
@@ -272,8 +309,9 @@ class MediaIntelligenceWorker(context: Context, params: WorkerParameters) : Coro
                                 nextLocal.asSequence().filter { !it.trashed && !it.galleryHidden && links[it.fingerprint] == null }.map { Candidate(it.uri.toString(), it.fingerprint, it.mime, maxOf(it.date, it.addedAt), it) } +
                                     nextCloud.asSequence().filter { it.trashedAt == 0L }.map { Candidate(it.id, it.hash, it.mime, maxOf(it.date, it.backedUpAt)) }
                                 )
-                                .filter { it.mime.startsWith("image/") || it.mime.startsWith("video/") }.distinctBy { it.id }
+                                .filter { (it.mime.startsWith("image/") || it.mime.startsWith("video/")) && drive.normalIntelligenceMedia(it.id) }.distinctBy { it.id }
                                 .sortedWith(compareByDescending<Candidate> { it.time }.thenBy { it.id }).toList()
+                            progress.candidates(ordered.mapTo(hashSetOf()) { it.id to it.stamp })
                             candidates = MediaIntelligenceScheduling.cursor.order(advanced, ordered) { it.id to it.stamp }
                             cursor = 0
                         }
@@ -294,6 +332,7 @@ class MediaIntelligenceWorker(context: Context, params: WorkerParameters) : Coro
                 }
                 people.finishScan()
                 scenes.finish()
+                progress.phase(if (waiting || incomplete || app.smartModels.state.value.enabled && !smartReady) "attention" else "complete")
                 MediaIntelligenceScheduling.status.value = when {
                     nativeUnavailable -> "An analysis engine is unavailable on this phone. Other available analysis continues; originals and saved results are kept."
                     waiting -> "Available engines finished; waiting for models or encrypted People restore. Retrying automatically."

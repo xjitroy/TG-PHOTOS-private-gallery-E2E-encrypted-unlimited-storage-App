@@ -424,10 +424,13 @@ internal class SmartModels(context: Context) {
                         }
                         retireInactive(id)
                     }
+                } catch (cancel: CancellationException) {
+                    mutable.update { it.copy(phase = "paused", notice = "AI setup paused. Verified files are kept; retry to resume.") }
+                    throw cancel
                 } finally {
                     mutable.update { it.copy(busy = false) }
                 }
-                mutable.update { it.copy(busy = false, phase = "ready", failure = "", desired = id, total = s.bytes, downloaded = s.bytes) }
+                mutable.update { it.copy(busy = false, phase = "ready", failure = "", desired = id, total = s.bytes, downloaded = s.bytes, notice = "AI verified and ready. Face recognition and exact OCR remain available.") }
                 return@download
             }
             val folder = directory(id)

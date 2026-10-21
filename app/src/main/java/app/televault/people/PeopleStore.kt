@@ -380,7 +380,7 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
             while (offset < cipher.size) {
                 access(scope, token)
                 currentCoroutineContext().ensureActive()
-                val chunk = telegram.readDocumentPart(ref, offset.toLong(), minOf(262144, cipher.size - offset))
+                val chunk = telegram.readIntelligenceDocumentPart(ref, offset.toLong(), minOf(262144, cipher.size - offset)) { access(scope, token) }
                 try {
                     check(chunk.isNotEmpty() && chunk.size <= cipher.size - offset)
                     chunk.copyInto(cipher, offset)
@@ -406,7 +406,7 @@ internal class PeopleStore(private val context: Context, private val drive: Driv
         } catch (cancel: CancellationException) {
             throw cancel
         } catch (_: Exception) { /* Unknown derived privacy remains local-only; restore existing authenticated identities. */ }
-        drive.privateAi.sync() // Never upload face references against a stale online privacy ledger.
+        drive.privateAi.restore() // Fresh inbound exclusions; local pending exclusions already filter all references.
         access(scope, token)
         persons.values.forEach(::sanitize)
         val all = telegram.findDocuments(prefix(scope)).filter { ref ->
